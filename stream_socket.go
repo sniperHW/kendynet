@@ -14,25 +14,7 @@ import (
 	   "github.com/sniperHW/kendynet/util" 
 )
 
-var (
-	ErrSocketClose      = fmt.Errorf("socket close")
-	ErrSendTimeout      = fmt.Errorf("send timeout")
-	ErrStarted          = fmt.Errorf("already started")
-	ErrInvaildBuff      = fmt.Errorf("buff is nil")
-	ErrNoOnPacket       = fmt.Errorf("onPacket == nil")
-	ErrNoReceiver       = fmt.Errorf("receiver == nil")
-	ErrInvaildObject    = fmt.Errorf("object == nil")
-	ErrInvaildEncoder   = fmt.Errorf("encoder == nil")
-)
-
-
-/*
-*   通用StreamConn对象，支持所有面向流的net.Conn及golang.org/x/net/websocket
-*   支持优雅关闭
-*
-*/
-
-type StreamSocket struct {
+type streamSocket struct {
 	conn 			 net.Conn
 	ud   			 interface{}
 	sendQue         *util.Queue
@@ -51,23 +33,23 @@ type StreamSocket struct {
 }
 
 
-func (this *StreamSocket) SetUserData(ud interface{}) {
+func (this *streamSocket) SetUserData(ud interface{}) {
 	this.ud = ud
 }
 
-func (this *StreamSocket) GetUserData() interface{} {
+func (this *streamSocket) GetUserData() interface{} {
 	return this.ud
 }
 
-func (this *StreamSocket) LocalAddr() net.Addr {
+func (this *streamSocket) LocalAddr() net.Addr {
 	return this.conn.LocalAddr()
 }
 
-func (this *StreamSocket) RemoteAddr() net.Addr {
+func (this *streamSocket) RemoteAddr() net.Addr {
 	return this.conn.RemoteAddr()
 }
 
-func (this *StreamSocket) Close(reason string, timeout int64) error {
+func (this *streamSocket) Close(reason string, timeout int64) error {
 	defer func(){
 		this.mutex.Unlock()
 	}()
@@ -107,27 +89,27 @@ func (this *StreamSocket) Close(reason string, timeout int64) error {
 	return nil
 }
 
-func (this *StreamSocket) SetReceiveTimeout(timeout int64) {
+func (this *streamSocket) SetReceiveTimeout(timeout int64) {
 	this.recvTimeout = timeout
 }
 
-func (this *StreamSocket) SetSendTimeout(timeout int64) {
+func (this *streamSocket) SetSendTimeout(timeout int64) {
 	this.sendTimeout = timeout
 }
     
-func (this *StreamSocket) SetCloseCallBack(cb func (StreamSession, string)) {
+func (this *streamSocket) SetCloseCallBack(cb func (StreamSession, string)) {
 	this.onClose = cb
 }
 
-func (this *StreamSocket) SetPacketCallBack(cb func (StreamSession, interface{},error)) {
+func (this *streamSocket) SetPacketCallBack(cb func (StreamSession, interface{},error)) {
 	this.onPacket = cb
 }
 
-func (this *StreamSocket) SetReceiver(r Receiver) {
+func (this *streamSocket) SetReceiver(r Receiver) {
 	this.receiver = r
 }
 
-func (this *StreamSocket) Send(o interface{},encoder EnCoder) error {
+func (this *streamSocket) Send(o interface{},encoder EnCoder) error {
 	if o == nil {
 		return ErrInvaildObject
 	}
@@ -146,7 +128,7 @@ func (this *StreamSocket) Send(o interface{},encoder EnCoder) error {
 
 }
 	
-func (this *StreamSocket) SendBuff(b *ByteBuffer) error {
+func (this *streamSocket) SendBuff(b *ByteBuffer) error {
 	if b == nil {
 		return ErrInvaildBuff
 	} else if this.sendStop || this.closed {
@@ -159,7 +141,7 @@ func (this *StreamSocket) SendBuff(b *ByteBuffer) error {
 	return nil
 }
 
-func recvThreadFunc(session *StreamSocket) {
+func recvThreadFunc(session *streamSocket) {
 
 	defer func() {
 		session.conn.Close()
@@ -195,7 +177,7 @@ func recvThreadFunc(session *StreamSocket) {
 }
 
 
-func doSend(session *StreamSocket,writer *bufio.Writer,timeout int64) error {
+func doSend(session *streamSocket,writer *bufio.Writer,timeout int64) error {
 
 	/*
 	 *  for循环的必要性
@@ -274,7 +256,7 @@ func writeToWriter(writer *bufio.Writer,buffer []byte) error {
 
 }
 
-func sendThreadFunc(session *StreamSocket) {
+func sendThreadFunc(session *streamSocket) {
 	defer func() {
 		session.conn.Close()
 		session.mutex.Lock()
@@ -350,7 +332,7 @@ func sendThreadFunc(session *StreamSocket) {
 }
 
 
-func (this *StreamSocket) Start() error {
+func (this *streamSocket) Start() error {
 
 	defer func(){
 		this.mutex.Unlock()
@@ -380,14 +362,14 @@ func (this *StreamSocket) Start() error {
 	return nil
 }
 
-func NewStreamSocket(conn net.Conn)(*StreamSocket){
-	session 			:= new(StreamSocket)
+func NewStreamSocket(conn net.Conn)(StreamSession){
+	session 			:= new(streamSocket)
 	session.conn 		 = conn
 	session.sendQue      = util.NewQueue()
 	return session
 }
 
-func (this *StreamSocket) GetUnderConn() interface{} {
+func (this *streamSocket) GetUnderConn() interface{} {
 	return this.conn
 }
 
