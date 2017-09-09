@@ -1,7 +1,6 @@
 package main
 
 import(
-	"net"
 	"fmt"
 	"os"
 	"github.com/sniperHW/kendynet"
@@ -16,7 +15,36 @@ func main(){
 	}
 
 	service := os.Args[1]
-	tcpAddr,err := net.ResolveTCPAddr("tcp4", service)
+	
+	server,err := kendynet.NewTcpServer("tcp4",service)
+
+	if server != nil {
+		fmt.Printf("server running on:%s\n",service)
+		err = server.Start(func(session kendynet.StreamSession) {
+			session.SetReceiver(protocal_stream_socket.NewBinaryReceiver(4096))
+			session.SetCloseCallBack(func (sess kendynet.StreamSession, reason string) {
+				fmt.Printf("client close:%s\n",reason)
+			})
+			session.SetPacketCallBack(func (sess kendynet.StreamSession,msg interface{},err error) {
+				if nil != err {
+					session.Close("none",0)
+				} else {
+					session.SendBuff(msg.(*kendynet.ByteBuffer))
+				}
+			})
+			session.Start()
+		})
+
+		if nil != err {
+			fmt.Printf("TcpServer start failed %s\n",err)			
+		}
+
+	} else {
+		fmt.Printf("NewTcpServer failed %s\n",err)
+	}
+
+
+	/*tcpAddr,err := net.ResolveTCPAddr("tcp4", service)
 	if err != nil{
 		fmt.Printf("ResolveTCPAddr error\n")
 		return
@@ -46,5 +74,5 @@ func main(){
 			}
 		})
 		session.Start()
-	}
+	}*/
 }
