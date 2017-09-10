@@ -22,11 +22,11 @@ func main(){
 			session.SetCloseCallBack(func (sess kendynet.StreamSession, reason string) {
 				fmt.Printf("client close:%s\n",reason)
 			})
-			session.SetPacketCallBack(func (sess kendynet.StreamSession,msg interface{},err error) {
-				if nil != err {
-					session.Close("none",0)
+			session.SetEventCallBack(func (event *kendynet.Event) {
+				if event.EventType == kendynet.EventTypeError {
+					event.Session.Close(event.Data.(error).Error(),0)
 				} else {
-					session.SendMessage(msg.(kendynet.Message))
+					event.Session.SendMessage(event.Data.(kendynet.Message))
 				}
 			})
 			session.Start()

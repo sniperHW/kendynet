@@ -6,7 +6,7 @@ package kendynet
 
 import (
 	   "net"
-	   "fmt"
+	  // "fmt"
 	   "time"
 	   "sync"
 	   "bufio"
@@ -14,42 +14,43 @@ import (
 	   "github.com/sniperHW/kendynet/util" 
 )
 
-type streamSocket struct {
+type StreamSocket struct {
 	conn 			 net.Conn
 	ud   			 interface{}
-	sendQue         *util.Queue
+	sendQue         *util.BlockQueue
 	receiver         Receiver
+	encoder          EnCoder
 	sendStop         bool
 	recvStop         bool
 	closed           bool
 	started          bool
-	finalSendTimeout int64   //sec
-	recvTimeout      int64
-	sendTimeout      int64
+	closeDeadline    time.Time
+	recvTimeout      time.Duration
+	sendTimeout      time.Duration
 	mutex            sync.Mutex
 	onClose          func (StreamSession,string)
-	onPacket         func (StreamSession,interface{},error)
+	onEvent          func (*Event)
 	closeReason      string           
 }
 
 
-func (this *streamSocket) SetUserData(ud interface{}) {
+func (this *StreamSocket) SetUserData(ud interface{}) {
 	this.ud = ud
 }
 
-func (this *streamSocket) GetUserData() interface{} {
+func (this *StreamSocket) GetUserData() interface{} {
 	return this.ud
 }
 
-func (this *streamSocket) LocalAddr() net.Addr {
+func (this *StreamSocket) LocalAddr() net.Addr {
 	return this.conn.LocalAddr()
 }
 
-func (this *streamSocket) RemoteAddr() net.Addr {
+func (this *StreamSocket) RemoteAddr() net.Addr {
 	return this.conn.RemoteAddr()
 }
 
-func (this *streamSocket) Close(reason string, timeout int64) error {
+func (this *StreamSocket) Close(reason string, timeout time.Duration) error {
 	defer func(){
 		this.mutex.Unlock()
 	}()
@@ -64,8 +65,7 @@ func (this *streamSocket) Close(reason string, timeout int64) error {
 	this.closed = true
 
 	if this.started {
-		this.finalSendTimeout = timeout
-		if this.finalSendTimeout == 0 {
+		if timeout == 0 {
 			switch this.conn.(type) {
 			case *net.TCPConn:
 				this.conn.(*net.TCPConn).CloseWrite()
@@ -76,6 +76,8 @@ func (this *streamSocket) Close(reason string, timeout int64) error {
 			default:
 				this.conn.Close()
 			}			
+		} else {
+			this.closeDeadline = time.Now().Add(timeout)
 		}
 	} else {
 		this.conn.Close()
@@ -89,36 +91,40 @@ func (this *streamSocket) Close(reason string, timeout int64) error {
 	return nil
 }
 
-func (this *streamSocket) SetReceiveTimeout(timeout int64) {
-	this.recvTimeout = timeout
+func (this *StreamSocket) SetReceiveTimeout(timeout time.Duration) {
+	this.recvTimeout = timeout * time.Second
 }
 
-func (this *streamSocket) SetSendTimeout(timeout int64) {
-	this.sendTimeout = timeout
+func (this *StreamSocket) SetSendTimeout(timeout time.Duration) {
+	this.sendTimeout = timeout * time.Second
 }
     
-func (this *streamSocket) SetCloseCallBack(cb func (StreamSession, string)) {
+func (this *StreamSocket) SetCloseCallBack(cb func (StreamSession, string)) {
 	this.onClose = cb
 }
 
-func (this *streamSocket) SetPacketCallBack(cb func (StreamSession, interface{},error)) {
-	this.onPacket = cb
+func (this *StreamSocket) SetEventCallBack(cb func (*Event)) {
+	this.onEvent = cb
 }
 
-func (this *streamSocket) SetReceiver(r Receiver) {
+func (this *StreamSocket) SetEncoder(encoder EnCoder) {
+	this.encoder = encoder
+}
+
+func (this *StreamSocket) SetReceiver(r Receiver) {
 	this.receiver = r
 }
 
-func (this *streamSocket) Send(o interface{},encoder EnCoder) error {
+func (this *StreamSocket) Send(o interface{}) error {
 	if o == nil {
 		return ErrInvaildObject
 	}
 
-	if encoder == nil {
+	if this.encoder == nil {
 		return ErrInvaildEncoder
 	}
 
-	msg,err := encoder.EnCode(o)
+	msg,err := this.encoder.EnCode(o)
 
 	if err != nil {
 		return err
@@ -128,7 +134,7 @@ func (this *streamSocket) Send(o interface{},encoder EnCoder) error {
 
 }
 	
-func (this *streamSocket) SendMessage(msg Message) error {
+func (this *StreamSocket) SendMessage(msg Message) error {
 	if msg == nil {
 		return ErrInvaildBuff
 	} else if this.sendStop || this.closed {
@@ -141,7 +147,7 @@ func (this *streamSocket) SendMessage(msg Message) error {
 	return nil
 }
 
-func recvThreadFunc(session *streamSocket) {
+func recvThreadFunc(session *StreamSocket) {
 
 	defer func() {
 		session.conn.Close()
@@ -155,9 +161,7 @@ func recvThreadFunc(session *streamSocket) {
 
 	for !session.closed {
 		if session.recvTimeout > 0 {
-			t := time.Now()
-			deadline := t.Add(time.Second * time.Duration(session.recvTimeout))
-			session.conn.SetReadDeadline(deadline)
+			session.conn.SetReadDeadline(time.Now().Add(session.recvTimeout))
 		}
 		
 		p,err := session.receiver.ReceiveAndUnpack(session)
@@ -165,19 +169,26 @@ func recvThreadFunc(session *streamSocket) {
 			break
 		}
 
-		if err != nil {
-			session.onPacket(session,nil,err)
+		if err != nil || p != nil {
+			var event Event
+			event.Session = session
+			if err != nil {
+				event.EventType = EventTypeError
+				event.Data = err
+			} else {
+				event.EventType = EventTypeMessage
+				event.Data = p
+			}
 			/*出现错误不主动退出循环，除非用户调用了session.Close()		
 	        * 避免用户遗漏调用Close(不调用Close会持续通告错误)
 	        */	
-		} else if p != nil {
-			session.onPacket(session,p,err)
+			session.onEvent(&event)
 		}
 	}
 }
 
 
-func doSend(session *streamSocket,writer *bufio.Writer,timeout int64) error {
+func doSend(session *StreamSocket,writer *bufio.Writer,timeout time.Time) error {
 
 	/*
 	 *  for循环的必要性
@@ -186,36 +197,15 @@ func doSend(session *streamSocket,writer *bufio.Writer,timeout int64) error {
 	 *  因为无法继续执行doSend，对端将永远无法接收到完整的包
 	*/
 	for {
-		if 0 != timeout {
-			if time.Now().Unix() >= timeout {
-				return ErrSendTimeout
-			}			
-		}
 
-		/* 超时设置的必要性
-		 * 如果对端一直不接收数据，那么doSend将永远阻塞在Flush上，即使本端调用Close也无法感知到(用finalSendTimeout>0调用Close,
-		 * finalSendTimeout <=0 调用Close不存在这个问题，因为会调用CloseWrite使得阻塞的Write立即返回)		
-		*/
-		t := time.Now()
-		deadline := t.Add(time.Second * 1)
-		session.conn.SetWriteDeadline(deadline)
+		session.conn.SetWriteDeadline(timeout)
 
 		err := writer.Flush()
-
-		if 0 != timeout {
-			if  time.Now().Unix() >= timeout { 
-				//到达最后期限，直接退出
-				return ErrSendTimeout
-			}
-		}
 
 		if err != nil {
 
 			if err.(net.Error).Timeout() {
-				//write超时,在这里检测session是否被调用了Close,如果是退出循环
-				if session.closed {
-					break
-				}
+				return ErrSendTimeout
 			}
 	
 			if err != io.ErrShortWrite {
@@ -256,7 +246,7 @@ func writeToWriter(writer *bufio.Writer,buffer []byte) error {
 
 }
 
-func sendThreadFunc(session *streamSocket) {
+func sendThreadFunc(session *StreamSocket) {
 	defer func() {
 		session.conn.Close()
 		session.mutex.Lock()
@@ -269,62 +259,53 @@ func sendThreadFunc(session *streamSocket) {
 
 	writer := bufio.NewWriter(session.conn)
 
-	var timeout int64
+	var timeout time.Time
+
+	localList := util.NewList()
 
 	for {
 
-		var writeList [] interface{}
-
-		closed := session.sendQue.Get(&writeList)
+		closed := session.sendQue.Get(localList)
 
 		if closed {
-			if 0 >= session.finalSendTimeout {
+			if session.closeDeadline.IsZero() {
 				//关闭，丢弃所有待发送数据
-				break
+				return
 			} else {
-				timeout = time.Now().Unix() + session.finalSendTimeout
+				timeout = session.closeDeadline
 			}
 		} else {
-			if session.sendTimeout > 0 {
-				timeout = time.Now().Unix() + session.sendTimeout				
-			}
+			timeout = time.Now().Add(session.sendTimeout)				
 		}
 		
-		errorOnWirte := false
-		
-		for i := range writeList {
-
-			msg := writeList[i].(Message)
+		for !localList.Empty() {
+			msg := localList.Pop().(Message)
 			if err := writeToWriter(writer,msg.Bytes()); err != nil {
-				//Todo: 记录日志
-				errorOnWirte = true
-				break
+				event := &Event{Session:session,EventType:EventTypeError,Data:err}
+				session.onEvent(event)
+				return
 			}
-
-		}
-
-		if errorOnWirte {
-			//Todo: 记录日志
-			break
 		}
 
 		if 0 == writer.Buffered() && closed {
 			//没有数据需要发送了,退出
-			break
+			return
 		}
 
 		if err := doSend(session,writer,timeout); err != nil {
-			//Todo: 记录日志
-			fmt.Printf("error on doSend:%s\n",err.Error())
-			break
+			if closed {
+				return
+			} else {
+				event := &Event{Session:session,EventType:EventTypeError,Data:err}
+				session.onEvent(event)
+			}
 		}
-
 	}
 
 }
 
 
-func (this *streamSocket) Start() error {
+func (this *StreamSocket) Start() error {
 
 	defer func(){
 		this.mutex.Unlock()
@@ -340,7 +321,7 @@ func (this *streamSocket) Start() error {
 		return ErrStarted
 	}
 
-	if this.onPacket == nil {
+	if this.onEvent == nil {
 		return ErrNoOnPacket
 	}
 
@@ -355,13 +336,14 @@ func (this *streamSocket) Start() error {
 }
 
 func NewStreamSocket(conn net.Conn)(StreamSession){
-	session 			:= new(streamSocket)
+	session 			:= new(StreamSocket)
 	session.conn 		 = conn
-	session.sendQue      = util.NewQueue()
+	session.sendQue      = util.NewBlockQueue()
+	session.sendTimeout  = DefaultSendTimeout * time.Second
 	return session
 }
 
-func (this *streamSocket) GetUnderConn() interface{} {
+func (this *StreamSocket) GetUnderConn() interface{} {
 	return this.conn
 }
 

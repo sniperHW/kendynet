@@ -80,6 +80,10 @@ func NewByteBuffer(arg ...interface{})(*ByteBuffer){
 				case uint64: 
 					size = (uint64)(arg[0].(uint64))
 					break
+				case string:
+					buff := &ByteBuffer{buffer:make([]byte,len(arg[0].(string))),datasize:0,capacity:size,needcopy:false}
+					buff.PutString(0,arg[0].(string))
+					return buff
 				default:
 					return nil
 			}

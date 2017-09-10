@@ -9,14 +9,14 @@ var (
 	ErrQueueClosed = fmt.Errorf("queue closed")
 )
 
-type Queue struct {
+type BlockQueue struct {
 	list      [] interface{}
 	listGuard sync.Mutex
 	listCond  *sync.Cond
 	closed     bool
 }
 
-func (self *Queue) Add(item interface{}) error {
+func (self *BlockQueue) Add(item interface{}) error {
 	self.listGuard.Lock()
 
 	if self.closed {
@@ -31,7 +31,15 @@ func (self *Queue) Add(item interface{}) error {
 	return nil
 }
 
-func (self *Queue) Get(out * [] interface{}) bool {
+func (self *BlockQueue) Closed() bool {
+	var closed bool
+	self.listGuard.Lock()
+	closed = self.closed
+	self.listGuard.Unlock()
+	return closed
+}
+
+func (self *BlockQueue) Get(out *List) bool {
 	self.listGuard.Lock()
 	for !self.closed && len(self.list) == 0 {
 		//Cond.Wait不能设置超时，蛋疼
@@ -39,7 +47,7 @@ func (self *Queue) Get(out * [] interface{}) bool {
 	}
 
 	for _, p := range self.list {
-		*out = append(*out, p)
+		out.Push(p)
 	}
 
 	self.list = self.list[0:0]
@@ -50,7 +58,7 @@ func (self *Queue) Get(out * [] interface{}) bool {
 
 }
 
-func (self *Queue) Close() {
+func (self *BlockQueue) Close() {
 	self.listGuard.Lock()
 
 	if self.closed {
@@ -63,8 +71,8 @@ func (self *Queue) Close() {
 	self.listCond.Signal()
 }
 
-func NewQueue() *Queue {
-	self := &Queue{}
+func NewBlockQueue() *BlockQueue {
+	self := &BlockQueue{}
 	self.closed = false
 	self.listCond = sync.NewCond(&self.listGuard)
 

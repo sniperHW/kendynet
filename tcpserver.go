@@ -2,13 +2,7 @@ package kendynet
 
 import (
     "net"
-    "fmt"
     "sync/atomic"
-)
-
-var (
-    ErrTcpServerStarted = fmt.Errorf("TcpServer already started")
-    ErrInvaildClientCB = fmt.Errorf("onNewClient == nil")
 )
 
 type TcpServer struct{
@@ -40,11 +34,11 @@ func (this *TcpServer) Close() {
 func (this *TcpServer) Start(onNewClient func(StreamSession)) error {
 
     if nil == onNewClient {
-        return ErrInvaildClientCB
+        return ErrInvaildNewClientCB
     }
 
     if !atomic.CompareAndSwapInt32(&this.started,0,1) {
-        return ErrTcpServerStarted
+        return ErrServerStarted
     }
 
     for {

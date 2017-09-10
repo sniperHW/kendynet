@@ -7,6 +7,7 @@ package kendynet
 import (
 	   "net"
        "fmt"
+       "time"
 )
 
 var (
@@ -18,13 +19,30 @@ var (
     ErrNoReceiver       = fmt.Errorf("receiver == nil")
     ErrInvaildObject    = fmt.Errorf("object == nil")
     ErrInvaildEncoder   = fmt.Errorf("encoder == nil")
+    ErrInvaildWSMessage = fmt.Errorf("invaild websocket message")
+    ErrWSPeerClose      = fmt.Errorf("receive websocket peer close")
 )
+
+const (
+    EventTypeMessage = 1
+    EventTypeError   = 2
+)
+
+const (
+    DefaultSendTimeout = 10
+)
+
+type Event struct {
+    EventType int16
+    Session StreamSession
+    Data    interface {}    
+}
 
 type StreamSession interface {
 	/* 
 		发送一个对象，使用encoder将对象编码成一个Message调用SendMessage
 	*/
-	Send(o interface{},encoder EnCoder) error
+	Send(o interface{}) error
 	
 	/* 
 		直接发送Message
@@ -37,7 +55,7 @@ type StreamSession interface {
 
 		无论何种情况，调用Close之后SendXXX操作都将返回错误
 	*/
-    Close(reason string, timeout int64) error
+    Close(reason string, timeout time.Duration) error
     
     /*
     	设置关闭回调，当session被关闭时回调
@@ -47,26 +65,27 @@ type StreamSession interface {
     SetCloseCallBack(cb func (StreamSession,string))
 
     /*
-    *   设置数据包回调，当接收到完整数据包时执行
-    *   如果有错误packet == nil,error表明错误原因
+    *   设置事件回调
     *   需要注意，回调可能在接收或发送goroutine中调用，如回调函数涉及数据竞争，需要自己加锁保护
     */
-    SetPacketCallBack(cb func (StreamSession,interface{},error))
+    SetEventCallBack(cb func (*Event))
 
     /*
     *   设置接收解包器
     */
     SetReceiver(r Receiver)
 
+    SetEncoder(encoder EnCoder)
+
     /*
     *   设置接收超时(如果出现超时调用SetPacketCallBack中传入的回调函数，传递合适的错误)
     */ 
-    SetReceiveTimeout(timeout int64)
+    SetReceiveTimeout(timeout time.Duration)
 
     /*
     *	设置发送超时(如果出现超时调用SetPacketCallBack中传入的回调函数，传递合适的错误)
     */
-    SetSendTimeout(timeout int64)
+    SetSendTimeout(timeout time.Duration)
 
     /*
     *	获取待发送数据的大小
