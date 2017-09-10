@@ -143,9 +143,11 @@ func (this *ByteBuffer) Clone() (*ByteBuffer){
 	return &ByteBuffer{buffer:b,datasize:this.datasize,capacity:this.capacity,needcopy:false}
 }
 
+/*
 func (this *ByteBuffer) Buffer()([]byte){
 	return this.buffer
 }
+*/
 
 func (this *ByteBuffer) Len()(uint64){
 	return this.datasize
@@ -250,6 +252,10 @@ func (this *ByteBuffer) GetString(idx uint64,size uint64) (ret string,err error)
 		ret = string(bytes)
 	}
 	return
+}
+
+func (this *ByteBuffer) Bytes() []byte {
+	return this.buffer[0:this.datasize]
 }
 
 /*

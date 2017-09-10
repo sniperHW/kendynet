@@ -118,23 +118,23 @@ func (this *streamSocket) Send(o interface{},encoder EnCoder) error {
 		return ErrInvaildEncoder
 	}
 
-	buff,err := encoder.EnCode(o)
+	msg,err := encoder.EnCode(o)
 
 	if err != nil {
 		return err
 	}
 
-	return this.SendBuff(buff)
+	return this.SendMessage(msg)
 
 }
 	
-func (this *streamSocket) SendBuff(b *ByteBuffer) error {
-	if b == nil {
+func (this *streamSocket) SendMessage(msg Message) error {
+	if msg == nil {
 		return ErrInvaildBuff
 	} else if this.sendStop || this.closed {
 		return ErrSocketClose
 	} else {
-		if nil != this.sendQue.Add(b) {
+		if nil != this.sendQue.Add(msg) {
 			return ErrSocketClose
 		}
 	}
@@ -294,16 +294,8 @@ func sendThreadFunc(session *streamSocket) {
 		
 		for i := range writeList {
 
-			msg := writeList[i].(*ByteBuffer)
-			buff,err := msg.GetBytes(0,msg.datasize)
-
-			if err != nil {
-				//Todo: 记录日志
-				errorOnWirte = true
-				break				
-			}
-
-			if err = writeToWriter(writer,buff); err != nil {
+			msg := writeList[i].(Message)
+			if err := writeToWriter(writer,msg.Bytes()); err != nil {
 				//Todo: 记录日志
 				errorOnWirte = true
 				break

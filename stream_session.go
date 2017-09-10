@@ -22,14 +22,14 @@ var (
 
 type StreamSession interface {
 	/* 
-		发送一个对象，使用encoder将对象编码成一个ByteBuffer调用SendBuff
+		发送一个对象，使用encoder将对象编码成一个Message调用SendMessage
 	*/
 	Send(o interface{},encoder EnCoder) error
 	
 	/* 
-		直接发送ByteBuffer
+		直接发送Message
 	*/
-	SendBuff(b *ByteBuffer) error
+	SendMessage(msg Message) error
 	
 	/* 
 		关闭会话,如果会话中还有待发送的数据且timeout非0

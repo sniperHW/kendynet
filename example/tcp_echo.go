@@ -26,7 +26,7 @@ func main(){
 				if nil != err {
 					session.Close("none",0)
 				} else {
-					session.SendBuff(msg.(*kendynet.ByteBuffer))
+					session.SendMessage(msg.(kendynet.Message))
 				}
 			})
 			session.Start()
