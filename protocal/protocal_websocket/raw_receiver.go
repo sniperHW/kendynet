@@ -20,6 +20,6 @@ func (this *WSSocketRawReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (
 }
 
 
-func NewBinaryReceiver()(*WSSocketRawReceiver){
+func NewRawReceiver()(*WSSocketRawReceiver){
 	return &WSSocketRawReceiver{}
 }
