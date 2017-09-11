@@ -280,10 +280,12 @@ func sendThreadFunc(session *StreamSocket) {
 		
 		for !localList.Empty() {
 			msg := localList.Pop().(Message)
-			if err := writeToWriter(writer,msg.Bytes()); err != nil {
-				event := &Event{Session:session,EventType:EventTypeError,Data:err}
-				session.onEvent(event)
-				return
+			if msg.Bytes() != nil {
+				if err := writeToWriter(writer,msg.Bytes()); err != nil {
+					event := &Event{Session:session,EventType:EventTypeError,Data:err}
+					session.onEvent(event)
+					return
+				}
 			}
 		}
 

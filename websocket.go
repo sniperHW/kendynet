@@ -18,23 +18,23 @@ import (
 const (
 	// TextMessage denotes a text data message. The text message payload is
 	// interpreted as UTF-8 encoded text data.
-	TextMessage = 1
+	WSTextMessage = 1
 
 	// BinaryMessage denotes a binary data message.
-	BinaryMessage = 2
+	WSBinaryMessage = 2
 
 	// CloseMessage denotes a close control message. The optional message
 	// payload contains a numeric code and text. Use the FormatCloseMessage
 	// function to format a close message payload.
-	CloseMessage = 8
+	WSCloseMessage = 8
 
 	// PingMessage denotes a ping control message. The optional message payload
 	// is UTF-8 encoded text.
-	PingMessage = 9
+	WSPingMessage = 9
 
 	// PongMessage denotes a ping control message. The optional message payload
 	// is UTF-8 encoded text.
-	PongMessage = 10
+	WSPongMessage = 10
 )
 
 /*
@@ -258,12 +258,12 @@ func wsSendThreadFunc(session *WebSocket) {
 		for !localList.Empty() {
 			var err error
 			msg := localList.Pop().(*WSMessage)
-			if msg.messageType == BinaryMessage || msg.messageType == TextMessage {
+			if msg.messageType == WSBinaryMessage || msg.messageType == WSTextMessage {
 				session.conn.SetWriteDeadline(timeout)
 				err = session.conn.WriteMessage(msg.messageType,msg.Bytes())
-			} else if msg.messageType == CloseMessage || msg.messageType == PingMessage || msg.messageType == PingMessage {
+			} else if msg.messageType == WSCloseMessage || msg.messageType == WSPingMessage || msg.messageType == WSPingMessage {
 				err = session.conn.WriteControl(msg.messageType,msg.Bytes(),timeout)
-				if msg.messageType == CloseMessage {
+				if msg.messageType == WSCloseMessage {
 					return
 				}
 			}
@@ -337,13 +337,13 @@ func (this *WebSocket) Close(reason string, timeout time.Duration) error {
 			}
 		} else {
 			this.closeDeadline = time.Now().Add(timeout) 
-			this.SendMessage(NewWSMessage(CloseMessage,reason))			
+			this.SendMessage(NewWSMessage(WSCloseMessage,reason))			
 		}
 	} else {
 		if timeout > 0 {
 			//timeout > 0执行优雅关闭
 			this.closeDeadline = time.Now().Add(timeout)
-			err := this.SendMessage(NewWSMessage(CloseMessage,reason))
+			err := this.SendMessage(NewWSMessage(WSCloseMessage,reason))
 			if err == nil {
 				go wsSendThreadFunc(this)
 			} else {

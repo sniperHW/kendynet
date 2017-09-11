@@ -46,12 +46,11 @@ type ByteBuffer struct {
 }
 
 var (
-	ErrMaxSizeExceeded     = fmt.Errorf("bytebuffer: Max Buffer Size Exceeded")
-	ErrInvaildAgr          = fmt.Errorf("bytebuffer: Invaild Idx or size")
+	ErrBuffMaxSizeExceeded     = fmt.Errorf("bytebuffer: Max Buffer Size Exceeded")
+	ErrBuffInvaildAgr          = fmt.Errorf("bytebuffer: Invaild Idx or size")
 )
 
 func NewByteBuffer(arg ...interface{})(*ByteBuffer){
-	//fmt.Printf("arg count:%d\n",len(arg))
 	if len(arg) < 2 {
 		var size uint64
 		if len(arg) == 0 {
@@ -83,18 +82,31 @@ func NewByteBuffer(arg ...interface{})(*ByteBuffer){
 					size = (uint64)(arg[0].(uint64))
 					break
 				case string:
-					buff := &ByteBuffer{buffer:make([]byte,len(arg[0].(string))),datasize:0,capacity:size,needcopy:false}
-					buff.PutString(0,arg[0].(string))
+					data := arg[0].(string)
+					datasize := (uint64)(len(data))
+					size = SizeofPow2(datasize)
+					if size < 128 {
+						size = 128
+					}
+					buff := &ByteBuffer{buffer:make([]byte,size),datasize:datasize,capacity:size,needcopy:false}
+					buff.PutString(0,data)
 					return buff
 				case []byte:
-					buff := &ByteBuffer{buffer:make([]byte,len(arg[0].([]byte))),datasize:0,capacity:size,needcopy:false}
-					buff.PutBytes(0,arg[0].([]byte))
+					data := arg[0].([]byte)
+					datasize := (uint64)(len(data))
+					size = SizeofPow2(datasize)
+					if size < 128 {
+						size = 128
+					}
+					buff := &ByteBuffer{buffer:make([]byte,size),datasize:datasize,capacity:size,needcopy:false}
+					buff.PutBytes(0,data)
 					return buff					
 				default:
 					fmt.Printf("invaild %s\n",reflect.TypeOf(arg[0]).String())
 					return nil
 			}
 		}
+		size = SizeofPow2(size)
 		return &ByteBuffer{buffer:make([]byte,size),datasize:0,capacity:size,needcopy:false}
 	} else if len(arg) == 2 {
 		var bytes []byte
@@ -140,7 +152,7 @@ func NewByteBuffer(arg ...interface{})(*ByteBuffer){
 		 * 直接引用bytes,并设置needcopy标记
 		 * 如果ByteBuffer要修改bytes中的内容，首先要先执行拷贝，之后才能修改
 		*/
-		return &ByteBuffer{buffer:bytes,datasize:size,capacity:(uint64)(cap(bytes)),needcopy:true}
+		return &ByteBuffer{buffer:bytes,datasize:size,capacity:size,needcopy:true}
 	} else {
 		return nil
 	}
@@ -173,7 +185,7 @@ func (this *ByteBuffer) Cap()(uint64){
 func (this *ByteBuffer) expand(newsize uint64)(error){
 	newsize = SizeofPow2(newsize)
 	if newsize > MaxBuffSize {
-		return ErrMaxSizeExceeded
+		return ErrBuffMaxSizeExceeded
 	}
 	//allocate new buffer
 	tmpbuf := make([]byte,newsize)
@@ -188,14 +200,14 @@ func (this *ByteBuffer) expand(newsize uint64)(error){
 func (this *ByteBuffer) checkCapacity(idx,size uint64)(error){
 	if size >= this.capacity && idx + size < this.capacity {
 		//溢出
-		return ErrMaxSizeExceeded
+		return ErrBuffMaxSizeExceeded
 	}
 
 	if this.needcopy {
 		//需要执行写时拷贝
 		sizeneed := idx + size
 		if sizeneed > MaxBuffSize {
-			return ErrMaxSizeExceeded
+			return ErrBuffMaxSizeExceeded
 		}
 		//allocate new buffer
 		tmpbuf := make([]byte,sizeneed)
@@ -234,11 +246,11 @@ func (this *ByteBuffer) GetBytes(idx uint64,size uint64) (ret []byte,err error) 
 	ret = nil
 	err = nil
 	if size >= this.datasize && idx + size < this.datasize {
-		err = ErrInvaildAgr
+		err = ErrBuffInvaildAgr
 		return
 	}
 	if idx + size > this.datasize {
-		err = ErrInvaildAgr
+		err = ErrBuffInvaildAgr
 		return
 	}
 	ret = this.buffer[idx:idx + size]
@@ -270,16 +282,5 @@ func (this *ByteBuffer) GetString(idx uint64,size uint64) (ret string,err error)
 func (this *ByteBuffer) Bytes() []byte {
 	return this.buffer[0:this.datasize]
 }
-
-/*
-func main() {
-	buff := NewByteBuffer()
-	buff.PutString(0,"hello")
-	ret,err := buff.GetString(0,5)
-	if nil == err {
-		fmt.Printf("%s\n",ret)
-	}
-}
-*/
 
 

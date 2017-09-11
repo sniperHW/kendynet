@@ -26,6 +26,7 @@ func main(){
 				if event.EventType == kendynet.EventTypeError {
 					event.Session.Close(event.Data.(error).Error(),0)
 				} else {
+					fmt.Printf("receive msg\n")
 					event.Session.SendMessage(event.Data.(kendynet.Message))
 				}
 			})
