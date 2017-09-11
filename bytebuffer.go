@@ -2,6 +2,7 @@ package kendynet
 
 import (
 	"fmt"
+	"reflect"
 )
 
 func IsPow2(size uint64) bool{
@@ -50,6 +51,7 @@ var (
 )
 
 func NewByteBuffer(arg ...interface{})(*ByteBuffer){
+	//fmt.Printf("arg count:%d\n",len(arg))
 	if len(arg) < 2 {
 		var size uint64
 		if len(arg) == 0 {
@@ -84,7 +86,12 @@ func NewByteBuffer(arg ...interface{})(*ByteBuffer){
 					buff := &ByteBuffer{buffer:make([]byte,len(arg[0].(string))),datasize:0,capacity:size,needcopy:false}
 					buff.PutString(0,arg[0].(string))
 					return buff
+				case []byte:
+					buff := &ByteBuffer{buffer:make([]byte,len(arg[0].([]byte))),datasize:0,capacity:size,needcopy:false}
+					buff.PutBytes(0,arg[0].([]byte))
+					return buff					
 				default:
+					fmt.Printf("invaild %s\n",reflect.TypeOf(arg[0]).String())
 					return nil
 			}
 		}
@@ -97,6 +104,7 @@ func NewByteBuffer(arg ...interface{})(*ByteBuffer){
 				bytes = arg[0].([]byte)
 				break
 			default:
+				fmt.Printf("invaild %s\n",reflect.TypeOf(arg[0]).String())
 				return nil
 		}
 		switch arg[1].(type) {
@@ -125,6 +133,7 @@ func NewByteBuffer(arg ...interface{})(*ByteBuffer){
 				size = (uint64)(arg[1].(uint64))
 				break
 			default:
+				fmt.Printf("invaild %s\n",reflect.TypeOf(arg[0]).String())
 				return nil
 		}
 		/*

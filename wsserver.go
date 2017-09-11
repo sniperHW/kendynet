@@ -16,6 +16,11 @@ type WSServer struct{
 }
 
 func NewWSServer(nettype string,service string,origin string,upgrader *websocket.Upgrader) (*WSServer,error) {
+
+	if upgrader == nil {
+		return nil,ErrWSInvaildUpgrader
+	}
+
 	tcpAddr,err := net.ResolveTCPAddr(nettype, service)
 	if err != nil{
 		return nil,err
@@ -24,7 +29,7 @@ func NewWSServer(nettype string,service string,origin string,upgrader *websocket
 	if err != nil{
 		return nil,err
 	}
-	server := &WSServer{listener:listener,origin:origin}
+	server := &WSServer{listener:listener,origin:origin,upgrader:upgrader}
 	return server,nil
 }
 
@@ -47,6 +52,7 @@ func (this *WSServer) Start(onNewClient func(StreamSession)) error {
     http.HandleFunc(this.origin, func (w http.ResponseWriter, r *http.Request) {
 		c, err := this.upgrader.Upgrade(w, r, nil)
 		if err != nil {
+			fmt.Printf("Upgrade failed:%s\n",err.Error())
 			return
 		}
 		sess := NewWSSocket(c)

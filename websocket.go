@@ -6,6 +6,7 @@ package kendynet
 
 
 import (
+	   "fmt"
 	   "net"
 	   "time"
 	   "sync"
@@ -65,8 +66,17 @@ func (this *WSMessage) GetString(idx uint64,size uint64) (string,error) {
 }
 
 func NewWSMessage(messageType int,optional ...interface{}) *WSMessage {
-	buff := NewByteBuffer(optional)
+	var buff *ByteBuffer
+	opLen := len(optional)
+	if opLen == 0 {
+		buff = NewByteBuffer()
+	} else if opLen == 1 {
+		buff = NewByteBuffer(optional[0])		
+	} else {
+		buff = NewByteBuffer(optional[0],optional[1])		
+	}
 	if nil == buff {
+		fmt.Printf("nil == buff\n")
 		return nil
 	}
 	return &WSMessage{messageType:messageType,buff:buff}
@@ -160,6 +170,9 @@ func (this *WebSocket) SendMessage(msg Message) error {
 	} else {
 		switch msg.(type) {
 			case *WSMessage:
+				if nil == msg.(*WSMessage) {
+					return ErrInvaildWSMessage
+				}
 				if nil != this.sendQue.Add(msg) {
 					return ErrSocketClose
 				}
@@ -244,7 +257,7 @@ func wsSendThreadFunc(session *WebSocket) {
 
 		for !localList.Empty() {
 			var err error
-			msg := localList.Pop().(WSMessage)
+			msg := localList.Pop().(*WSMessage)
 			if msg.messageType == BinaryMessage || msg.messageType == TextMessage {
 				session.conn.SetWriteDeadline(timeout)
 				err = session.conn.WriteMessage(msg.messageType,msg.Bytes())

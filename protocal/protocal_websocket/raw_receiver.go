@@ -15,6 +15,7 @@ func (this *WSSocketRawReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (
 	if err != nil {
 		return nil,err
 	} else {
+		//fmt.Printf("%d,%s\n",mt,(string)(message))
 		return kendynet.NewWSMessage(mt,message),nil
 	}
 }
