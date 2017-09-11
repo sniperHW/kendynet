@@ -1,7 +1,6 @@
 package protocal_stream_socket
 
 import (
-	"net"
 	"github.com/sniperHW/kendynet"
 	//"fmt"
 )
@@ -27,7 +26,7 @@ func (this *StreamSocketBinaryReceiver) ReceiveAndUnpack(sess kendynet.StreamSes
 
 	idx := this.buffsize - this.space
 
-	n,err := sess.GetUnderConn().(net.Conn).Read(this.buffer[idx:])
+	n,err := sess.(*kendynet.StreamSocket).Read(this.buffer[idx:])
 	if err != nil {
 		return nil,err
 	}

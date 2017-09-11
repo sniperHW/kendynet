@@ -267,15 +267,9 @@ func sendThreadFunc(session *StreamSocket) {
 
 		closed := session.sendQue.Get(localList)
 
-		if closed {
-			if session.closeDeadline.IsZero() {
-				//关闭，丢弃所有待发送数据
-				return
-			} else {
-				timeout = session.closeDeadline
-			}
-		} else {
-			timeout = time.Now().Add(session.sendTimeout)				
+		if closed && session.closeDeadline.IsZero() {
+			//关闭，丢弃所有待发送数据
+			return
 		}
 		
 		for !localList.Empty() {
@@ -289,9 +283,15 @@ func sendThreadFunc(session *StreamSocket) {
 			}
 		}
 
-		if 0 == writer.Buffered() && closed {
+		if closed && 0 == writer.Buffered() {
 			//没有数据需要发送了,退出
 			return
+		}
+
+		if closed {
+			timeout = session.closeDeadline
+		} else {
+			timeout = time.Now().Add(session.sendTimeout)				
 		}
 
 		if err := doSend(session,writer,timeout); err != nil {
@@ -347,6 +347,10 @@ func NewStreamSocket(conn net.Conn)(StreamSession){
 
 func (this *StreamSocket) GetUnderConn() interface{} {
 	return this.conn
+}
+
+func (this *StreamSocket) Read(b []byte) (int, error) {
+	return this.conn.Read(b)
 }
 
 

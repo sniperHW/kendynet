@@ -4,19 +4,20 @@ import(
 	"fmt"
 	"net/http"
 	"github.com/sniperHW/kendynet"
-	"github.com/gorilla/websocket"
+	"github.com/sniperHW/kendynet/websocket"
+	gorilla "github.com/gorilla/websocket"
 	"github.com/sniperHW/kendynet/protocal/protocal_websocket"		
 )
 
 func main(){
 
-	upgrader := &websocket.Upgrader{}
+	upgrader := &gorilla.Upgrader{}
 
 	upgrader.CheckOrigin = func(r *http.Request) bool {
 		// allow all connections by default
 		return true
 	}
-	server,err := kendynet.NewWSServer("tcp4","127.0.0.1:8010","/echo",upgrader)
+	server,err := websocket.NewServer("tcp4","127.0.0.1:8010","/echo",upgrader)
 	if server != nil {
 		fmt.Printf("server running\n")
 		err = server.Start(func(session kendynet.StreamSession) {

@@ -4,6 +4,7 @@ import(
 	"fmt"
 	"os"
 	"strconv"
+	"github.com/sniperHW/kendynet/tcp"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/protocal/protocal_stream_socket"		
 )
@@ -22,7 +23,7 @@ func main(){
 		return
 	}
 
-	client,err := kendynet.NewTcpClient("tcp4",service)
+	client,err := tcp.NewClient("tcp4",service)
 
 	if err != nil {
 		fmt.Printf("NewTcpClient failed:%s\n",err.Error())
@@ -42,7 +43,6 @@ func main(){
 			})
 			session.SetEventCallBack(func (event *kendynet.Event) {
 				if event.EventType == kendynet.EventTypeError {
-					session = nil
 					event.Session.Close(event.Data.(error).Error(),0)
 				} else {
 					fmt.Printf("%s\n",(string)(event.Data.(kendynet.Message).Bytes()))

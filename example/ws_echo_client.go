@@ -6,7 +6,8 @@ import(
 	"strconv"
 	"net/url"
 	"github.com/sniperHW/kendynet"
-	"github.com/gorilla/websocket"
+	"github.com/sniperHW/kendynet/websocket"
+	gorilla "github.com/gorilla/websocket"
 	"github.com/sniperHW/kendynet/protocal/protocal_websocket"		
 )
 
@@ -26,7 +27,7 @@ func main(){
 
 	u := url.URL{Scheme: "ws", Host: service, Path: "/echo"}
 
-	client,err := kendynet.NewWSClient(u,nil,websocket.DefaultDialer)
+	client,err := websocket.NewClient(u,nil,gorilla.DefaultDialer)
 
 	if err != nil {
 		fmt.Printf("NewWSClient failed:%s\n",err.Error())
@@ -44,7 +45,6 @@ func main(){
 			})
 			session.SetEventCallBack(func (event *kendynet.Event) {
 				if event.EventType == kendynet.EventTypeError {
-					session = nil
 					event.Session.Close(event.Data.(error).Error(),0)
 				} else {
 					fmt.Printf("%s\n",(string)(event.Data.(kendynet.Message).Bytes()))
@@ -57,7 +57,7 @@ func main(){
 			})
 			session.Start()
 			//send the first messge
-			msg := kendynet.NewWSMessage(kendynet.WSTextMessage , "hello")
+			msg := websocket.NewMessage(websocket.WSTextMessage , "hello")
 			err := session.SendMessage(msg)
 			if err != nil {
 				fmt.Printf("SendMessage error:%s",err.Error())

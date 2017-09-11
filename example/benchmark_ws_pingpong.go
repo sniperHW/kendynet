@@ -9,8 +9,9 @@ import(
 	"github.com/sniperHW/kendynet"
 	"net/http"
 	"net/url"
-	"github.com/gorilla/websocket"
-	"github.com/sniperHW/kendynet/protocal/protocal_websocket"		
+	gorilla "github.com/gorilla/websocket"
+	"github.com/sniperHW/kendynet/protocal/protocal_websocket"	
+	"github.com/sniperHW/kendynet/websocket"	
 )
 
 func server(service string) {
@@ -31,13 +32,13 @@ func server(service string) {
 		}
 	}()
 
-	upgrader := &websocket.Upgrader{}
+	upgrader := &gorilla.Upgrader{}
 
 	upgrader.CheckOrigin = func(r *http.Request) bool {
 		// allow all connections by default
 		return true
 	}
-	server,err := kendynet.NewWSServer("tcp4",service,"/echo",upgrader)
+	server,err := websocket.NewServer("tcp4",service,"/echo",upgrader)
 	if server != nil {
 		fmt.Printf("server running on:%s\n",service)
 		err = server.Start(func(session kendynet.StreamSession) {
@@ -72,7 +73,7 @@ func client(service string,count int) {
 	
 	u := url.URL{Scheme: "ws", Host: service, Path: "/echo"}
 
-	client,err := kendynet.NewWSClient(u,nil,websocket.DefaultDialer)
+	client,err := websocket.NewClient(u,nil,gorilla.DefaultDialer)
 	
 	if err != nil {
 		fmt.Printf("NewWSClient failed:%s\n",err.Error())
@@ -90,7 +91,6 @@ func client(service string,count int) {
 			})
 			session.SetEventCallBack(func (event *kendynet.Event) {
 				if event.EventType == kendynet.EventTypeError {
-					session = nil
 					event.Session.Close(event.Data.(error).Error(),0)
 				} else {
 					event.Session.SendMessage(event.Data.(kendynet.Message))
@@ -98,7 +98,7 @@ func client(service string,count int) {
 			})
 			session.Start()
 			//send the first messge
-			msg := kendynet.NewWSMessage(kendynet.WSTextMessage , "hello")
+			msg := websocket.NewMessage(websocket.WSTextMessage , "hello")
 			session.SendMessage(msg)
 		}
 	}

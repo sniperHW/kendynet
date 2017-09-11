@@ -7,6 +7,7 @@ import(
 	"fmt"
 	"os"
 	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/tcp"
 	"github.com/sniperHW/kendynet/protocal/protocal_stream_socket"		
 )
 
@@ -28,7 +29,7 @@ func server(service string) {
 		}
 	}()
 
-	server,err := kendynet.NewTcpServer("tcp4",service)
+	server,err := tcp.NewServer("tcp4",service)
 	if server != nil {
 		fmt.Printf("server running on:%s\n",service)
 		err = server.Start(func(session kendynet.StreamSession) {
@@ -61,7 +62,7 @@ func server(service string) {
 
 func client(service string,count int) {
 	
-	client,err := kendynet.NewTcpClient("tcp4",service)
+	client,err := tcp.NewClient("tcp4",service)
 
 	if err != nil {
 		fmt.Printf("NewTcpClient failed:%s\n",err.Error())
@@ -81,7 +82,6 @@ func client(service string,count int) {
 			})
 			session.SetEventCallBack(func (event *kendynet.Event) {
 				if event.EventType == kendynet.EventTypeError {
-					session = nil
 					event.Session.Close(event.Data.(error).Error(),0)
 				} else {
 					event.Session.SendMessage(event.Data.(kendynet.Message))

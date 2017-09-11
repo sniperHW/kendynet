@@ -5,6 +5,7 @@ import(
 	"os"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/protocal/protocal_stream_socket"		
+	"github.com/sniperHW/kendynet/tcp"
 )
 
 func main(){
@@ -14,7 +15,7 @@ func main(){
 		return
 	}
 	service := os.Args[1]
-	server,err := kendynet.NewTcpServer("tcp4",service)
+	server,err := tcp.NewServer("tcp4",service)
 	if server != nil {
 		fmt.Printf("server running on:%s\n",service)
 		err = server.Start(func(session kendynet.StreamSession) {
