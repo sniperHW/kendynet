@@ -45,11 +45,6 @@ type ByteBuffer struct {
 	needcopy bool    //标记是否执行写时拷贝
 }
 
-var (
-	ErrBuffMaxSizeExceeded     = fmt.Errorf("bytebuffer: Max Buffer Size Exceeded")
-	ErrBuffInvaildAgr          = fmt.Errorf("bytebuffer: Invaild Idx or size")
-)
-
 func NewByteBuffer(arg ...interface{})(*ByteBuffer){
 	if len(arg) < 2 {
 		var size uint64
