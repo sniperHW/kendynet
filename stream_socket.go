@@ -6,7 +6,8 @@ package kendynet
 
 import (
 	   "net"
-	  // "fmt"
+	   "fmt"
+	   "reflect"
 	   "time"
 	   "sync"
 	   "bufio"
@@ -63,6 +64,8 @@ func (this *StreamSocket) Close(reason string, timeout time.Duration) error {
 
 	this.closeReason = reason
 	this.closed = true
+
+	timeout = timeout * time.Second
 
 	if this.started {
 		if timeout == 0 {
@@ -150,7 +153,6 @@ func (this *StreamSocket) SendMessage(msg Message) error {
 func recvThreadFunc(session *StreamSocket) {
 
 	defer func() {
-		session.conn.Close()
 		session.mutex.Lock()
 		session.recvStop = true
 		if session.sendStop && nil != session.onClose {
@@ -159,13 +161,14 @@ func recvThreadFunc(session *StreamSocket) {
 		session.mutex.Unlock()
 	}()
 
-	for !session.closed {
+	for !session.sendQue.Closed() {
 		if session.recvTimeout > 0 {
 			session.conn.SetReadDeadline(time.Now().Add(session.recvTimeout))
 		}
 		
 		p,err := session.receiver.ReceiveAndUnpack(session)
-		if session.closed {
+		if session.sendQue.Closed() {
+			//上层已经调用关闭，所有事件都不再传递上去
 			break
 		}
 
@@ -248,8 +251,8 @@ func writeToWriter(writer *bufio.Writer,buffer []byte) error {
 
 func sendThreadFunc(session *StreamSocket) {
 	defer func() {
-		session.conn.Close()
 		session.mutex.Lock()
+		session.conn.Close()
 		session.sendStop = true
 		if session.recvStop && nil != session.onClose {
 			session.onClose(session,session.closeReason)
@@ -275,7 +278,7 @@ func sendThreadFunc(session *StreamSocket) {
 		for !localList.Empty() {
 			msg := localList.Pop().(Message)
 			if msg.Bytes() != nil {
-				if err := writeToWriter(writer,msg.Bytes()); err != nil {
+				if err := writeToWriter(writer,msg.Bytes()); err != nil && !closed {
 					event := &Event{Session:session,EventType:EventTypeError,Data:err}
 					session.onEvent(event)
 					return
@@ -338,6 +341,17 @@ func (this *StreamSocket) Start() error {
 }
 
 func NewStreamSocket(conn net.Conn)(StreamSession){
+
+	switch conn.(type) {
+		case *net.TCPConn:
+			break
+		case *net.UnixConn:
+			break
+		default:
+			fmt.Printf("unsupport conn type:%s\n",reflect.TypeOf(conn).String())
+			return nil
+	}
+
 	session 			:= new(StreamSocket)
 	session.conn 		 = conn
 	session.sendQue      = util.NewBlockQueue()

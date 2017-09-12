@@ -17,7 +17,4 @@ var (
     ErrNoReceiver              = fmt.Errorf("receiver == nil")
     ErrInvaildObject           = fmt.Errorf("object == nil")
     ErrInvaildEncoder          = fmt.Errorf("encoder == nil")
-    ErrInvaildWSMessage        = fmt.Errorf("invaild websocket message")
-    ErrWSPeerClose             = fmt.Errorf("receive websocket peer close")
-    ErrWSInvaildUpgrader       = fmt.Errorf("upgrader == nil")
 )

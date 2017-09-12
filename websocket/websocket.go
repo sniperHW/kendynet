@@ -100,8 +100,6 @@ type WebSocket struct {
 	onClose           func (kendynet.StreamSession,string)
 	onEvent           func (*kendynet.Event)
 	closeReason       string
-	closeCode         int
-	closeText         string
 }
 
 func (this *WebSocket) SetUserData(ud interface{}) {
@@ -172,14 +170,14 @@ func (this *WebSocket) SendMessage(msg kendynet.Message) error {
 		switch msg.(type) {
 			case *WSMessage:
 				if nil == msg.(*WSMessage) {
-					return kendynet.ErrInvaildWSMessage
+					return ErrInvaildWSMessage
 				}
 				if nil != this.sendQue.Add(msg) {
 					return kendynet.ErrSocketClose
 				}
 				break
 			default:
-				return kendynet.ErrInvaildWSMessage
+				return ErrInvaildWSMessage
 		}
 	}
 	return nil
@@ -188,7 +186,6 @@ func (this *WebSocket) SendMessage(msg kendynet.Message) error {
 func wsRecvThreadFunc(session *WebSocket) {
 
 	defer func() {
-		session.conn.Close()
 		session.mutex.Lock()
 		session.recvStop = true
 		if session.sendStop && nil != session.onClose {
@@ -197,13 +194,13 @@ func wsRecvThreadFunc(session *WebSocket) {
 		session.mutex.Unlock()
 	}()
 
-	for !session.closed {
+	for !session.sendQue.Closed() {
 		if session.recvTimeout > 0 {
 			session.conn.SetReadDeadline(time.Now().Add(session.recvTimeout))
 		}
 		
 		p,err := session.receiver.ReceiveAndUnpack(session)
-		if session.closed {
+		if session.sendQue.Closed() {
 			break
 		}
 
@@ -227,12 +224,12 @@ func wsRecvThreadFunc(session *WebSocket) {
 
 func wsSendThreadFunc(session *WebSocket) {
 	defer func() {
-		session.conn.Close()
 		session.mutex.Lock()
+		session.conn.Close()
 		session.sendStop = true
 		if session.recvStop && nil != session.onClose {
 			session.onClose(session,session.closeReason)
-		} 
+		}
 		session.mutex.Unlock()
 	}()
 
@@ -244,6 +241,8 @@ func wsSendThreadFunc(session *WebSocket) {
 	for {
 
 		closed := session.sendQue.Get(localList)
+
+		//fmt.Printf("localList size:%d\n",localList.Len())
 
 		if closed {
 			if session.closeDeadline.IsZero() {
@@ -259,20 +258,30 @@ func wsSendThreadFunc(session *WebSocket) {
 		for !localList.Empty() {
 			var err error
 			msg := localList.Pop().(*WSMessage)
+			//fmt.Printf("message type:%d\n",msg.messageType)
 			if msg.messageType == WSBinaryMessage || msg.messageType == WSTextMessage {
 				session.conn.SetWriteDeadline(timeout)
 				err = session.conn.WriteMessage(msg.messageType,msg.Bytes())
 			} else if msg.messageType == WSCloseMessage || msg.messageType == WSPingMessage || msg.messageType == WSPingMessage {
 				err = session.conn.WriteControl(msg.messageType,msg.Bytes(),timeout)
 				if msg.messageType == WSCloseMessage {
+					if err == nil {
+						fmt.Printf("send WSCloseMessage ok\n")
+					} else {
+						fmt.Printf("send WSCloseMessage failed:%s\n",err.Error())
+					}
 					return
 				}
 			}
 			if err != nil {
-				event := &kendynet.Event{Session:session,EventType:kendynet.EventTypeError,Data:err}
-				session.onEvent(event)
-				if session.sendQue.Closed() {
-					return
+				if closed {
+					return 
+				} else {
+					event := &kendynet.Event{Session:session,EventType:kendynet.EventTypeError,Data:err}
+					session.onEvent(event)
+					if session.sendQue.Closed() {
+						break
+					}
 				}
 			}
 		}
@@ -320,31 +329,43 @@ func (this *WebSocket) Close(reason string, timeout time.Duration) error {
 		return kendynet.ErrSocketClose
 	}
 
+	defer func(){
+		this.sendQue.Close()
+	}()
+
 	this.closeReason = reason
 	this.closed = true
+
+	timeout = timeout * time.Second
 
 	if this.started {
 		if timeout == 0 {
 			underConn := this.conn.UnderlyingConn()
 			switch underConn.(type) {
-			case *net.TCPConn:
-				underConn.(*net.TCPConn).CloseWrite()
-				break
-			case *net.UnixConn:
-				underConn.(*net.UnixConn).CloseWrite()
-				break
-			default:
-				underConn.Close()
-			}
+				case *net.TCPConn:
+					underConn.(*net.TCPConn).CloseWrite()
+					break
+				case *net.UnixConn:
+					underConn.(*net.UnixConn).CloseWrite()
+					break
+				default:
+					this.conn.Close()
+			}			
 		} else {
-			this.closeDeadline = time.Now().Add(timeout) 
-			this.SendMessage(NewMessage(WSCloseMessage,reason))			
+			this.closeDeadline = time.Now().Add(timeout)
+			message := gorilla.FormatCloseMessage(1000, reason)
+			err := this.sendQue.Add(NewMessage(WSCloseMessage,message))
+			if err != nil {
+				fmt.Printf("send close message error :%s\n",err.Error())
+				this.conn.Close()
+			}			
 		}
 	} else {
 		if timeout > 0 {
 			//timeout > 0执行优雅关闭
 			this.closeDeadline = time.Now().Add(timeout)
-			err := this.SendMessage(NewMessage(WSCloseMessage,reason))
+			message := gorilla.FormatCloseMessage(1000, reason)
+			err := this.sendQue.Add(NewMessage(WSCloseMessage,message))
 			if err == nil {
 				go wsSendThreadFunc(this)
 			} else {
@@ -363,7 +384,7 @@ func (this *WebSocket) Close(reason string, timeout time.Duration) error {
 			return nil			
 		}
 	}	
-	this.sendQue.Close()
+
 	return nil
 }
 
@@ -374,9 +395,7 @@ func NewWSSocket(conn *gorilla.Conn)(kendynet.StreamSession){
 	session.sendQue      = util.NewBlockQueue()
 	session.sendTimeout  = kendynet.DefaultSendTimeout * time.Second
 	session.conn.SetCloseHandler(func(code int, text string) error {
-		session.closeCode = code
-		session.closeText = text
-		return ErrWSPeerClose
+		return fmt.Errorf("peer close reason[%s]",text)
 	})
 	return session
 }

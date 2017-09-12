@@ -8,7 +8,8 @@ import(
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/websocket"
 	gorilla "github.com/gorilla/websocket"
-	"github.com/sniperHW/kendynet/protocal/protocal_websocket"		
+	"github.com/sniperHW/kendynet/protocal/protocal_websocket"
+	"time"		
 )
 
 func main(){
@@ -56,13 +57,14 @@ func main(){
 				}
 			})
 			session.Start()
-			//send the first messge
-			msg := websocket.NewMessage(websocket.WSTextMessage , "hello")
-			err := session.SendMessage(msg)
+			//send the first message
+			err := session.SendMessage(websocket.NewMessage(websocket.WSTextMessage , "hello"))
 			if err != nil {
 				fmt.Printf("SendMessage error:%s",err.Error())
 				session.Close(err.Error(),0)
 			}
+			time.Sleep(time.Second)
+			session.Close("active close",1)
 		}
 	}
 

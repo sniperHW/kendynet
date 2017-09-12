@@ -21,7 +21,6 @@ func main(){
 	if server != nil {
 		fmt.Printf("server running\n")
 		err = server.Start(func(session kendynet.StreamSession) {
-			fmt.Printf("new client\n")
 			session.SetReceiver(protocal_websocket.NewRawReceiver())
 			session.SetCloseCallBack(func (sess kendynet.StreamSession, reason string) {
 				fmt.Printf("client close:%s\n",reason)
@@ -30,7 +29,6 @@ func main(){
 				if event.EventType == kendynet.EventTypeError {
 					event.Session.Close(event.Data.(error).Error(),0)
 				} else {
-					fmt.Printf("recvmsg\n")
 					err := event.Session.SendMessage(event.Data.(kendynet.Message))
 					if err != nil {
 						fmt.Printf("SendMessage error:%s",err.Error())
