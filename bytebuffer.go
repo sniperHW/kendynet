@@ -3,6 +3,7 @@ package kendynet
 import (
 	"fmt"
 	"reflect"
+	"encoding/binary"
 )
 
 func IsPow2(size uint64) bool{
@@ -237,6 +238,73 @@ func (this *ByteBuffer) PutBytes(idx uint64,value []byte)(error){
 	return nil
 }
 
+func (this *ByteBuffer) PutString(idx uint64,value string)(error){
+	sizeneed := (uint64)(len(value))
+	err := this.checkCapacity(idx,sizeneed)
+	if err != nil {
+		return err
+	}
+	copy(this.buffer[idx:],value[:sizeneed])
+	if idx + sizeneed > this.datasize {
+		this.datasize = idx + sizeneed
+	}
+	return nil
+}
+
+
+func (this *ByteBuffer) PutByte(idx uint64,value byte)(error){
+	sizeneed := (uint64)(1)
+	err := this.checkCapacity(idx,sizeneed)
+	if err != nil {
+		return err
+	}
+	this.buffer[idx] = value
+	this.datasize += sizeneed
+	return nil
+}
+
+func (this *ByteBuffer) PutUint16(idx uint64,value uint16)(error){
+	sizeneed := (uint64)(2)
+	err := this.checkCapacity(idx,sizeneed)
+	if err != nil {
+		return err
+	}
+	binary.BigEndian.PutUint16(this.buffer[idx:idx+sizeneed],value)
+	this.datasize += sizeneed
+	return nil
+}
+
+func (this *ByteBuffer) PutUint32(idx uint64,value uint32)(error){
+	sizeneed := (uint64)(4)
+	err := this.checkCapacity(idx,sizeneed)
+	if err != nil {
+		return err
+	}
+	binary.BigEndian.PutUint32(this.buffer[idx:idx+sizeneed],value)
+	this.datasize += sizeneed
+	return nil
+}
+
+func (this *ByteBuffer) PutUint64(idx uint64,value uint64)(error){
+	sizeneed := (uint64)(8)
+	err := this.checkCapacity(idx,sizeneed)
+	if err != nil {
+		return err
+	}
+	binary.BigEndian.PutUint64(this.buffer[idx:idx+sizeneed],value)
+	this.datasize += sizeneed
+	return nil
+}
+
+func (this *ByteBuffer) GetString(idx uint64,size uint64) (ret string,err error) {
+	var bytes []byte
+	bytes,err = this.GetBytes(idx,size)
+	if bytes != nil {
+		ret = string(bytes)
+	}
+	return
+}
+
 func (this *ByteBuffer) GetBytes(idx uint64,size uint64) (ret []byte,err error) {
 	ret = nil
 	err = nil
@@ -252,26 +320,88 @@ func (this *ByteBuffer) GetBytes(idx uint64,size uint64) (ret []byte,err error) 
 	return
 }
 
-func (this *ByteBuffer) PutString(idx uint64,value string)(error){
-	sizeneed := (uint64)(len(value))
-	err := this.checkCapacity(idx,sizeneed)
-	if err != nil {
-		return err
+func (this *ByteBuffer) GetByte(idx uint64)(ret byte,err error){
+	err = nil
+	size := (uint64)(1)
+	if size >= this.datasize && idx + size < this.datasize {
+		err = ErrBuffInvaildAgr
+		return
 	}
-	copy(this.buffer[idx:],value[:sizeneed])
-	if idx + sizeneed > this.datasize {
-		this.datasize = idx + sizeneed
+	if idx + size > this.datasize {
+		err = ErrBuffInvaildAgr
+		return
 	}
-	return nil
+	ret = this.buffer[idx]
+	return
 }
 
-func (this *ByteBuffer) GetString(idx uint64,size uint64) (ret string,err error) {
-	var bytes []byte
-	bytes,err = this.GetBytes(idx,size)
-	if bytes != nil {
-		ret = string(bytes)
+func (this *ByteBuffer) GetUint16(idx uint64)(ret uint16,err error){
+	err = nil
+	size := (uint64)(2)
+	if size >= this.datasize && idx + size < this.datasize {
+		err = ErrBuffInvaildAgr
+		return
 	}
+	if idx + size > this.datasize {
+		err = ErrBuffInvaildAgr
+		return
+	}
+	ret = binary.BigEndian.Uint16(this.buffer[idx:idx+size])
 	return
+}
+
+func (this *ByteBuffer) GetUint32(idx uint64)(ret uint32,err error){
+	err = nil
+	size := (uint64)(4)
+	if size >= this.datasize && idx + size < this.datasize {
+		err = ErrBuffInvaildAgr
+		return
+	}
+	if idx + size > this.datasize {
+		err = ErrBuffInvaildAgr
+		return
+	}
+	ret = binary.BigEndian.Uint32(this.buffer[idx:idx+size])
+	return
+}
+
+func (this *ByteBuffer) GetUint64(idx uint64)(ret uint64,err error){
+	err = nil
+	size := (uint64)(8)
+	if size >= this.datasize && idx + size < this.datasize {
+		err = ErrBuffInvaildAgr
+		return
+	}
+	if idx + size > this.datasize {
+		err = ErrBuffInvaildAgr
+		return
+	}
+	ret = binary.BigEndian.Uint64(this.buffer[idx:idx+size])
+	return
+}
+
+func (this *ByteBuffer) AppendBytes(value []byte)(error) {
+	return this.PutBytes(this.datasize,value)
+}
+
+func (this *ByteBuffer) AppendString(value string)(error) {
+	return this.PutString(this.datasize,value)
+}
+
+func (this *ByteBuffer) AppendByte(value byte)(error) {
+	return this.PutByte(this.datasize,value)
+}
+
+func (this *ByteBuffer) AppendUint16(value uint16)(error) {
+	return this.PutUint16(this.datasize,value)
+}
+
+func (this *ByteBuffer) AppendUint32(value uint32)(error) {
+	return this.PutUint32(this.datasize,value)
+}
+
+func (this *ByteBuffer) AppendUint64(value uint64)(error) {
+	return this.PutUint64(this.datasize,value)
 }
 
 func (this *ByteBuffer) Bytes() []byte {
