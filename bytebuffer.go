@@ -65,6 +65,9 @@ func NewByteBuffer(arg ...interface{})(*ByteBuffer){
 				case uint16: 
 					size = (uint64)(arg[0].(uint16))
 					break
+				case int: 
+					size = (uint64)(arg[0].(int))
+					break
 				case int32: 
 					size = (uint64)(arg[0].(int32))
 					break
@@ -103,6 +106,9 @@ func NewByteBuffer(arg ...interface{})(*ByteBuffer){
 			}
 		}
 		size = SizeofPow2(size)
+		if size < 128 {
+			size = 128
+		}
 		return &ByteBuffer{buffer:make([]byte,size),datasize:0,capacity:size,needcopy:false}
 	} else if len(arg) == 2 {
 		var bytes []byte
@@ -127,6 +133,9 @@ func NewByteBuffer(arg ...interface{})(*ByteBuffer){
 				break
 			case uint16: 
 				size = (uint64)(arg[1].(uint16))
+				break
+			case int: 
+				size = (uint64)(arg[0].(int))
 				break
 			case int32: 
 				size = (uint64)(arg[1].(int32))
@@ -259,7 +268,9 @@ func (this *ByteBuffer) PutByte(idx uint64,value byte)(error){
 		return err
 	}
 	this.buffer[idx] = value
-	this.datasize += sizeneed
+	if idx + sizeneed > this.datasize {
+		this.datasize = idx + sizeneed
+	}
 	return nil
 }
 
@@ -270,7 +281,9 @@ func (this *ByteBuffer) PutUint16(idx uint64,value uint16)(error){
 		return err
 	}
 	binary.BigEndian.PutUint16(this.buffer[idx:idx+sizeneed],value)
-	this.datasize += sizeneed
+	if idx + sizeneed > this.datasize {
+		this.datasize = idx + sizeneed
+	}
 	return nil
 }
 
@@ -281,7 +294,9 @@ func (this *ByteBuffer) PutUint32(idx uint64,value uint32)(error){
 		return err
 	}
 	binary.BigEndian.PutUint32(this.buffer[idx:idx+sizeneed],value)
-	this.datasize += sizeneed
+	if idx + sizeneed > this.datasize {
+		this.datasize = idx + sizeneed
+	}
 	return nil
 }
 
@@ -292,7 +307,9 @@ func (this *ByteBuffer) PutUint64(idx uint64,value uint64)(error){
 		return err
 	}
 	binary.BigEndian.PutUint64(this.buffer[idx:idx+sizeneed],value)
-	this.datasize += sizeneed
+	if idx + sizeneed > this.datasize {
+		this.datasize = idx + sizeneed
+	}
 	return nil
 }
 
@@ -405,7 +422,7 @@ func (this *ByteBuffer) AppendUint64(value uint64)(error) {
 }
 
 func (this *ByteBuffer) Bytes() []byte {
-	return this.buffer[0:this.datasize]
+	return this.buffer[:this.datasize]
 }
 
 
