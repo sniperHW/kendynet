@@ -4,7 +4,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"fmt"
 	"github.com/sniperHW/kendynet/example/testproto"
-	"github.com/sniperHW/kendynet/util/pb"
+	"github.com/sniperHW/kendynet/pb"
 )
 
 func main() {

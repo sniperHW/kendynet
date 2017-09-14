@@ -10,13 +10,15 @@ import (
 
 const (
 	PBHeaderSize uint64 = 4
-	PBIdSize uint64 = 4
+	pbIdSize uint64 = 4
 )
 
-var id uint32 = 1
-var nameToTypeID map[string]uint32 = make(map[string]uint32)
-var idToMeta map[uint32]reflect.Type = make(map[uint32]reflect.Type)
-var mutex *sync.Mutex = new(sync.Mutex)
+var (
+	id = uint32(1)
+ 	nameToTypeID = map[string]uint32{}
+ 	idToMeta = map[uint32]reflect.Type{}
+ 	mutex = sync.Mutex{}
+ )
 
 func newMessage(id uint32) (msg proto.Message,err error){
     defer func(){
@@ -74,7 +76,7 @@ func Encode(o interface{},maxMsgSize uint64) (r *kendynet.ByteBuffer,e error) {
 		return
 	}
 
-	totalLen := PBHeaderSize + PBIdSize + dataLen
+	totalLen := PBHeaderSize + pbIdSize + dataLen
 
 	buff := kendynet.NewByteBuffer(totalLen)
 	//写payload大小
@@ -128,9 +130,9 @@ func Decode(buff []byte,start uint64,end uint64,maxMsgSize uint64) (proto.Messag
 		return nil,0,fmt.Errorf("unregister type:%d",typeID)
 	}
 
-	s += PBIdSize
+	s += pbIdSize
 
-	pbDataLen := totalPacketSize - PBHeaderSize - PBIdSize
+	pbDataLen := totalPacketSize - PBHeaderSize - pbIdSize
 
 	pbData,_ := reader.GetBytes(s,pbDataLen)
 

@@ -2,10 +2,8 @@ package protocal_stream_socket
 
 import (
 	"github.com/sniperHW/kendynet"
-//	"github.com/golang/protobuf/proto"
-	"github.com/sniperHW/kendynet/util/pb"
+	"github.com/sniperHW/kendynet/pb"
 //	"fmt"
-//	"encoding/binary"
 )
 
 type PBReceiver struct {
@@ -35,20 +33,12 @@ func NewPBReceiver(maxMsgSize uint64) (*PBReceiver) {
 }
 
 func (this *PBReceiver) unPack() (interface{},error) {
-
-	if this.unpackSize < pb.PBHeaderSize {
-		return nil,nil
-	}
-
 	msg,dataLen,err := pb.Decode(this.buffer,this.unpackIdx,this.unpackIdx + this.unpackSize,this.maxpacket)
-
 	if dataLen > 0 {
 		this.unpackIdx += dataLen
 		this.unpackSize -= dataLen
 	}
-
 	return msg,err
-
 }
 
 func (this *PBReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface{},error) {

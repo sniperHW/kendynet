@@ -2,10 +2,7 @@ package protocal_stream_socket
 
 import (
 	"github.com/sniperHW/kendynet"
-	//"github.com/golang/protobuf/proto"
-	"github.com/sniperHW/kendynet/util/pb"
-	//"fmt"
-	//"reflect"
+	"github.com/sniperHW/kendynet/pb"
 )
 
 type PbEncoder struct {

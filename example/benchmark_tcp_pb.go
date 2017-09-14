@@ -11,7 +11,7 @@ import(
 	"github.com/sniperHW/kendynet/protocal/protocal_stream_socket"		
 	"github.com/sniperHW/kendynet/example/testproto"
 	"github.com/golang/protobuf/proto"
-	"github.com/sniperHW/kendynet/util/pb"
+	"github.com/sniperHW/kendynet/pb"
 )
 
 func server(service string) {
