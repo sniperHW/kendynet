@@ -5,15 +5,60 @@ import (
 	"github.com/sniperHW/kendynet"
 	"fmt"
 	"reflect"
-
+	"sync"
 )
 
 const (
 	PBHeaderSize uint64 = 4
-	PBStringLenSize uint64 = 2
+	PBIdSize uint64 = 4
 )
 
+var id uint32 = 1
+var nameToTypeID map[string]uint32 = make(map[string]uint32)
+var idToMeta map[uint32]reflect.Type = make(map[uint32]reflect.Type)
+var mutex *sync.Mutex = new(sync.Mutex)
+
+func newMessage(id uint32) (msg proto.Message,err error){
+    defer func(){
+   		mutex.Unlock()
+    }()
+    mutex.Lock()
+   if mt,ok := idToMeta[id];ok{
+          msg = reflect.New(mt.Elem()).Interface().(proto.Message)
+   } else{
+          err = fmt.Errorf("not found %d",id)
+   }
+   return
+}
+
+//根据名字注册实例
+func Register(msg proto.Message) (err error) {
+    defer func(){
+   		mutex.Unlock()
+    }()
+    mutex.Lock()
+	tt := reflect.TypeOf(msg)
+	name := tt.String()
+
+	if _,ok := nameToTypeID[name];ok {
+		err = fmt.Errorf("%s already register",name)
+		return
+	}
+
+    nameToTypeID[name] = id
+    idToMeta[id] = tt
+    id++
+    return nil
+}
+
+
 func Encode(o interface{},maxMsgSize uint64) (r *kendynet.ByteBuffer,e error) {
+    mutex.Lock()
+	typeID,ok := nameToTypeID[reflect.TypeOf(o).String()]
+	mutex.Unlock()
+	if !ok {
+		e = fmt.Errorf("unregister type:%s",reflect.TypeOf(o).String())
+	}
 
 	msg := o.(proto.Message)
 
@@ -23,36 +68,22 @@ func Encode(o interface{},maxMsgSize uint64) (r *kendynet.ByteBuffer,e error) {
 		return
 	}
 
-	dataLen := (uint64)(len(data))
+	dataLen := uint64(len(data))
 	if dataLen  > maxMsgSize {
 		e = fmt.Errorf("message size limite maxMsgSize[%d],msg payload[%d]",maxMsgSize,dataLen)
 		return
 	}
 
-	msgName := proto.MessageName(msg)
-	msgNameLen := (uint64)(len(msgName))
-	totalLen := PBHeaderSize + PBStringLenSize + msgNameLen + dataLen
+	totalLen := PBHeaderSize + PBIdSize + dataLen
 
 	buff := kendynet.NewByteBuffer(totalLen)
 	//写payload大小
-	buff.AppendUint32((uint32)(totalLen - PBHeaderSize))
-	//写类型名大小
-	buff.AppendUint16((uint16)(msgNameLen))
-	//写类型名
-	buff.AppendString(msgName)
+	buff.AppendUint32(uint32(totalLen - PBHeaderSize))
+	//写类型ID
+	buff.AppendUint32(typeID)
 	//写数据
 	buff.AppendBytes(data)
 	r = buff
-	return
-}
-
-func newMessage(name string) (msg proto.Message,err error){
-	mt := proto.MessageType(name)
-	if mt == nil {
-		err = fmt.Errorf("not found %s struct",name)
-	}else {
-		msg = reflect.New(mt.Elem()).Interface().(proto.Message)
-	}
 	return
 }
 
@@ -66,21 +97,22 @@ func Decode(buff []byte,start uint64,end uint64,maxMsgSize uint64) (proto.Messag
 
 	reader := kendynet.NewByteBuffer(buff[start:end],dataLen)
 
-	s := (uint64)(0)
+	s := uint64(0)
 
-	size,err := reader.GetUint32(0)
+
+	payload,err := reader.GetUint32(0)
 
 	if err != nil {
-		return nil,0,nil
+		return nil,0,err
 	}
 
-	if (uint64)(size) > maxMsgSize {
-		return nil,0,fmt.Errorf("Decode size limited maxMsgSize[%d],msg payload[%d]",maxMsgSize,size)
-	}else if (uint64)(size) == 0 {
-		return nil,0,fmt.Errorf("Decode header size == 0")
+	if uint64(payload) > maxMsgSize {
+		return nil,0,fmt.Errorf("Decode size limited maxMsgSize[%d],msg payload[%d]",maxMsgSize,payload)
+	}else if uint64(payload) == 0 {
+		return nil,0,fmt.Errorf("Decode header payload == 0")
 	}
 
-	totalPacketSize := (uint64)(size) + PBHeaderSize
+	totalPacketSize := uint64(payload) + PBHeaderSize
 
 	if totalPacketSize > dataLen {
 		return nil,0,nil
@@ -88,25 +120,17 @@ func Decode(buff []byte,start uint64,end uint64,maxMsgSize uint64) (proto.Messag
 
 	s += PBHeaderSize	
 
-	msgNameLen,_ := reader.GetUint16(s)
+	typeID,_ := reader.GetUint32(s)
 
-	if (uint64)(msgNameLen) > (uint64)(size) - PBStringLenSize {
-		return nil,0,fmt.Errorf("Decode invaild message")
-	}
-
-	s += PBStringLenSize
-
-	msgName,_ := reader.GetString(s,(uint64)(msgNameLen))
-
-	s += (uint64)(msgNameLen)
-
-	msg,err := newMessage(msgName)
+	msg,err := newMessage(typeID) 
 
 	if err != nil {
-		return nil,0,fmt.Errorf("Decode invaild message:%s",msgName)
+		return nil,0,fmt.Errorf("unregister type:%d",typeID)
 	}
 
-	pbDataLen := totalPacketSize - PBHeaderSize - PBStringLenSize - (uint64)(msgNameLen)
+	s += PBIdSize
+
+	pbDataLen := totalPacketSize - PBHeaderSize - PBIdSize
 
 	pbData,_ := reader.GetBytes(s,pbDataLen)
 

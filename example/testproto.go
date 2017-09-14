@@ -9,7 +9,12 @@ import (
 
 func main() {
 
-	//pb.Register(testproto.Test{})
+	err := pb.Register(&testproto.Test{})
+
+	if err != nil {
+		fmt.Printf("Register error: %s\n",err.Error())
+		return
+	}
 
 	o := &testproto.Test{}
 	o.A = proto.String("hello")

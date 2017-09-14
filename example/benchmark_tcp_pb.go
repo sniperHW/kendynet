@@ -11,6 +11,7 @@ import(
 	"github.com/sniperHW/kendynet/protocal/protocal_stream_socket"		
 	"github.com/sniperHW/kendynet/example/testproto"
 	"github.com/golang/protobuf/proto"
+	"github.com/sniperHW/kendynet/util/pb"
 )
 
 func server(service string) {
@@ -101,7 +102,7 @@ func client(service string,count int) {
 
 
 func main(){
-
+	pb.Register(&testproto.Test{})
 	if len(os.Args) < 3 {
 		fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")
 		return
