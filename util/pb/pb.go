@@ -13,63 +13,23 @@ const (
 	PBStringLenSize uint64 = 2
 )
 
+func Encode(o interface{},maxMsgSize uint64) (r *kendynet.ByteBuffer,e error) {
 
-var pbMeta map[string]reflect.Type = make(map[string]reflect.Type)
-
-//根据name初始化结构
-//在这里根据结构的成员注解进行DI注入，这里没有实现，只是简单都初始化
-func New(name string) (c interface{},err error){
-   if v,ok := pbMeta[name];ok{
-          c = reflect.New(v).Interface()
-   } else{
-          err = fmt.Errorf("not found %s struct",name)
-          //fmt.Printf("not found %s struct\n",name)
-   }
-   return
-}
-
-//根据名字注册实例
-func Register(c interface{}) (err error) {
-
-	tt := reflect.TypeOf(c)
-	name := reflect.PtrTo(tt).String()
-
-	if _,ok := pbMeta[name];ok {
-		err = fmt.Errorf("%s already register",name)
-		return
-	}
-
-	t := reflect.New(reflect.TypeOf(c)).Interface()
-
-	defer func() {
-		recover()
-		err = fmt.Errorf("type(%s) not implements proto.Message",reflect.TypeOf(t).String())
-	}()
-
-	//检测指针类型是否实现了proto.Message，如果没有会panic,由defer返回错误
-	_ = t.(proto.Message)
-
-    pbMeta[name] = tt
-    //fmt.Printf("register %s ok\n",name)
-    return nil
-}
-
-func Encode(o interface{},maxMsgSize uint64) (*kendynet.ByteBuffer,error) {
 	msg := o.(proto.Message)
-	if msg == nil {
-		return nil,fmt.Errorf("msg should be a proto.Message")
-	}
+
 	data, err := proto.Marshal(msg)
 	if err != nil {
-		return nil,err
+		e = err
+		return
 	}
 
 	dataLen := (uint64)(len(data))
 	if dataLen  > maxMsgSize {
-		return nil,fmt.Errorf("message size limite")
+		e = fmt.Errorf("message size limite maxMsgSize[%d],msg payload[%d]",maxMsgSize,dataLen)
+		return
 	}
 
-	msgName := reflect.TypeOf(msg).String()
+	msgName := proto.MessageName(msg)
 	msgNameLen := (uint64)(len(msgName))
 	totalLen := PBHeaderSize + PBStringLenSize + msgNameLen + dataLen
 
@@ -82,10 +42,21 @@ func Encode(o interface{},maxMsgSize uint64) (*kendynet.ByteBuffer,error) {
 	buff.AppendString(msgName)
 	//写数据
 	buff.AppendBytes(data)
-	return buff,nil
+	r = buff
+	return
 }
 
-func Decode(buff []byte,start uint64,end uint64,maxMsgSize uint64) (interface{}/*proto.Message*/,uint64,error) {
+func newMessage(name string) (msg proto.Message,err error){
+	mt := proto.MessageType(name)
+	if mt == nil {
+		err = fmt.Errorf("not found %s struct",name)
+	}else {
+		msg = reflect.New(mt.Elem()).Interface().(proto.Message)
+	}
+	return
+}
+
+func Decode(buff []byte,start uint64,end uint64,maxMsgSize uint64) (proto.Message,uint64,error) {
 
 	dataLen := end - start
 
@@ -104,7 +75,7 @@ func Decode(buff []byte,start uint64,end uint64,maxMsgSize uint64) (interface{}/
 	}
 
 	if (uint64)(size) > maxMsgSize {
-		return nil,0,fmt.Errorf("Decode size limited")
+		return nil,0,fmt.Errorf("Decode size limited maxMsgSize[%d],msg payload[%d]",maxMsgSize,size)
 	}else if (uint64)(size) == 0 {
 		return nil,0,fmt.Errorf("Decode header size == 0")
 	}
@@ -129,7 +100,7 @@ func Decode(buff []byte,start uint64,end uint64,maxMsgSize uint64) (interface{}/
 
 	s += (uint64)(msgNameLen)
 
-	msg,err := New(msgName)
+	msg,err := newMessage(msgName)
 
 	if err != nil {
 		return nil,0,fmt.Errorf("Decode invaild message:%s",msgName)
@@ -139,12 +110,12 @@ func Decode(buff []byte,start uint64,end uint64,maxMsgSize uint64) (interface{}/
 
 	pbData,_ := reader.GetBytes(s,pbDataLen)
 
-	err = proto.Unmarshal(pbData, msg.(proto.Message))
+	err = proto.Unmarshal(pbData, msg)
 
 	if err != nil {
 		return nil,0,err
 	}
 
-	return msg.(proto.Message),totalPacketSize,nil
+	return msg,totalPacketSize,nil
 
 } 
