@@ -60,16 +60,13 @@ func (this *PBReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface
 			break
 		}
 		if err == nil {	
-			//如果缓冲区小于minSizeRemain字节，重新分配缓冲区
-			if len(this.recvBuff) < minSizeRemain {
-				buffer := make([]byte,this.initBuffSize)
+			if uint64(len(this.recvBuff)) < this.totalMaxPacket / 4 {
 				if this.unpackSize > 0 {
-					//有数据待解包，拷贝到buffer
-					copy(buffer,this.buffer[this.unpackIdx:this.unpackIdx+this.unpackSize])
+					//有数据尚未解包，需要移动到buffer前部
+					copy(this.buffer,this.buffer[this.unpackIdx:this.unpackIdx+this.unpackSize])
 				}
-				this.buffer = buffer
-				this.recvBuff = buffer[this.unpackSize:]
-				this.unpackIdx = 0
+				this.recvBuff = this.buffer[this.unpackSize:]
+				this.unpackIdx = 0				
 			}
 
 			n,err := sess.(*kendynet.StreamSocket).Read(this.recvBuff)
