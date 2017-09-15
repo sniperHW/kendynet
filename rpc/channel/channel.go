@@ -5,6 +5,7 @@ package channel
 */
 
 type RPCChannel interface {
-	SendRPCMessage(interface {}) error
+	SendRPCRequest(interface {}) error
+	SendRPCResponse(interface {}) error
 	Name() string
 }

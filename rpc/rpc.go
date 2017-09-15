@@ -20,15 +20,15 @@ type RPCMessage interface {
 }
 
 type RPCRequest struct {
-	seq    uint64
-	method string
-	arg    interface{}
+	Seq    uint64
+	Method string
+	Arg    interface{}
 }
 
 type RPCResponse struct {
-	seq    uint64
-	err    error
-	ret    interface{}
+	Seq    uint64
+	Err    error
+	Ret    interface{}
 }
 
 func (this *RPCRequest) Type() byte {
@@ -55,7 +55,7 @@ type channelContext struct {
 }
 
 func (this *channelContext) sendRequest(channel rpc_channel.RPCChannel) error {
-	return channel.SendRPCMessage(this.request)
+	return channel.SendRPCRequest(this.request)
 }
 
 type channelContextMgr struct {
@@ -97,7 +97,10 @@ func NewRPCManager(decoder  RPCMessageDecoder,encoder RPCMessageEncoder) (*RPCMa
 		return nil,fmt.Errorf("encoder == nil")
 	}
 
-	return &RPCManager{decoder:decoder,encoder:encoder},nil
+	mgr := &RPCManager{decoder:decoder,encoder:encoder}
+	mgr.methods = make(map[string]func (interface{})(interface{},error))
+	mgr.contexts = make(map[string]*channelContextMgr)
+	return mgr,nil
 }
 
 func (this *RPCManager) RegisterService(name string,service func (interface{})(interface{},error)) error {
@@ -130,15 +133,15 @@ func (this *RPCManager) UnRegisterService(name string) {
 	delete(this.methods,name)	
 }
 
-func (this *RPCManager) sendMessage(to rpc_channel.RPCChannel,message RPCMessage) {
+func (this *RPCManager) sendResponse(to rpc_channel.RPCChannel,message RPCMessage) {
 	msg,err := this.encoder.Encode(message)
 	if nil != err {
 		fmt.Printf("Encode rpc message error:%s\n",err.Error())
 		return
 	}
-	err = to.SendRPCMessage(msg)
+	err = to.SendRPCResponse(msg)
 	if nil != err {
-		fmt.Printf("send rpc message to (%s) error:%s\n",to.Name() , err.Error())		
+		fmt.Printf("send rpc response to (%s) error:%s\n",to.Name() , err.Error())		
 	}
 }
 
@@ -149,6 +152,7 @@ func (this *RPCManager) callService(method func(interface{})(interface{},error),
 			l := runtime.Stack(buf, false)
 			ret = nil
 			err = fmt.Errorf("%v: %s", r, buf[:l])
+			fmt.Printf("%s\n",err.Error())
 		}			
 	}()
 	ret,err = method(arg)
@@ -157,19 +161,19 @@ func (this *RPCManager) callService(method func(interface{})(interface{},error),
 
 func (this *RPCManager) onRPCRequest(from rpc_channel.RPCChannel, req *RPCRequest) {
 	this.mutexMethods.Lock()
-	method,ok := this.methods[req.method]
+	method,ok := this.methods[req.Method]
 	this.mutexMethods.Unlock()
 	if !ok {
-		err := fmt.Errorf("invaild method:%s",req.method)
-		response := &RPCResponse{seq:req.seq,err:err}
-		this.sendMessage(from,response)
-		fmt.Printf("rpc request from(%s) invaild method %s\n",from.Name(),req.method)
+		err := fmt.Errorf("invaild method:%s",req.Method)
+		response := &RPCResponse{Seq:req.Seq,Err:err}
+		this.sendResponse(from,response)
+		fmt.Printf("rpc request from(%s) invaild method %s\n",from.Name(),req.Method)
 		return		
 	}
 
-	ret,err := this.callService(method,req.arg)
-	response := &RPCResponse{seq:req.seq,err:err,ret:ret}
-	this.sendMessage(from,response)
+	ret,err := this.callService(method,req.Arg)
+	response := &RPCResponse{Seq:req.Seq,Err:err,Ret:ret}
+	this.sendResponse(from,response)
 }
 
 func (this *RPCManager) OnChannelDisconnected(channel rpc_channel.RPCChannel,reason string) {
@@ -192,13 +196,14 @@ func (this *RPCManager) onRPCResponse(from rpc_channel.RPCChannel, r *RPCRespons
 		this.mutexContexts.Unlock()
 		return
 	}
-	context := contextMgr.getAndRemoveContext(r.seq)
+	context := contextMgr.getAndRemoveContext(r.Seq)
 	this.mutexContexts.Unlock()	
 
 	if nil == context {
 		//记录日志
+		fmt.Printf("context == nil,seq:%d\n",r.Seq)
 	} else {
-		context.onResponse(r.ret,r.err)
+		context.onResponse(r.Ret,r.Err)
 	}
 }
 
@@ -233,15 +238,16 @@ func (this *RPCManager) Call(channel rpc_channel.RPCChannel,service string,arg i
 	}
 	
 	req := &RPCRequest{} 
-	req.method = service
-	req.seq = atomic.AddUint64(&sequence,1) 
+	req.Method = service
+	req.Seq = atomic.AddUint64(&sequence,1) 
+	req.Arg = arg
 	context := &channelContext{}
 	var err error
 	context.request,err = this.encoder.Encode(req)
 	if err != nil {
 		return fmt.Errorf("arg encode error:%s\n",err.Error())
 	}
-	context.seq = req.seq 
+	context.seq = req.Seq 
 	context.onResponse = cb
 
 	this.mutexContexts.Lock()
@@ -260,8 +266,10 @@ func (this *RPCManager) Call(channel rpc_channel.RPCChannel,service string,arg i
 	contextMgr,ok := this.contexts[channel.Name()] 
 	if !ok {
 		contextMgr = &channelContextMgr{}
+		contextMgr.contexts = make(map[uint64]*channelContext)
 		contextMgr.channel = channel
 		this.contexts[channel.Name()] = contextMgr
 	}
+	contextMgr.contexts[req.Seq] = context
 	return nil
 }
