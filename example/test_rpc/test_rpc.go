@@ -1,4 +1,4 @@
-package testchannel
+package test_rpc
 
 import (
 	"github.com/golang/protobuf/proto"

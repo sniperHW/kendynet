@@ -9,7 +9,7 @@ message RPCRequest {
 
 message RPCResponse {
 	required uint64 seq = 1;
-	required string err = 2;
+	optional string err = 2;
 	optional bytes  ret = 3;	
 }
 

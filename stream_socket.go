@@ -367,5 +367,22 @@ func (this *StreamSocket) Read(b []byte) (int, error) {
 	return this.conn.Read(b)
 }
 
+/*
+*   实现RPCChannel接口,可用于RPC通信
+*/
+
+func (this *StreamSocket) SendRPCRequest(message interface {}) error {
+	return this.Send(message)
+}
+
+func (this *StreamSocket) SendRPCResponse(message interface {}) error {
+	return this.Send(message)
+}
+
+func (this *StreamSocket) Name() string {
+	//暂时的实现
+	return "stream_socket"
+}
+
 
 

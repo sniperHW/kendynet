@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"sync/atomic"
 	"time"
-	"github.com/sniperHW/kendynet/example/testchannel"
+	"github.com/sniperHW/kendynet/example/test_rpc"
 )
 
 func main() {
@@ -26,9 +26,9 @@ func main() {
 		}
 	}()
 
-	rpcChannel := testchannel.NewChannel("testchannel")
+	rpcChannel := test_rpc.NewChannel("testchannel")
 
-	RPC,_ := rpc.NewRPCManager(&testchannel.TestDecoder{},&testchannel.TestEncoder{})
+	RPC,_ := rpc.NewRPCManager(&test_rpc.TestDecoder{},&test_rpc.TestEncoder{})
 
 	Client,_ := rpc.NewRPCClient(RPC,rpcChannel)
 
