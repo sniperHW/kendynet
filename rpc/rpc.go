@@ -84,7 +84,7 @@ type RPCManager struct {
 	decoder   		 RPCMessageDecoder
 	methods   		 map[string]func (interface{})(interface{},error)
 	mutexMethods     sync.Mutex
-	contexts         map[string]*channelContextMgr
+	contexts         map[rpc_channel.RPCChannel]*channelContextMgr
 	mutexContexts    sync.Mutex
 }
 
@@ -99,7 +99,7 @@ func NewRPCManager(decoder  RPCMessageDecoder,encoder RPCMessageEncoder) (*RPCMa
 
 	mgr := &RPCManager{decoder:decoder,encoder:encoder}
 	mgr.methods = make(map[string]func (interface{})(interface{},error))
-	mgr.contexts = make(map[string]*channelContextMgr)
+	mgr.contexts = make(map[rpc_channel.RPCChannel]*channelContextMgr)
 	return mgr,nil
 }
 
@@ -178,19 +178,19 @@ func (this *RPCManager) onRPCRequest(from rpc_channel.RPCChannel, req *RPCReques
 
 func (this *RPCManager) OnChannelDisconnected(channel rpc_channel.RPCChannel,reason string) {
 	this.mutexContexts.Lock()
-	contextMgr,ok := this.contexts[channel.Name()] 
+	contextMgr,ok := this.contexts[channel] 
 	if !ok {
 		this.mutexContexts.Unlock()
 		return
 	}
-	delete(this.contexts,channel.Name())
+	delete(this.contexts,channel)
 	this.mutexContexts.Unlock()
 	contextMgr.onChannelDisconnected(fmt.Errorf(reason))
 }
 
-func (this *RPCManager) onRPCResponse(from rpc_channel.RPCChannel, r *RPCResponse) {
+func (this *RPCManager) onRPCResponse(channel rpc_channel.RPCChannel, r *RPCResponse) {
 	this.mutexContexts.Lock()
-	contextMgr,ok := this.contexts[from.Name()] 
+	contextMgr,ok := this.contexts[channel] 
 	if !ok {
 		//记录日志
 		this.mutexContexts.Unlock()
@@ -263,13 +263,34 @@ func (this *RPCManager) Call(channel rpc_channel.RPCChannel,service string,arg i
 		this.mutexContexts.Unlock()
 		return err
 	}
-	contextMgr,ok := this.contexts[channel.Name()] 
+	contextMgr,ok := this.contexts[channel] 
 	if !ok {
 		contextMgr = &channelContextMgr{}
 		contextMgr.contexts = make(map[uint64]*channelContext)
 		contextMgr.channel = channel
-		this.contexts[channel.Name()] = contextMgr
+		this.contexts[channel] = contextMgr
 	}
 	contextMgr.contexts[req.Seq] = context
 	return nil
+}
+
+type RPCClient struct {
+	channel rpc_channel.RPCChannel
+	mgr    *RPCManager
+}
+
+func NewRPCClient(mgr *RPCManager,channel rpc_channel.RPCChannel) (*RPCClient,error) {
+	if nil == mgr {
+		return nil,fmt.Errorf("RPCManager == nil")
+	}
+
+	if nil == channel {
+		return nil,fmt.Errorf("channel == nil")
+	}
+
+	return &RPCClient{channel:channel,mgr:mgr},nil
+}
+
+func (this *RPCClient) Call(service string,arg interface{},cb func(interface{},error)) error {
+	return this.mgr.Call(this.channel,service,arg,cb)
 }
