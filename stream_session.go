@@ -114,4 +114,12 @@ type StreamSession interface {
     GetUserData() interface{}
 
     GetUnderConn() interface{}
+
+    //rpc channel的接口，StreamSession的实现都可收发RPC消息
+    SendRPCRequest(message interface {}) error 
+
+    SendRPCResponse(message interface {}) error 
+
+    Name() string 
+
 }

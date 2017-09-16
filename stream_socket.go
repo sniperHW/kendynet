@@ -31,7 +31,8 @@ type StreamSocket struct {
 	mutex            sync.Mutex
 	onClose          func (StreamSession,string)
 	onEvent          func (*Event)
-	closeReason      string           
+	closeReason      string
+	name             string           
 }
 
 
@@ -356,6 +357,7 @@ func NewStreamSocket(conn net.Conn)(StreamSession){
 	session.conn 		 = conn
 	session.sendQue      = util.NewBlockQueue()
 	session.sendTimeout  = DefaultSendTimeout * time.Second
+	session.name         = session.LocalAddr().String() + "<->" + session.RemoteAddr().String()
 	return session
 }
 
@@ -380,8 +382,7 @@ func (this *StreamSocket) SendRPCResponse(message interface {}) error {
 }
 
 func (this *StreamSocket) Name() string {
-	//暂时的实现
-	return "stream_socket"
+	return this.name
 }
 
 

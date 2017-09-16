@@ -54,7 +54,7 @@ func server(service string) {
 				if event.EventType == kendynet.EventTypeError {
 					event.Session.Close(event.Data.(error).Error(),0)
 				} else {
-					RPC.OnRPCMessage(event.Session.(*kendynet.StreamSocket),event.Data)
+					RPC.OnRPCMessage(event.Session,event.Data)
 				}
 			})
 			session.Start()
@@ -84,7 +84,7 @@ func client(service string,count int) {
 			fmt.Printf("Dial error:%s\n",err.Error())
 		} else {
 
-			Client,_ := rpc.NewRPCClient(RPC,session.(*kendynet.StreamSocket)) 
+			Client,_ := rpc.NewRPCClient(RPC,session) 
 
 			hello := &testproto.Hello{}
 			hello.Hello = proto.String("hello")
@@ -92,7 +92,7 @@ func client(service string,count int) {
 			//定义response回调
 			var onResp func(ret interface{},err error)
 
-			onResp := func(ret interface{},err error){
+			onResp = func(ret interface{},err error){
 				if nil != ret {
 					err := Client.Call("hello",hello,onResp)
 					if err != nil {
@@ -112,9 +112,9 @@ func client(service string,count int) {
 			session.SetEventCallBack(func (event *kendynet.Event) {
 				if event.EventType == kendynet.EventTypeError {
 					event.Session.Close(event.Data.(error).Error(),0)
-					RPC.OnChannelDisconnected(event.Session.(*kendynet.StreamSocket),event.Data.(error).Error())
+					RPC.OnChannelDisconnected(event.Session,event.Data.(error).Error())
 				} else {
-					RPC.OnRPCMessage(event.Session.(*kendynet.StreamSocket),event.Data)
+					RPC.OnRPCMessage(event.Session,event.Data)
 				}
 			})
 			session.Start()

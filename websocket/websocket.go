@@ -100,6 +100,7 @@ type WebSocket struct {
 	onClose           func (kendynet.StreamSession,string)
 	onEvent           func (*kendynet.Event)
 	closeReason       string
+	name              string
 }
 
 func (this *WebSocket) SetUserData(ud interface{}) {
@@ -397,6 +398,7 @@ func NewWSSocket(conn *gorilla.Conn)(kendynet.StreamSession){
 	session.conn.SetCloseHandler(func(code int, text string) error {
 		return fmt.Errorf("peer close reason[%s]",text)
 	})
+	session.name 		 = session.LocalAddr().String() + "<->" + session.RemoteAddr().String()
 	return session
 }
 
@@ -407,3 +409,20 @@ func (this *WebSocket) GetUnderConn() interface{} {
 func (this *WebSocket) ReadMessage() (messageType int, p []byte, err error) {
 	return this.conn.ReadMessage()
 }
+
+/*
+*   实现RPCChannel接口,可用于RPC通信
+*/
+
+func (this *WebSocket) SendRPCRequest(message interface {}) error {
+	return this.Send(message)
+}
+
+func (this *WebSocket) SendRPCResponse(message interface {}) error {
+	return this.Send(message)
+}
+
+func (this *WebSocket) Name() string {
+	return this.name
+}
+
