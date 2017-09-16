@@ -7,6 +7,7 @@ package kendynet
 import (
 	   "net"
        "time"
+       rpc_channel "github.com/sniperHW/kendynet/rpc/channel"
 )
 
 const (
@@ -25,6 +26,10 @@ type Event struct {
 }
 
 type StreamSession interface {
+
+    //rpc channel的接口，StreamSession的实现都可收发RPC消息
+    rpc_channel.RPCChannel
+
 	/* 
 		发送一个对象，使用encoder将对象编码成一个Message调用SendMessage
 	*/
@@ -114,12 +119,5 @@ type StreamSession interface {
     GetUserData() interface{}
 
     GetUnderConn() interface{}
-
-    //rpc channel的接口，StreamSession的实现都可收发RPC消息
-    SendRPCRequest(message interface {}) error 
-
-    SendRPCResponse(message interface {}) error 
-
-    Name() string 
 
 }
