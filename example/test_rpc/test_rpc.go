@@ -58,6 +58,7 @@ func (this *TestEncoder) Encode(message rpc.RPCMessage) (interface{},error) {
 		request := &testproto.RPCRequest{}
 		request.Seq = proto.Uint64(req.Seq)
 		request.Method = proto.String(req.Method)
+		request.NeedResp = proto.Bool(req.NeedResp)
 		if req.Arg != nil {
 			buff,err := pb.Encode(req.Arg,1000)
 			if err != nil {
@@ -96,6 +97,7 @@ func (this *TestDecoder) Decode(o interface{}) (rpc.RPCMessage,error) {
 			request := &rpc.RPCRequest{}
 			request.Seq = req.GetSeq()
 			request.Method = req.GetMethod()
+			request.NeedResp = req.GetNeedResp()
 			if len(req.Arg) > 0 {
 				var err error
 				request.Arg,_,err = pb.Decode(req.Arg,0,(uint64)(len(req.Arg)),1000)

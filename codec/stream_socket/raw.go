@@ -1,4 +1,8 @@
-package protocal_stream_socket
+package stream_socket
+
+/*
+*   无封包结构，直接将收到的所有数据返回
+*/
 
 import (
 	"github.com/sniperHW/kendynet"
@@ -10,13 +14,13 @@ const (
 	minSizeRemain = 256
 )
 
-type StreamSocketBinaryReceiver struct {
+type RawReceiver struct {
 	buffsize  uint64
 	space     uint64
 	buffer    [] byte
 }
 
-func (this *StreamSocketBinaryReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface{},error) {
+func (this *RawReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface{},error) {
 	
 	//如果缓冲区小于minSizeRemain字节，重新分配缓冲区
 	if this.space < minSizeRemain {
@@ -41,9 +45,9 @@ func (this *StreamSocketBinaryReceiver) ReceiveAndUnpack(sess kendynet.StreamSes
 }
 
 
-func NewBinaryReceiver(buffsize uint64)(*StreamSocketBinaryReceiver){
+func NewRawReceiver(buffsize uint64)(*RawReceiver){
 	if buffsize < minBuffSize {
 		buffsize = minBuffSize
 	}
-	return &StreamSocketBinaryReceiver{buffsize:buffsize,space:0}
+	return &RawReceiver{buffsize:buffsize,space:0}
 }

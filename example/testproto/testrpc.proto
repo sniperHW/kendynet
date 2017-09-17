@@ -5,6 +5,7 @@ message RPCRequest {
 	required uint64 seq = 1;
 	required string method = 2;
 	optional bytes  arg = 3;
+	optional bool   needResp = 4;
 }
 
 message RPCResponse {

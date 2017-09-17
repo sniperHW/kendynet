@@ -8,7 +8,7 @@ import(
 	"os"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/tcp"
-	"github.com/sniperHW/kendynet/protocal/protocal_stream_socket"		
+	codec "github.com/sniperHW/kendynet/codec/stream_socket"		
 )
 
 func server(service string) {
@@ -34,7 +34,7 @@ func server(service string) {
 		fmt.Printf("server running on:%s\n",service)
 		err = server.Start(func(session kendynet.StreamSession) {
 			atomic.AddInt32(&clientcount,1)
-			session.SetReceiver(protocal_stream_socket.NewBinaryReceiver(4096))
+			session.SetReceiver(codec.NewRawReceiver(4096))
 			session.SetCloseCallBack(func (sess kendynet.StreamSession, reason string) {
 				fmt.Printf("client close:%s\n",reason)
 				atomic.AddInt32(&clientcount,-1)
@@ -76,7 +76,7 @@ func client(service string,count int) {
 		if err != nil {
 			fmt.Printf("Dial error:%s\n",err.Error())
 		} else {
-			session.SetReceiver(protocal_stream_socket.NewBinaryReceiver(4096))
+			session.SetReceiver(codec.NewRawReceiver(4096))
 			session.SetCloseCallBack(func (sess kendynet.StreamSession, reason string) {
 				fmt.Printf("client close:%s\n",reason)
 			})

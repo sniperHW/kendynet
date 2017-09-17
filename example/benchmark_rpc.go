@@ -8,7 +8,7 @@ import(
 	"os"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/tcp"
-	"github.com/sniperHW/kendynet/protocal/protocal_stream_socket"		
+	codec "github.com/sniperHW/kendynet/codec/stream_socket"		
 	"github.com/sniperHW/kendynet/example/testproto"
 	"github.com/sniperHW/kendynet/example/test_rpc"
 	"github.com/golang/protobuf/proto"
@@ -30,6 +30,17 @@ func server(service string) {
 		return world,nil
 	})
 
+	RPC.RegisterService("drop",func (arg interface{})(interface{},error){
+		/*
+		*   服务只是增加计数，把消息丢掉。
+		*   如果要实现普通的消息通信可以注册一个叫message的服务，普通消息发往message服务再做消息的分发处理
+		*/
+		atomic.AddInt32(&count,1)
+		//hello := arg.(*testproto.Hello)
+		//fmt.Printf("%s\n",hello.GetHello())
+		return nil,nil
+	})
+
 	go func() {
 		for {
 			time.Sleep(time.Second)
@@ -44,8 +55,8 @@ func server(service string) {
 		fmt.Printf("server running on:%s\n",service)
 		err = server.Start(func(session kendynet.StreamSession) {
 			atomic.AddInt32(&clientcount,1)
-			session.SetEncoder(protocal_stream_socket.NewPbEncoder(4096))
-			session.SetReceiver(protocal_stream_socket.NewPBReceiver(4096))
+			session.SetEncoder(codec.NewPbEncoder(4096))
+			session.SetReceiver(codec.NewPBReceiver(4096))
 			session.SetCloseCallBack(func (sess kendynet.StreamSession, reason string) {
 				fmt.Printf("server client close:%s\n",reason)
 				atomic.AddInt32(&clientcount,-1)
@@ -94,6 +105,7 @@ func client(service string,count int) {
 
 			onResp = func(ret interface{},err error){
 				if nil != ret {
+					Client.OneWayCall("drop",hello)
 					err := Client.Call("hello",hello,onResp)
 					if err != nil {
 						fmt.Printf("%s\n",err.Error())
@@ -104,8 +116,8 @@ func client(service string,count int) {
 				}
 			}
 
-			session.SetEncoder(protocal_stream_socket.NewPbEncoder(4096))
-			session.SetReceiver(protocal_stream_socket.NewPBReceiver(4096))
+			session.SetEncoder(codec.NewPbEncoder(4096))
+			session.SetReceiver(codec.NewPBReceiver(4096))
 			session.SetCloseCallBack(func (sess kendynet.StreamSession, reason string) {
 				fmt.Printf("client client close:%s\n",reason)
 			})

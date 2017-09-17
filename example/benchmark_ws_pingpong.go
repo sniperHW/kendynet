@@ -10,7 +10,7 @@ import(
 	"net/http"
 	"net/url"
 	gorilla "github.com/gorilla/websocket"
-	"github.com/sniperHW/kendynet/protocal/protocal_websocket"	
+	codec "github.com/sniperHW/kendynet/codec/websocket"	
 	"github.com/sniperHW/kendynet/websocket"	
 )
 
@@ -43,7 +43,7 @@ func server(service string) {
 		fmt.Printf("server running on:%s\n",service)
 		err = server.Start(func(session kendynet.StreamSession) {
 			atomic.AddInt32(&clientcount,1)
-			session.SetReceiver(protocal_websocket.NewRawReceiver())
+			session.SetReceiver(codec.NewRawReceiver())
 			session.SetCloseCallBack(func (sess kendynet.StreamSession, reason string) {
 				fmt.Printf("client close:%s\n",reason)
 				atomic.AddInt32(&clientcount,-1)
@@ -85,7 +85,7 @@ func client(service string,count int) {
 		if err != nil {
 			fmt.Printf("Dial error:%s\n",err.Error())
 		} else {
-			session.SetReceiver(protocal_websocket.NewRawReceiver())
+			session.SetReceiver(codec.NewRawReceiver())
 			session.SetCloseCallBack(func (sess kendynet.StreamSession, reason string) {
 				fmt.Printf("client close:%s\n",reason)
 			})

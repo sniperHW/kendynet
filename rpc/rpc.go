@@ -20,9 +20,10 @@ type RPCMessage interface {
 }
 
 type RPCRequest struct {
-	Seq    uint64
-	Method string
-	Arg    interface{}
+	Seq      uint64
+	Method   string
+	Arg      interface{}
+	NeedResp bool 
 }
 
 type RPCResponse struct {
@@ -79,10 +80,13 @@ func (this *channelContextMgr) onChannelDisconnected(err error) {
 	}
 }
 
+type RPCServiceHandler func (interface{})(interface{},error)
+type RPCResponseHandler func(interface{},error)
+
 type RPCManager struct {
 	encoder   		 RPCMessageEncoder
 	decoder   		 RPCMessageDecoder
-	methods   		 map[string]func (interface{})(interface{},error)
+	methods   		 map[string]RPCServiceHandler
 	mutexMethods     sync.Mutex
 	contexts         map[rpc_channel.RPCChannel]*channelContextMgr
 	mutexContexts    sync.Mutex
@@ -98,12 +102,12 @@ func NewRPCManager(decoder  RPCMessageDecoder,encoder RPCMessageEncoder) (*RPCMa
 	}
 
 	mgr := &RPCManager{decoder:decoder,encoder:encoder}
-	mgr.methods = make(map[string]func (interface{})(interface{},error))
+	mgr.methods = make(map[string]RPCServiceHandler)
 	mgr.contexts = make(map[rpc_channel.RPCChannel]*channelContextMgr)
 	return mgr,nil
 }
 
-func (this *RPCManager) RegisterService(name string,service func (interface{})(interface{},error)) error {
+func (this *RPCManager) RegisterService(name string,service RPCServiceHandler) error {
 	if name == "" {
 		return fmt.Errorf("name == ''")
 	}
@@ -145,7 +149,7 @@ func (this *RPCManager) sendResponse(to rpc_channel.RPCChannel,message RPCMessag
 	}
 }
 
-func (this *RPCManager) callService(method func(interface{})(interface{},error),arg interface{}) (ret interface{},err error) {
+func (this *RPCManager) callService(method RPCServiceHandler,arg interface{}) (ret interface{},err error) {
 	defer func(){
 		if r := recover(); r != nil {
 			buf := make([]byte, 65535)
@@ -172,8 +176,10 @@ func (this *RPCManager) onRPCRequest(from rpc_channel.RPCChannel, req *RPCReques
 	}
 
 	ret,err := this.callService(method,req.Arg)
-	response := &RPCResponse{Seq:req.Seq,Err:err,Ret:ret}
-	this.sendResponse(from,response)
+	if req.NeedResp {
+		response := &RPCResponse{Seq:req.Seq,Err:err,Ret:ret}
+		this.sendResponse(from,response)
+	}
 }
 
 func (this *RPCManager) OnChannelDisconnected(channel rpc_channel.RPCChannel,reason string) {
@@ -222,12 +228,33 @@ func (this *RPCManager) OnRPCMessage(channel rpc_channel.RPCChannel,message inte
 	}
 }
 
+
+//单向调用，相当于向对端发送一个消息
+func (this *RPCManager) OneWayCall(channel rpc_channel.RPCChannel,service string,arg interface{}) error {
+	if channel == nil {
+		return fmt.Errorf("channel == nil")
+	}
+	
+	req := &RPCRequest{} 
+	req.Method = service
+	req.Seq = atomic.AddUint64(&sequence,1) 
+	req.Arg = arg
+	req.NeedResp = false
+
+	request,err := this.encoder.Encode(req)
+	if err != nil {
+		return fmt.Errorf("arg encode error:%s\n",err.Error())
+	}
+
+	return channel.SendRPCRequest(request)
+}
+
 /*
 *   原始网络模型是在接收线程中执行消息回调，如果使用同步调用会导致接收线程阻塞(导致无法接收到响应)
 *   所以只提供异步调用接口，如果使用者将消息处理提到单独的线程，使用者可按需封装同步调用接口
 */
 
-func (this *RPCManager) Call(channel rpc_channel.RPCChannel,service string,arg interface{},cb func(interface{},error)) error {
+func (this *RPCManager) Call(channel rpc_channel.RPCChannel,service string,arg interface{},cb RPCResponseHandler) error {
 
 	if channel == nil {
 		return fmt.Errorf("channel == nil")
@@ -241,6 +268,7 @@ func (this *RPCManager) Call(channel rpc_channel.RPCChannel,service string,arg i
 	req.Method = service
 	req.Seq = atomic.AddUint64(&sequence,1) 
 	req.Arg = arg
+	req.NeedResp = true
 	context := &channelContext{}
 	var err error
 	context.request,err = this.encoder.Encode(req)
@@ -291,6 +319,10 @@ func NewRPCClient(mgr *RPCManager,channel rpc_channel.RPCChannel) (*RPCClient,er
 	return &RPCClient{channel:channel,mgr:mgr},nil
 }
 
-func (this *RPCClient) Call(service string,arg interface{},cb func(interface{},error)) error {
+func (this *RPCClient) Call(service string,arg interface{},cb RPCResponseHandler) error {
 	return this.mgr.Call(this.channel,service,arg,cb)
+}
+
+func (this *RPCClient) OneWayCall(service string,arg interface{}) error {
+	return this.mgr.OneWayCall(this.channel,service,arg)
 }
