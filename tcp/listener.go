@@ -6,12 +6,12 @@ import (
     "github.com/sniperHW/kendynet"
 )
 
-type TcpServer struct{
+type Listener struct{
     listener    *net.TCPListener
     started      int32
 }
 
-func NewServer(nettype,service string) (*TcpServer,error) {
+func NewListener(nettype,service string) (*Listener,error) {
     tcpAddr,err := net.ResolveTCPAddr(nettype, service)
     if err != nil{
         return nil,err
@@ -20,19 +20,17 @@ func NewServer(nettype,service string) (*TcpServer,error) {
     if err != nil{
         return nil,err
     }
-    tcpServer := &TcpServer{listener:listener}
-    
-    return tcpServer,nil
+    return &Listener{listener:listener},nil
 }
 
-func (this *TcpServer) Close() {
+func (this *Listener) Close() {
     if nil != this.listener {
         this.listener.Close()
     }
 }
 
 
-func (this *TcpServer) Start(onNewClient func(kendynet.StreamSession)) error {
+func (this *Listener) Start(onNewClient func(kendynet.StreamSession)) error {
 
     if nil == onNewClient {
         return kendynet.ErrInvaildNewClientCB

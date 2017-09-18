@@ -9,14 +9,14 @@ import (
 	"fmt"
 )
 
-type WSServer struct{
+type Listener struct{
     listener    *net.TCPListener
     upgrader    *gorilla.Upgrader
     origin       string
     started      int32
 }
 
-func NewServer(nettype string,service string,origin string,upgrader *gorilla.Upgrader) (*WSServer,error) {
+func NewListener(nettype string,service string,origin string,upgrader *gorilla.Upgrader) (*Listener,error) {
 
 	if upgrader == nil {
 		return nil,ErrWSInvaildUpgrader
@@ -30,17 +30,16 @@ func NewServer(nettype string,service string,origin string,upgrader *gorilla.Upg
 	if err != nil{
 		return nil,err
 	}
-	server := &WSServer{listener:listener,origin:origin,upgrader:upgrader}
-	return server,nil
+	return &Listener{listener:listener,origin:origin,upgrader:upgrader},nil
 }
 
-func (this *WSServer) Close() {
+func (this *Listener) Close() {
 	if nil != this.listener {
 		this.listener.Close()
 	}
 }
 
-func (this *WSServer) Start(onNewClient func(kendynet.StreamSession)) error {
+func (this *Listener) Start(onNewClient func(kendynet.StreamSession)) error {
 
     if nil == onNewClient {
         return kendynet.ErrInvaildNewClientCB

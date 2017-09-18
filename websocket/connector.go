@@ -5,27 +5,29 @@ import (
 	"net/http"
 	gorilla "github.com/gorilla/websocket"
 	"github.com/sniperHW/kendynet"
+	"time"
 )
 
 
-type WSClient struct{
+type Connector struct{
 	dialer 		 *gorilla.Dialer
 	u       	  url.URL
 	requestHeader http.Header
 }
 
-func NewClient(url url.URL,requestHeader http.Header,dialer *gorilla.Dialer) (*WSClient,error) {
+func NewConnector(url url.URL,requestHeader http.Header,dialer *gorilla.Dialer) (*Connector,error) {
 	if nil == dialer {
 		return nil,ErrWSClientInvaildDialer
 	}
-	client := WSClient{}
+	client := Connector{}
 	client.u = url
 	client.dialer = dialer
 	client.requestHeader = requestHeader
 	return &client,nil
 }
 
-func (this *WSClient) Dial() (kendynet.StreamSession,interface{},error) {
+func (this *Connector) Dial(timeout time.Duration) (kendynet.StreamSession,interface{},error) {
+	this.dialer.HandshakeTimeout = timeout
 	c, response, err := this.dialer.Dial(this.u.String(), nil)
 	if err != nil {
 		return nil,nil,err

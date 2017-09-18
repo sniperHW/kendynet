@@ -38,7 +38,7 @@ func server(service string) {
 		// allow all connections by default
 		return true
 	}
-	server,err := websocket.NewServer("tcp4",service,"/echo",upgrader)
+	server,err := websocket.NewListener("tcp4",service,"/echo",upgrader)
 	if server != nil {
 		fmt.Printf("server running on:%s\n",service)
 		err = server.Start(func(session kendynet.StreamSession) {
@@ -73,7 +73,7 @@ func client(service string,count int) {
 	
 	u := url.URL{Scheme: "ws", Host: service, Path: "/echo"}
 
-	client,err := websocket.NewClient(u,nil,gorilla.DefaultDialer)
+	client,err := websocket.NewConnector(u,nil,gorilla.DefaultDialer)
 	
 	if err != nil {
 		fmt.Printf("NewWSClient failed:%s\n",err.Error())
@@ -81,7 +81,7 @@ func client(service string,count int) {
 	}
 
 	for i := 0; i < count ; i++ {
-		session,_,err := client.Dial()
+		session,_,err := client.Dial(10 * time.Second)
 		if err != nil {
 			fmt.Printf("Dial error:%s\n",err.Error())
 		} else {

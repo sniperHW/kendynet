@@ -8,7 +8,7 @@ import(
 	"fmt"
 	"os"
 	"github.com/sniperHW/kendynet"
-	"github.com/sniperHW/kendynet/protocal/protocal_stream_socket"		
+	codec "github.com/sniperHW/kendynet/codec/stream_socket"		
 	"github.com/sniperHW/kendynet/tcp"
 )
 
@@ -151,7 +151,7 @@ func (self *ProxySession) ProcessSockV4() {
 		}
 
 		session := kendynet.NewStreamSocket(conn)
-		session.SetReceiver(protocal_stream_socket.NewBinaryReceiver(65535))
+		session.SetReceiver(codec.NewRawReceiver(65535))
 		session.SetEventCallBack(onServerEvent)
 		session.SetUserData(self)
 		self.server = session
@@ -263,7 +263,7 @@ func (self *ProxySession) ProcessSockV5() {
 			}
 
 			session := kendynet.NewStreamSocket(conn)
-			session.SetReceiver(protocal_stream_socket.NewBinaryReceiver(65535))
+			session.SetReceiver(codec.NewRawReceiver(65535))
 			session.SetEventCallBack(onServerEvent)
 			session.SetUserData(self)
 			self.server = session
@@ -289,7 +289,7 @@ func main() {
 	}
 	service := os.Args[1]
 
-	server,err := tcp.NewServer("tcp4",service)
+	server,err := tcp.NewListener("tcp4",service)
 	if server != nil {
 		fmt.Printf("server running on:%s\n",service)
 		err = server.Start(func(session kendynet.StreamSession) {
@@ -298,7 +298,7 @@ func main() {
 			proxySession.server = nil
 			proxySession.buff = kendynet.NewByteBuffer(128)
 			session.SetUserData(proxySession)			
-			session.SetReceiver(protocal_stream_socket.NewBinaryReceiver(65535))
+			session.SetReceiver(codec.NewRawReceiver(65535))
 			session.SetEventCallBack(onClientEvent)
 			session.Start()
 		})

@@ -29,7 +29,7 @@ func server(service string) {
 		}
 	}()
 
-	server,err := tcp.NewServer("tcp4",service)
+	server,err := tcp.NewListener("tcp4",service)
 	if server != nil {
 		fmt.Printf("server running on:%s\n",service)
 		err = server.Start(func(session kendynet.StreamSession) {
@@ -63,7 +63,7 @@ func server(service string) {
 
 func client(service string,count int) {
 	
-	client,err := tcp.NewClient("tcp4",service)
+	client,err := tcp.NewConnector("tcp4",service)
 
 	if err != nil {
 		fmt.Printf("NewTcpClient failed:%s\n",err.Error())
@@ -73,7 +73,7 @@ func client(service string,count int) {
 
 
 	for i := 0; i < count ; i++ {
-		session,_,err := client.Dial()
+		session,_,err := client.Dial(10 * time.Second)
 		if err != nil {
 			fmt.Printf("Dial error:%s\n",err.Error())
 		} else {
