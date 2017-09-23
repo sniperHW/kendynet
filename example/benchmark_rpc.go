@@ -28,28 +28,16 @@ func server(service string) {
 	//注册服务
 	server.RegisterMethod("hello",func (replyer *rpc.RPCReplyer,arg interface{}){
 		atomic.AddInt32(&count,1)
-		world := &testproto.World{}
-		world.World = proto.String("world")
+		world := &testproto.World{World:proto.String("world")}
 		replyer.Reply(world,nil)
 	})
 	server.Serve(service)
 }
 
 func client(service string,count int) {
-
+	hello := &testproto.Hello{Hello:proto.String("hello")}
 	caller := test_rpc.NewCaller("hello")
-	for i := 0; i < count ; i++ {
-		err := caller.Dial(service,10 * time.Second)
-		if err != nil {
-			fmt.Printf("%s\n",err.Error())
-		}
-	}
-
-	hello := &testproto.Hello{}
-	hello.Hello = proto.String("hello")
-
 	var onResp func(ret interface{},err error)
-
 	onResp = func(ret interface{},err error){
 		if nil != ret {
 			err := caller.Call(hello,onResp)
@@ -62,15 +50,15 @@ func client(service string,count int) {
 		}
 	}
 
-	for i := 0; i < count; i++ {
-		err := caller.Call(hello,onResp)
+	for i := 0; i < count ; i++ {
+		err := caller.Dial(service,10 * time.Second)
 		if err != nil {
 			fmt.Printf("%s\n",err.Error())
-			return
+		} else {
+			caller.Call(hello,onResp)
 		}
 	}
 }
-
 
 func main(){
 
@@ -113,7 +101,7 @@ func main(){
 			return
 		}
 		//让服务器先运行
-		time.Sleep(10000000)
+		time.Sleep(time.Second)
 		go client(service,connectioncount)
 
 	}
