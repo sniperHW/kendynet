@@ -31,8 +31,7 @@ type StreamSocket struct {
 	mutex            sync.Mutex
 	onClose          func (StreamSession,string)
 	onEvent          func (*Event)
-	closeReason      string
-	//name             string           
+	closeReason      string          
 }
 
 
@@ -357,7 +356,6 @@ func NewStreamSocket(conn net.Conn)(StreamSession){
 	session.conn 		 = conn
 	session.sendQue      = util.NewBlockQueue()
 	session.sendTimeout  = DefaultSendTimeout * time.Second
-	//session.name         = session.LocalAddr().String() + "<->" + session.RemoteAddr().String()
 	return session
 }
 
@@ -368,22 +366,6 @@ func (this *StreamSocket) GetUnderConn() interface{} {
 func (this *StreamSocket) Read(b []byte) (int, error) {
 	return this.conn.Read(b)
 }
-
-/*
-*   实现RPCChannel接口,可用于RPC通信
-*/
-
-/*func (this *StreamSocket) SendRPCRequest(message interface {}) error {
-	return this.Send(message)
-}
-
-func (this *StreamSocket) SendRPCResponse(message interface {}) error {
-	return this.Send(message)
-}
-
-func (this *StreamSocket) Name() string {
-	return this.name
-}*/
 
 
 

@@ -27,9 +27,6 @@ type Event struct {
 
 type StreamSession interface {
 
-    //rpc channel的接口，StreamSession的实现都可收发RPC消息
-    //rpc_channel.RPCChannel
-
 	/* 
 		发送一个对象，使用encoder将对象编码成一个Message调用SendMessage
 	*/

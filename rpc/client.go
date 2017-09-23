@@ -1,7 +1,6 @@
 package rpc
 
 import (
-	rpc_channel "github.com/sniperHW/kendynet/rpc/channel"
 	"sync"
 	"fmt"
 	"sync/atomic"
@@ -12,19 +11,27 @@ import (
 var sequence uint64 = 0
 var ErrCallTimeout error = fmt.Errorf("rpc call timeout")
 var ErrNoService   error = fmt.Errorf("no available service")
+var ErrPingTimeout error = fmt.Errorf("ping time out")
 
+type Option struct {
+	Timeout 		 time.Duration                //调用超时的时间,毫秒 0 <= 为不超时
+	PingInterval     time.Duration                //发送Ping的间隔时间,毫秒，0 <= 为不发送
+	PingTimeout      time.Duration                //ping请求的超时时间
+	OnPingTimeout    func(RPCChannel) //ping超时回调
+	OnPong           func(RPCChannel,*Pong)
+}
 
 /*
 *     channel选择策略接口
 */
 type ChannelSelector interface {
-	Select([]rpc_channel.RPCChannel) rpc_channel.RPCChannel
+	Select([]RPCChannel) RPCChannel
 }
 
 type RPCResponseHandler func(interface{},error)
 
 type reqContext struct {
-	chanContext *channelContext//rpc_channel.RPCChannel
+	chanContext *channelContext
 	next        *reqContext
 	pre         *reqContext
 	seq         uint64
@@ -34,7 +41,7 @@ type reqContext struct {
 }
 
 type channelContext struct {
-	channel     rpc_channel.RPCChannel
+	channel     RPCChannel
 	methods     map[string]bool               //channel上提供的远程方法
 	pendingReqs map[uint64]*reqContext        //等待回复的请求
 }
@@ -95,17 +102,17 @@ func (this *reqQueue) push(p *reqContext) {
 
 //提供method的所有channel
 type methodChannels struct {
-	channels    []rpc_channel.RPCChannel
+	channels    []RPCChannel
 }
 
-func (this *methodChannels) addChannel(channel rpc_channel.RPCChannel) {
+func (this *methodChannels) addChannel(channel RPCChannel) {
 	if this.channels == nil {
-		this.channels = make([]rpc_channel.RPCChannel,0,10)
+		this.channels = make([]RPCChannel,0,10)
 	}
 	this.channels = append(this.channels,channel)
 }
 
-func (this *methodChannels) removeChannel(channel rpc_channel.RPCChannel) {
+func (this *methodChannels) removeChannel(channel RPCChannel) {
 	if this.channels == nil {
 		return
 	}
@@ -122,14 +129,6 @@ func (this *methodChannels) removeChannel(channel rpc_channel.RPCChannel) {
 	}
 }
 
-type Option struct {
-	Timeout 		 time.Duration                //调用超时的时间,毫秒 0 <= 为不超时
-	PingInterval     time.Duration                //发送Ping的间隔时间,毫秒，0 <= 为不发送
-	PingTimeout      time.Duration                //ping请求的超时时间
-	onPingTimeout    func(rpc_channel.RPCChannel) //ping超时回调
-	onPong           func(rpc_channel.RPCChannel,*Pong)
-}
-
 type RPCClient struct {
 	encoder   		  	RPCMessageEncoder
 	decoder   		  	RPCMessageDecoder
@@ -140,12 +139,12 @@ type RPCClient struct {
 	pingRoutine       	bool
 	checkTimeoutRoutine bool
 	mehtodChannelsMap   map[string]*methodChannels   
-	channelNameMap      map[string]rpc_channel.RPCChannel
-	channels            map[rpc_channel.RPCChannel]*channelContext
+	channelNameMap      map[string]RPCChannel
+	channels            map[RPCChannel]*channelContext
 }
 
 //添加一个远程方法的通道
-func (this *RPCClient) addMethodChannel(method string,channel rpc_channel.RPCChannel) {
+func (this *RPCClient) addMethodChannel(method string,channel RPCChannel) {
 	m,ok := this.mehtodChannelsMap[method]
 	if !ok {
 		m = &methodChannels{}
@@ -155,7 +154,7 @@ func (this *RPCClient) addMethodChannel(method string,channel rpc_channel.RPCCha
 }
 
 //移除一个远程方法的通道
-func (this *RPCClient) removeMethodChannel(method string,channel rpc_channel.RPCChannel) {
+func (this *RPCClient) removeMethodChannel(method string,channel RPCChannel) {
 	m,ok := this.mehtodChannelsMap[method]
 	if !ok {
 		return
@@ -164,7 +163,7 @@ func (this *RPCClient) removeMethodChannel(method string,channel rpc_channel.RPC
 }
 
 //在channel上添加method
-func (this *RPCClient) AddMethod(channel rpc_channel.RPCChannel,method string) {
+func (this *RPCClient) AddMethod(channel RPCChannel,method string) {
 	if nil == channel {
 		return
 	}
@@ -181,6 +180,7 @@ func (this *RPCClient) AddMethod(channel rpc_channel.RPCChannel,method string) {
 		context.methods = make(map[string]bool)
 		context.pendingReqs = make(map[uint64]*reqContext)
 		context.methods[method] = true
+		context.channel = channel
 		this.channels[channel] = context
 		this.addMethodChannel(method,channel)
 		if this.option.PingInterval > 0 && len(this.channelNameMap) == 1 { 
@@ -198,7 +198,7 @@ func (this *RPCClient) AddMethod(channel rpc_channel.RPCChannel,method string) {
 }
 
 //在channel上移除method
-func (this *RPCClient) RemoveMethod(channel rpc_channel.RPCChannel,method string) {
+func (this *RPCClient) RemoveMethod(channel RPCChannel,method string) {
 	if nil == channel {
 		return
 	}
@@ -275,9 +275,9 @@ func (this *RPCClient) startReqTimeoutCheckRoutine() {
 				if now.After(p.deadline) {
 					this.pendingPings.popFront()
 					delete(p.chanContext.pendingReqs,p.seq)
-					if this.option.onPingTimeout != nil {
+					if this.option.OnPingTimeout != nil {
 						this.mutex.Unlock()
-						this.option.onPingTimeout(p.chanContext.channel)
+						this.option.OnPingTimeout(p.chanContext.channel)
 						this.mutex.Lock()
 					}
 				} else {
@@ -346,7 +346,7 @@ func (this *RPCClient) ping(context *channelContext) {
 	}
 }
 
-func (this *RPCClient) OnChannelClose(channel rpc_channel.RPCChannel,err error) {
+func (this *RPCClient) OnChannelClose(channel RPCChannel,err error) {
 	if nil == channel {
 		return
 	}
@@ -383,7 +383,7 @@ func (this *RPCClient) OnChannelClose(channel rpc_channel.RPCChannel,err error) 
 
 }
 
-func (this *RPCClient) OnRPCMessage(channel rpc_channel.RPCChannel,message interface{}) {
+func (this *RPCClient) OnRPCMessage(channel RPCChannel,message interface{}) {
 	msg,err := this.decoder.Decode(message)
 	if nil != err {
 		fmt.Printf("RPCClient rpc message from(%s) decode err:%s\n",channel.Name,err.Error())
@@ -411,8 +411,8 @@ func (this *RPCClient) OnRPCMessage(channel rpc_channel.RPCChannel,message inter
 	this.mutex.Unlock()
 
 	if pendingReq.isPing {
-		if this.option.onPong != nil {
-			this.option.onPong(channel,msg.(*Pong))
+		if this.option.OnPong != nil {
+			this.option.OnPong(channel,msg.(*Pong))
 		}
 	} else {
 		resp := msg.(*RPCResponse)
@@ -485,7 +485,7 @@ func NewRPCClient(decoder RPCMessageDecoder,encoder RPCMessageEncoder,option *Op
 	if nil == option {
 		option = &Option{}
 	} else {
-		if option.onPingTimeout == nil {
+		if option.OnPingTimeout == nil {
 			option.PingInterval = 0
 			option.PingTimeout = 0
 		}
@@ -498,8 +498,8 @@ func NewRPCClient(decoder RPCMessageDecoder,encoder RPCMessageEncoder,option *Op
 	c.pendingCalls.init()
 	c.pendingPings.init()
 	c.mehtodChannelsMap = make(map[string]*methodChannels)
-	c.channelNameMap = make(map[string]rpc_channel.RPCChannel)
-	c.channels = make(map[rpc_channel.RPCChannel]*channelContext)
+	c.channelNameMap = make(map[string]RPCChannel)
+	c.channels = make(map[RPCChannel]*channelContext)
 	return c,nil
 
 }

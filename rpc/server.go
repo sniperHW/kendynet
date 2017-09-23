@@ -1,7 +1,6 @@
 package rpc
 
 import (
-	rpc_channel "github.com/sniperHW/kendynet/rpc/channel"
 	"sync"
 	"fmt"
 	"runtime"
@@ -9,7 +8,7 @@ import (
 
 type RPCReplyer struct {
 	encoder RPCMessageEncoder
-	channel rpc_channel.RPCChannel
+	channel RPCChannel
 	req    *RPCRequest			
 }
 
@@ -84,7 +83,7 @@ func (this *RPCServer) callMethod(method RPCMethodHandler,replyer *RPCReplyer,ar
 	return
 }
 
-func (this *RPCServer) OnRPCMessage(channel rpc_channel.RPCChannel,message interface{}) {
+func (this *RPCServer) OnRPCMessage(channel RPCChannel,message interface{}) {
 	msg,err := this.decoder.Decode(message)
 	if nil != err {
 		fmt.Printf("RPCServer rpc message from(%s) decode err:%s\n",channel.Name,err.Error())
@@ -117,7 +116,8 @@ func (this *RPCServer) OnRPCMessage(channel rpc_channel.RPCChannel,message inter
 			if nil != err && req.NeedResp {
 				response := &RPCResponse{Seq:req.Seq,Err:err}
 				replyer.reply(response)
-			}			
+			}
+			return			
 		}
 		default: {
 

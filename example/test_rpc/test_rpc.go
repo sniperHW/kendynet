@@ -3,7 +3,6 @@ package test_rpc
 import (
 	"github.com/golang/protobuf/proto"
 	"github.com/sniperHW/kendynet/rpc"
-	rpc_channel "github.com/sniperHW/kendynet/rpc/channel"
 	"github.com/sniperHW/kendynet/example/testproto"
 	"github.com/sniperHW/kendynet/pb"
 	"github.com/sniperHW/kendynet"
@@ -135,7 +134,7 @@ func (this *TestDecoder) Decode(o interface{}) (rpc.RPCMessage,error) {
 			return request,nil
 		case *testproto.RPCPong:
 			resp := o.(*testproto.RPCPong)
-			response := &rpc.Ping{}
+			response := &rpc.Pong{}
 			response.Seq = resp.GetSeq()
 			response.TimeStamp = resp.GetTimestamp()
 			return response,nil
@@ -190,7 +189,7 @@ type testSelector struct {
 	idx int
 }
 
-func (this *testSelector) Select(channels []rpc_channel.RPCChannel) rpc_channel.RPCChannel {
+func (this *testSelector) Select(channels []rpc.RPCChannel) rpc.RPCChannel {
 	l := len(channels)
 	if l == 0 {
 		return nil
@@ -210,7 +209,17 @@ type Caller struct {
 func NewCaller(method string) *Caller {
 	c := &Caller{}
 	c.method = method
-	c.client,_ = rpc.NewRPCClient(&TestDecoder{},&TestEncoder{},&rpc.Option{Timeout:5000*time.Millisecond,PingInterval:5000*time.Millisecond,PingTimeout:5000*time.Millisecond})
+	option := &rpc.Option{}
+	option.Timeout = 5000*time.Millisecond
+	option.PingInterval = 5000*time.Millisecond
+	option.PingTimeout = 5000*time.Millisecond
+	option.OnPong = func(_ rpc.RPCChannel,_ *rpc.Pong) {
+		fmt.Printf("pong\n")
+	}
+	option.OnPingTimeout = func(c rpc.RPCChannel) {
+		c.Close("ping timeout")
+	}
+	c.client,_ = rpc.NewRPCClient(&TestDecoder{},&TestEncoder{},option)
 	c.selector = &testSelector{}
 	return c
 }
@@ -227,6 +236,7 @@ func (this *Caller) Dial(service string,timeout time.Duration) error {
 	session.SetReceiver(codec.NewPBReceiver(4096))
 	session.SetCloseCallBack(func (sess kendynet.StreamSession, reason string) {
 		this.client.OnChannelClose(channel,fmt.Errorf(reason))
+		fmt.Printf("channel close:%s\n",reason)
 	})
 	session.SetEventCallBack(func (event *kendynet.Event) {
 		if event.EventType == kendynet.EventTypeError {

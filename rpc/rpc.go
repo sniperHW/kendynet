@@ -1,5 +1,11 @@
 package rpc
 
+/*
+*  注意,传递给RPC模块的所有回调函数可能在底层信道的接收/发送goroutine上执行，
+*  为了避免接收/发送goroutine被阻塞，回调函数中不能调用阻塞函数。
+*  如需调用阻塞函数，请在回调中启动一个goroutine来执行
+*/
+
 const (
 	RPC_REQUEST  = 1
 	RPC_RESPONSE = 2
@@ -73,4 +79,15 @@ type RPCMessageEncoder interface {
 
 type RPCMessageDecoder interface {
 	Decode(interface{}) (RPCMessage,error)	
+}
+
+/*
+ *  rpc通道，实现了RPCChannel的类型都可用于发送rpc消息
+*/
+
+type RPCChannel interface {
+	SendRPCRequest(interface {}) error               //发送RPC请求
+	SendRPCResponse(interface {}) error              //发送RPC回应
+	Close(string)
+	Name() string
 }
