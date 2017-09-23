@@ -12,6 +12,8 @@ It has these top-level messages:
 	Test
 	RPCRequest
 	RPCResponse
+	RPCPing
+	RPCPong
 	Hello
 	World
 */

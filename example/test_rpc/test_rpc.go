@@ -3,49 +3,42 @@ package test_rpc
 import (
 	"github.com/golang/protobuf/proto"
 	"github.com/sniperHW/kendynet/rpc"
+	rpc_channel "github.com/sniperHW/kendynet/rpc/channel"
 	"github.com/sniperHW/kendynet/example/testproto"
 	"github.com/sniperHW/kendynet/pb"
+	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/tcp"
+	codec "github.com/sniperHW/kendynet/codec/stream_socket"
 	"reflect"
 	"fmt"
+	"time"
 )
 
-//用chan实现的一个rpc通道
 
-type Channel struct {
+type TcpStreamChannel struct {
+	session    kendynet.StreamSession
 	name       string
-	toServer   chan interface{}
-	toClient   chan interface{}
 }
 
-func NewChannel(name string) *Channel{
-	channel := &Channel{}
-	channel.name = name
-	channel.toServer = make(chan interface{},10000)
-	channel.toClient = make(chan interface{},10000)
-	return channel
+func NewTcpStreamChannel(sess kendynet.StreamSession) *TcpStreamChannel {
+	r := &TcpStreamChannel{session:sess}
+	r.name = sess.RemoteAddr().String() + "<->" + sess.LocalAddr().String() 
+	return r
 }
 
-func (this *Channel) SendRPCRequest(message interface {}) error {
-	this.toServer <- message
-	return nil
+func(this *TcpStreamChannel) SendRPCRequest(message interface {}) error {
+	return this.session.Send(message)
 }
 
-func (this *Channel) SendRPCResponse(message interface {}) error {
-	this.toClient <- message
-	return nil
+func(this *TcpStreamChannel) SendRPCResponse(message interface {}) error {
+	return this.session.Send(message)
 }
 
-func (this *Channel) ServerRecive() (msg interface{},ok bool) {
-	msg,ok = <- this.toServer
-	return
+func(this *TcpStreamChannel) Close(reason string) {
+	this.session.Close(reason,0)
 }
 
-func (this *Channel) ClientRecive() (msg interface{},ok bool) {
-	msg,ok = <- this.toClient
-	return
-}
-
-func (this *Channel) Name() string {
+func(this *TcpStreamChannel) Name() string {
 	return this.name
 }
 
@@ -68,6 +61,18 @@ func (this *TestEncoder) Encode(message rpc.RPCMessage) (interface{},error) {
 			request.Arg = buff.Bytes()
 		}
 		return request,nil
+	} else if message.Type() == rpc.RPC_PING {
+		req := message.(*rpc.Ping)
+		request := &testproto.RPCPing{}
+		request.Seq = proto.Uint64(req.Seq)	
+		request.Timestamp = proto.Int64(req.TimeStamp)	
+		return request,nil
+	} else if message.Type() == rpc.RPC_PONG {
+		resp := message.(*rpc.Pong)
+		response := &testproto.RPCPong{}
+		response.Seq = proto.Uint64(resp.Seq)	
+		response.Timestamp = proto.Int64(resp.TimeStamp)	
+		return response,nil
 	} else {
 		resp := message.(*rpc.RPCResponse)
 		response := &testproto.RPCResponse{}
@@ -122,7 +127,119 @@ func (this *TestDecoder) Decode(o interface{}) (rpc.RPCMessage,error) {
 				}
 			}
 			return response,nil
+		case *testproto.RPCPing:
+			req := o.(*testproto.RPCPing)
+			request := &rpc.Ping{}
+			request.Seq = req.GetSeq()
+			request.TimeStamp = req.GetTimestamp()
+			return request,nil
+		case *testproto.RPCPong:
+			resp := o.(*testproto.RPCPong)
+			response := &rpc.Ping{}
+			response.Seq = resp.GetSeq()
+			response.TimeStamp = resp.GetTimestamp()
+			return response,nil
 		default:
 			return nil,fmt.Errorf("invaild obj type:%s",reflect.TypeOf(o).String())
 	}	
 }
+
+type RPCServer struct {
+	server     *rpc.RPCServer
+	listener    kendynet.Listener
+}
+
+func NewRPCServer() *RPCServer {
+	r := &RPCServer{}
+	r.server,_ = rpc.NewRPCServer(&TestDecoder{},&TestEncoder{})
+	return r
+}
+
+func (this *RPCServer) RegisterMethod(name string,method rpc.RPCMethodHandler) {
+	this.server.RegisterMethod(name,method)
+}
+
+func (this *RPCServer) Serve(service string) error {
+	var err error
+	this.listener,err = tcp.NewListener("tcp",service)
+	if err != nil {
+		return err
+	}
+
+	err = this.listener.Start(func(session kendynet.StreamSession){
+		channel := NewTcpStreamChannel(session)
+		session.SetEncoder(codec.NewPbEncoder(4096))
+		session.SetReceiver(codec.NewPBReceiver(4096))
+		session.SetEventCallBack(func (event *kendynet.Event) {
+			if event.EventType == kendynet.EventTypeError {
+				channel.Close(event.Data.(error).Error())
+			} else {
+				this.server.OnRPCMessage(channel,event.Data)	
+			}
+		})
+		session.Start()
+	})
+	return err
+}
+
+/*
+*  round robin selector
+*/
+
+type testSelector struct {
+	idx int
+}
+
+func (this *testSelector) Select(channels []rpc_channel.RPCChannel) rpc_channel.RPCChannel {
+	l := len(channels)
+	if l == 0 {
+		return nil
+	}
+	c := channels[this.idx]
+	this.idx = (this.idx + 1) % l
+	return c
+}
+
+
+type Caller struct {
+	client     *rpc.RPCClient
+	method      string
+	selector    rpc.ChannelSelector
+}
+
+func NewCaller(method string) *Caller {
+	c := &Caller{}
+	c.method = method
+	c.client,_ = rpc.NewRPCClient(&TestDecoder{},&TestEncoder{},&rpc.Option{Timeout:5000*time.Millisecond,PingInterval:5000*time.Millisecond,PingTimeout:5000*time.Millisecond})
+	c.selector = &testSelector{}
+	return c
+}
+
+func (this *Caller) Dial(service string,timeout time.Duration) error {
+	connector,err := tcp.NewConnector("tcp",service)
+	session,_,err := connector.Dial(timeout)
+	if err != nil {
+		return err
+	} 
+	channel := NewTcpStreamChannel(session)
+	this.client.AddMethod(channel,this.method)
+	session.SetEncoder(codec.NewPbEncoder(4096))
+	session.SetReceiver(codec.NewPBReceiver(4096))
+	session.SetCloseCallBack(func (sess kendynet.StreamSession, reason string) {
+		this.client.OnChannelClose(channel,fmt.Errorf(reason))
+	})
+	session.SetEventCallBack(func (event *kendynet.Event) {
+		if event.EventType == kendynet.EventTypeError {
+			channel.Close(event.Data.(error).Error())
+		} else {
+			this.client.OnRPCMessage(channel,event.Data)	
+		}
+	})
+	session.Start()
+	return nil
+}
+
+func (this *Caller) Call(arg interface{},cb rpc.RPCResponseHandler) error {
+	return this.client.Call(this.selector,this.method,arg,cb)
+}
+

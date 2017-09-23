@@ -14,6 +14,16 @@ message RPCResponse {
 	optional bytes  ret = 3;	
 }
 
+message RPCPing {
+	required uint64 seq = 1;
+	required int64  timestamp = 2;	
+}
+
+message RPCPong {
+	required uint64 seq = 1;
+	required int64  timestamp = 2;	
+}
+
 message hello {
 	required string hello = 1;
 }
