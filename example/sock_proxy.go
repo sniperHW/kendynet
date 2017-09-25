@@ -8,6 +8,7 @@ import(
 	"fmt"
 	"os"
 	"github.com/sniperHW/kendynet"
+	"time"
 	codec "github.com/sniperHW/kendynet/codec/stream_socket"		
 	"github.com/sniperHW/kendynet/tcp"
 )
@@ -139,18 +140,18 @@ func (self *ProxySession) ProcessSockV4() {
 		tcpAddr := net.TCPAddr{}
 		tcpAddr.Port = int(binary.BigEndian.Uint16(b[2:4]))
 		tcpAddr.IP = b[4:8]
-
-		conn,err := net.DialTCP("tcp4", nil, &tcpAddr)
+		connector,err := tcp.NewConnector(tcpAddr.Network(),tcpAddr.String())
+		if err != nil {
+			fmt.Printf("NewConnector failed:%s\n",err.Error())
+			return
+		}
+		session,_,err := connector.Dial(time.Second * 10)
 
 		if err != nil {
-			fmt.Printf("dial err:%s\n",err.Error())
-			responseBuff.PutByte(1,byte(92))
-			self.client.SendMessage(responseBuff)			
-			self.Close()
-			return			
+			fmt.Printf("Dial failed:%s\n",err.Error())			
+			return
 		}
 
-		session := kendynet.NewStreamSocket(conn)
 		session.SetReceiver(codec.NewRawReceiver(65535))
 		session.SetEventCallBack(onServerEvent)
 		session.SetUserData(self)
@@ -225,16 +226,12 @@ func (self *ProxySession) ProcessSockV5() {
 
 			addrSize := 0
 
-			var nettype string
-
 			if ATYP == SOCKS5_ATYP_IPV4 {
 				addrSize = 4
-				nettype = "tcp4"
 				if self.buff.Len() < uint64(6+addrSize) {
 					return
 				}
 			}else if ATYP == SOCKS5_ATYP_IPV6 {
-				nettype = "tcp6"
 				addrSize = 8
 				if self.buff.Len() < uint64(6+addrSize) {
 					return
@@ -252,17 +249,17 @@ func (self *ProxySession) ProcessSockV5() {
 			tcpAddr.IP = b[4:4+addrSize]
 
 
-			conn,err := net.DialTCP(nettype, nil, &tcpAddr)
+			connector,err := tcp.NewConnector(tcpAddr.Network(),tcpAddr.String())
+			if err != nil {
+				fmt.Printf("NewConnector failed:%s\n",err.Error())
+				return
+			}
+			session,_,err := connector.Dial(time.Second * 10)
 
 			if err != nil {
-				fmt.Printf("dial err:%s\n",err.Error())
-				responseBuff.AppendByte(byte(SOCKS5_CONNECTION_REFUSED))
-				self.client.SendMessage(responseBuff)			
-				self.Close()
-				return			
+				fmt.Printf("Dial failed:%s\n",err.Error())			
+				return
 			}
-
-			session := kendynet.NewStreamSocket(conn)
 			session.SetReceiver(codec.NewRawReceiver(65535))
 			session.SetEventCallBack(onServerEvent)
 			session.SetUserData(self)

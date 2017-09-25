@@ -4,6 +4,7 @@ import (
     "net"
     "sync/atomic"
     "github.com/sniperHW/kendynet"
+    "github.com/sniperHW/kendynet/stream_socket"
 )
 
 type Listener struct{
@@ -46,6 +47,6 @@ func (this *Listener) Start(onNewClient func(kendynet.StreamSession)) error {
             this.listener.Close()
             return err
         }
-        onNewClient(kendynet.NewStreamSocket(conn))
+        onNewClient(stream_socket.NewStreamSocket(conn))
     }
 }

@@ -6,7 +6,7 @@ package stream_socket
 
 import (
 	"github.com/sniperHW/kendynet"
-	//"fmt"
+	"github.com/sniperHW/kendynet/stream_socket"
 )
 
 const (
@@ -30,7 +30,7 @@ func (this *RawReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interfac
 
 	idx := this.buffsize - this.space
 
-	n,err := sess.(*kendynet.StreamSocket).Read(this.buffer[idx:])
+	n,err := sess.(*stream_socket.StreamSocket).Read(this.buffer[idx:])
 	if err != nil {
 		return nil,err
 	}

@@ -2,6 +2,7 @@ package stream_socket
 
 import (
 	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/stream_socket"
 	"github.com/sniperHW/kendynet/pb"
 //	"fmt"
 )
@@ -71,7 +72,7 @@ func (this *PBReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface
 				this.unpackIdx = 0				
 			}
 
-			n,err := sess.(*kendynet.StreamSocket).Read(this.recvBuff)
+			n,err := sess.(*stream_socket.StreamSocket).Read(this.recvBuff)
 			if err != nil {
 				return nil,err
 			}

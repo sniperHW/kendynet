@@ -2,7 +2,7 @@
 *  tcp或unix域套接字会话
 */
 
-package kendynet
+package stream_socket
 
 import (
 	   "net"
@@ -13,14 +13,15 @@ import (
 	   "bufio"
 	   "io"
 	   "github.com/sniperHW/kendynet/util" 
+	   "github.com/sniperHW/kendynet"
 )
 
 type StreamSocket struct {
 	conn 			 net.Conn
 	ud   			 interface{}
 	sendQue         *util.BlockQueue
-	receiver         Receiver
-	encoder          EnCoder
+	receiver         kendynet.Receiver
+	encoder          kendynet.EnCoder
 	sendStop         bool
 	recvStop         bool
 	closed           bool
@@ -29,8 +30,8 @@ type StreamSocket struct {
 	recvTimeout      time.Duration
 	sendTimeout      time.Duration
 	mutex            sync.Mutex
-	onClose          func (StreamSession,string)
-	onEvent          func (*Event)
+	onClose          func (kendynet.StreamSession,string)
+	onEvent          func (*kendynet.Event)
 	closeReason      string          
 }
 
@@ -59,7 +60,7 @@ func (this *StreamSocket) Close(reason string, timeout time.Duration) error {
 	this.mutex.Lock()
 
 	if this.closed {
-		return ErrSocketClose
+		return kendynet.ErrSocketClose
 	}
 
 	this.closeReason = reason
@@ -102,29 +103,29 @@ func (this *StreamSocket) SetSendTimeout(timeout time.Duration) {
 	this.sendTimeout = timeout * time.Second
 }
     
-func (this *StreamSocket) SetCloseCallBack(cb func (StreamSession, string)) {
+func (this *StreamSocket) SetCloseCallBack(cb func (kendynet.StreamSession, string)) {
 	this.onClose = cb
 }
 
-func (this *StreamSocket) SetEventCallBack(cb func (*Event)) {
+func (this *StreamSocket) SetEventCallBack(cb func (*kendynet.Event)) {
 	this.onEvent = cb
 }
 
-func (this *StreamSocket) SetEncoder(encoder EnCoder) {
+func (this *StreamSocket) SetEncoder(encoder kendynet.EnCoder) {
 	this.encoder = encoder
 }
 
-func (this *StreamSocket) SetReceiver(r Receiver) {
+func (this *StreamSocket) SetReceiver(r kendynet.Receiver) {
 	this.receiver = r
 }
 
 func (this *StreamSocket) Send(o interface{}) error {
 	if o == nil {
-		return ErrInvaildObject
+		return kendynet.ErrInvaildObject
 	}
 
 	if this.encoder == nil {
-		return ErrInvaildEncoder
+		return kendynet.ErrInvaildEncoder
 	}
 
 	msg,err := this.encoder.EnCode(o)
@@ -137,14 +138,14 @@ func (this *StreamSocket) Send(o interface{}) error {
 
 }
 	
-func (this *StreamSocket) SendMessage(msg Message) error {
+func (this *StreamSocket) SendMessage(msg kendynet.Message) error {
 	if msg == nil {
-		return ErrInvaildBuff
+		return kendynet.ErrInvaildBuff
 	} else if this.sendStop || this.closed {
-		return ErrSocketClose
+		return kendynet.ErrSocketClose
 	} else {
 		if nil != this.sendQue.Add(msg) {
-			return ErrSocketClose
+			return kendynet.ErrSocketClose
 		}
 	}
 	return nil
@@ -173,13 +174,13 @@ func recvThreadFunc(session *StreamSocket) {
 		}
 
 		if err != nil || p != nil {
-			var event Event
+			var event kendynet.Event
 			event.Session = session
 			if err != nil {
-				event.EventType = EventTypeError
+				event.EventType = kendynet.EventTypeError
 				event.Data = err
 			} else {
-				event.EventType = EventTypeMessage
+				event.EventType = kendynet.EventTypeMessage
 				event.Data = p
 			}
 			/*出现错误不主动退出循环，除非用户调用了session.Close()		
@@ -208,7 +209,7 @@ func doSend(session *StreamSocket,writer *bufio.Writer,timeout time.Time) error 
 		if err != nil {
 
 			if err.(net.Error).Timeout() {
-				return ErrSendTimeout
+				return kendynet.ErrSendTimeout
 			}
 	
 			if err != io.ErrShortWrite {
@@ -276,10 +277,10 @@ func sendThreadFunc(session *StreamSocket) {
 		}
 		
 		for !localList.Empty() {
-			msg := localList.Pop().(Message)
+			msg := localList.Pop().(kendynet.Message)
 			if msg.Bytes() != nil {
 				if err := writeToWriter(writer,msg.Bytes()); err != nil && !closed {
-					event := &Event{Session:session,EventType:EventTypeError,Data:err}
+					event := &kendynet.Event{Session:session,EventType:kendynet.EventTypeError,Data:err}
 					session.onEvent(event)
 					return
 				}
@@ -301,7 +302,7 @@ func sendThreadFunc(session *StreamSocket) {
 			if closed {
 				return
 			} else {
-				event := &Event{Session:session,EventType:EventTypeError,Data:err}
+				event := &kendynet.Event{Session:session,EventType:kendynet.EventTypeError,Data:err}
 				session.onEvent(event)
 			}
 		}
@@ -319,19 +320,19 @@ func (this *StreamSocket) Start() error {
 	this.mutex.Lock()
 
 	if this.closed {
-		return ErrSocketClose
+		return kendynet.ErrSocketClose
 	}
 
 	if this.started {
-		return ErrStarted
+		return kendynet.ErrStarted
 	}
 
 	if this.onEvent == nil {
-		return ErrNoOnPacket
+		return kendynet.ErrNoOnPacket
 	}
 
 	if this.receiver == nil {
-		return ErrNoReceiver
+		return kendynet.ErrNoReceiver
 	}
 
 	this.started = true
@@ -340,7 +341,7 @@ func (this *StreamSocket) Start() error {
 	return nil
 }
 
-func NewStreamSocket(conn net.Conn)(StreamSession){
+func NewStreamSocket(conn net.Conn)(kendynet.StreamSession){
 
 	switch conn.(type) {
 		case *net.TCPConn:
@@ -355,7 +356,7 @@ func NewStreamSocket(conn net.Conn)(StreamSession){
 	session 			:= new(StreamSocket)
 	session.conn 		 = conn
 	session.sendQue      = util.NewBlockQueue()
-	session.sendTimeout  = DefaultSendTimeout * time.Second
+	session.sendTimeout  = kendynet.DefaultSendTimeout * time.Second
 	return session
 }
 

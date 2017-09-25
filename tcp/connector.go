@@ -3,20 +3,16 @@ package tcp
 import (
     "net"
     "github.com/sniperHW/kendynet"
+    "github.com/sniperHW/kendynet/stream_socket"
     "time"
 )
 
 type Connector struct{
 	nettype string
 	addr    string
-	//addr *net.TCPAddr
 }
 
 func NewConnector(nettype string,addr string) (*Connector,error) {
-	/*addr,err := net.ResolveTCPAddr(nettype, service)
-	if nil != err {
-		return nil,err
-	}*/
 	return &Connector{nettype:nettype,addr:addr},nil
 }
 
@@ -26,5 +22,5 @@ func (this *Connector) Dial(timeout time.Duration) (kendynet.StreamSession,inter
 	if err != nil {
 		return nil,nil,err
 	}
-	return kendynet.NewStreamSocket(conn),nil,nil
+	return stream_socket.NewStreamSocket(conn),nil,nil
 }
