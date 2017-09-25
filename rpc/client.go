@@ -238,6 +238,8 @@ func (this *RPCClient) startReqTimeoutCheckRoutine() {
 		this.mutex.Lock()
 		var sleepPing int64
 		var sleepCall int64
+		timeoutList := reqQueue{}
+		timeoutList.init()
 		for {
 			now := time.Now()
 			sleepPing = 0x7FFFFFFFFFFFFFFF
@@ -266,8 +268,8 @@ func (this *RPCClient) startReqTimeoutCheckRoutine() {
 			if sleepTime > 0 {
 				this.mutex.Unlock()
 				time.Sleep(time.Duration(sleepTime))
-				now = time.Now()
-				this.mutex.Lock()				
+				this.mutex.Lock()
+				now = time.Now()				
 			}
 
 			for this.pendingPings.count > 0 {
@@ -276,9 +278,10 @@ func (this *RPCClient) startReqTimeoutCheckRoutine() {
 					this.pendingPings.popFront()
 					delete(p.chanContext.pendingReqs,p.seq)
 					if this.option.OnPingTimeout != nil {
-						this.mutex.Unlock()
-						this.option.OnPingTimeout(p.chanContext.channel)
-						this.mutex.Lock()
+						timeoutList.push(p)
+						//this.mutex.Unlock()
+						//this.option.OnPingTimeout(p.chanContext.channel)
+						//this.mutex.Lock()
 					}
 				} else {
 					break
@@ -290,12 +293,26 @@ func (this *RPCClient) startReqTimeoutCheckRoutine() {
 				if now.After(p.deadline) {
 					this.pendingCalls.popFront()
 					delete(p.chanContext.pendingReqs,p.seq)
-					this.mutex.Unlock()
-					p.onResponse(nil,ErrCallTimeout)
-					this.mutex.Lock()
+					timeoutList.push(p)
+					//this.mutex.Unlock()
+					//p.onResponse(nil,ErrCallTimeout)
+					//this.mutex.Lock()
 				} else {
 					break
 				}
+			}
+
+			if timeoutList.count > 0 {
+				this.mutex.Unlock()
+				for timeoutList.count > 0 {
+					p := timeoutList.popFront()
+					if p.isPing {
+						this.option.OnPingTimeout(p.chanContext.channel)
+					} else {
+						p.onResponse(nil,ErrCallTimeout)
+					}
+				}
+				this.mutex.Lock()
 			}
 
 			if len(this.channels) == 0 {
@@ -351,8 +368,15 @@ func (this *RPCClient) OnChannelClose(channel RPCChannel,err error) {
 		return
 	}
 
+	respList := reqQueue{}
+	respList.init()
+
 	defer func(){
 		this.mutex.Unlock()
+		for respList.count > 0 {
+			p := respList.popFront()
+			p.onResponse(nil,err)
+		}
 	}()
 	this.mutex.Lock()
 
@@ -368,7 +392,7 @@ func (this *RPCClient) OnChannelClose(channel RPCChannel,err error) {
 
 	for _,r := range chanContext.pendingReqs {
 		if !r.isPing {
-			r.onResponse(nil,err)
+			respList.push(r)
 			this.pendingCalls.remove(r)
 		} else {
 			this.pendingPings.remove(r)
