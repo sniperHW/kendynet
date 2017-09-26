@@ -135,7 +135,7 @@ func NewByteBuffer(arg ...interface{})(*ByteBuffer){
 				size = (uint64)(arg[1].(uint16))
 				break
 			case int: 
-				size = (uint64)(arg[0].(int))
+				size = (uint64)(arg[1].(int))
 				break
 			case int32: 
 				size = (uint64)(arg[1].(int32))
