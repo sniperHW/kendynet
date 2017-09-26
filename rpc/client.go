@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync/atomic"
 	"time"
-//	"runtime"
+	"github.com/sniperHW/kendynet/util"
 )
 
 var sequence uint64 = 0
@@ -279,9 +279,6 @@ func (this *RPCClient) startReqTimeoutCheckRoutine() {
 					delete(p.chanContext.pendingReqs,p.seq)
 					if this.option.OnPingTimeout != nil {
 						timeoutList.push(p)
-						//this.mutex.Unlock()
-						//this.option.OnPingTimeout(p.chanContext.channel)
-						//this.mutex.Lock()
 					}
 				} else {
 					break
@@ -294,9 +291,6 @@ func (this *RPCClient) startReqTimeoutCheckRoutine() {
 					this.pendingCalls.popFront()
 					delete(p.chanContext.pendingReqs,p.seq)
 					timeoutList.push(p)
-					//this.mutex.Unlock()
-					//p.onResponse(nil,ErrCallTimeout)
-					//this.mutex.Lock()
 				} else {
 					break
 				}
@@ -410,7 +404,7 @@ func (this *RPCClient) OnChannelClose(channel RPCChannel,err error) {
 func (this *RPCClient) OnRPCMessage(channel RPCChannel,message interface{}) {
 	msg,err := this.decoder.Decode(message)
 	if nil != err {
-		fmt.Printf("RPCClient rpc message from(%s) decode err:%s\n",channel.Name,err.Error())
+		Logger.Errorf(util.FormatFileLine("RPCClient rpc message from(%s) decode err:%s\n",channel.Name,err.Error()))
 		return
 	}
 

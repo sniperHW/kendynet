@@ -67,15 +67,7 @@ func (this *WSMessage) GetString(idx uint64,size uint64) (string,error) {
 }
 
 func NewMessage(messageType int,optional ...interface{}) *WSMessage {
-	var buff *kendynet.ByteBuffer
-	opLen := len(optional)
-	if opLen == 0 {
-		buff = kendynet.NewByteBuffer()
-	} else if opLen == 1 {
-		buff = kendynet.NewByteBuffer(optional[0])		
-	} else {
-		buff = kendynet.NewByteBuffer(optional[0],optional[1])		
-	}
+	buff := kendynet.NewByteBuffer(optional...)
 	if nil == buff {
 		fmt.Printf("nil == buff\n")
 		return nil
@@ -259,18 +251,12 @@ func wsSendThreadFunc(session *WebSocket) {
 		for !localList.Empty() {
 			var err error
 			msg := localList.Pop().(*WSMessage)
-			//fmt.Printf("message type:%d\n",msg.messageType)
 			if msg.messageType == WSBinaryMessage || msg.messageType == WSTextMessage {
 				session.conn.SetWriteDeadline(timeout)
 				err = session.conn.WriteMessage(msg.messageType,msg.Bytes())
 			} else if msg.messageType == WSCloseMessage || msg.messageType == WSPingMessage || msg.messageType == WSPingMessage {
 				err = session.conn.WriteControl(msg.messageType,msg.Bytes(),timeout)
 				if msg.messageType == WSCloseMessage {
-					if err == nil {
-						fmt.Printf("send WSCloseMessage ok\n")
-					} else {
-						fmt.Printf("send WSCloseMessage failed:%s\n",err.Error())
-					}
 					return
 				}
 			}
@@ -357,7 +343,6 @@ func (this *WebSocket) Close(reason string, timeout time.Duration) error {
 			message := gorilla.FormatCloseMessage(1000, reason)
 			err := this.sendQue.Add(NewMessage(WSCloseMessage,message))
 			if err != nil {
-				fmt.Printf("send close message error :%s\n",err.Error())
 				this.conn.Close()
 			}			
 		}
