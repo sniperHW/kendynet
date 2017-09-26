@@ -8,3 +8,8 @@ message Test {
 	optional int32  b = 2;
 	repeated int64  c = 3;
 }
+
+message BrocastPingpong {
+	required int64  id = 1;
+	required string message = 2;
+}
