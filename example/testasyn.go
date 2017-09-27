@@ -121,7 +121,7 @@ func test4(){
 
 func main() {
 
-	kendynet.Logger.Infof(util.FormatFileLine("start\n"))
+	kendynet.Logger.Debugf(util.FormatFileLine("start\n"))
 
 	test1()
 	test2()

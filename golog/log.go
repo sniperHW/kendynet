@@ -197,7 +197,7 @@ func (self *Logger) Log(c Color, level Level, format string, v ...interface{}) {
 
 	var out io.Writer
 
-	if self.enableColor {
+/*	if self.enableColor {
 
 		if self.colorFile != nil && c == NoColor {
 			c = self.colorFile.ColorFromText(text)
@@ -209,6 +209,7 @@ func (self *Logger) Log(c Color, level Level, format string, v ...interface{}) {
 	} else {
 		c = NoColor
 	}
+*/
 
 	if self.fileOutput == nil {
 		out = os.Stdout
@@ -216,11 +217,12 @@ func (self *Logger) Log(c Color, level Level, format string, v ...interface{}) {
 		out = self.fileOutput
 	}
 
-	if out != os.Stdout {
+	if out == os.Stdout {
 		self.Output(3, prefix, text, c, os.Stdout)
+	} else {
+		self.Output(3, prefix, text, c, os.Stdout)
+		self.Output(3, prefix, text, NoColor, out)	
 	}
-
-	self.Output(3, prefix, text, c, out)
 
 	if int(level) >= int(self.panicLevel) {
 		panic(text)

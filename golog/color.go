@@ -62,6 +62,8 @@ func ColorFromLevel(l Level) Color {
 	switch l {
 	case Level_Warn:
 		return Yellow
+	case Level_Debug:
+		return Purple
 	case Level_Error, Level_Fatal:
 		return Red
 	}
