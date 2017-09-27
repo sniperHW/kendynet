@@ -13,7 +13,7 @@ var (
     ErrSendTimeout             = fmt.Errorf("send timeout")
     ErrStarted                 = fmt.Errorf("already started")
     ErrInvaildBuff             = fmt.Errorf("buff is nil")
-    ErrNoOnPacket              = fmt.Errorf("onPacket == nil")
+    ErrNoOnEvent              = fmt.Errorf("onEvent == nil")
     ErrNoReceiver              = fmt.Errorf("receiver == nil")
     ErrInvaildObject           = fmt.Errorf("object == nil")
     ErrInvaildEncoder          = fmt.Errorf("encoder == nil")

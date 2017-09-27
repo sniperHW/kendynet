@@ -327,7 +327,7 @@ func (this *StreamSocket) Start() error {
 	}
 
 	if this.onEvent == nil {
-		return kendynet.ErrNoOnPacket
+		return kendynet.ErrNoOnEvent
 	}
 
 	if this.receiver == nil {
