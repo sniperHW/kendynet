@@ -1,7 +1,7 @@
 package kendynet
 
 import (
-	"github.com/davyxu/golog"
+	"github.com/sniperHW/kendynet/golog"
 	"os"
 	"time"
 	"fmt"

@@ -2,7 +2,7 @@ package rpc
 
 import(
 	"github.com/sniperHW/kendynet"
-	"github.com/davyxu/golog"	
+	"github.com/sniperHW/kendynet/golog"
 )
 
 var Logger *golog.Logger
