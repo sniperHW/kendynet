@@ -13,6 +13,7 @@ import (
 	   "github.com/sniperHW/kendynet/util" 
 	   "github.com/sniperHW/kendynet"
 	   gorilla "github.com/gorilla/websocket"
+	   "sync/atomic"
 )
 
 // The message types are defined in RFC 6455, section 11.8.
@@ -93,6 +94,7 @@ type WebSocket struct {
 	onEvent           func (*kendynet.Event)
 	closeReason       string
 	name              string
+	c                 int32
 }
 
 func (this *WebSocket) SetUserData(ud interface{}) {
@@ -157,7 +159,7 @@ func (this *WebSocket) Send(o interface{}) error {
 func (this *WebSocket) SendMessage(msg kendynet.Message) error {
 	if msg == nil {
 		return kendynet.ErrInvaildBuff
-	} else if this.sendStop || this.closed {
+	} else if this.closed {
 		return kendynet.ErrSocketClose
 	} else {
 		switch msg.(type) {
@@ -176,16 +178,7 @@ func (this *WebSocket) SendMessage(msg kendynet.Message) error {
 	return nil
 }
 
-func wsRecvThreadFunc(session *WebSocket) {
-
-	defer func() {
-		session.mutex.Lock()
-		session.recvStop = true
-		if session.sendStop && nil != session.onClose {
-			session.onClose(session,session.closeReason)
-		} 
-		session.mutex.Unlock()
-	}()
+func RecvThreadFunc(session *WebSocket) {
 
 	for !session.sendQue.Closed() {
 		if session.recvTimeout > 0 {
@@ -213,17 +206,17 @@ func wsRecvThreadFunc(session *WebSocket) {
 			session.onEvent(&event)
 		}
 	}
+	if atomic.AddInt32(&session.c,1) == 2 && nil != session.onClose {
+		session.onClose(session,session.closeReason)
+	}	
 }
 
-func wsSendThreadFunc(session *WebSocket) {
+func SendThreadFunc(session *WebSocket) {
 	defer func() {
-		session.mutex.Lock()
 		session.conn.Close()
-		session.sendStop = true
-		if session.recvStop && nil != session.onClose {
+		if atomic.AddInt32(&session.c,1) == 2 && nil != session.onClose {
 			session.onClose(session,session.closeReason)
 		}
-		session.mutex.Unlock()
 	}()
 
 
@@ -300,8 +293,8 @@ func (this *WebSocket) Start() error {
 	}
 
 	this.started = true
-	go wsSendThreadFunc(this)
-	go wsRecvThreadFunc(this)
+	go SendThreadFunc(this)
+	go RecvThreadFunc(this)
 	return nil
 }
 

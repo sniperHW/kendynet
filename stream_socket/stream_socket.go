@@ -13,6 +13,7 @@ import (
 	   "io"
 	   "github.com/sniperHW/kendynet/util" 
 	   "github.com/sniperHW/kendynet"
+	   "sync/atomic"
 )
 
 type StreamSocket struct {
@@ -21,8 +22,7 @@ type StreamSocket struct {
 	sendQue         *util.BlockQueue
 	receiver         kendynet.Receiver
 	encoder          kendynet.EnCoder
-	sendStop         bool
-	recvStop         bool
+	c                int32
 	closed           bool
 	started          bool
 	closeDeadline    time.Time
@@ -140,7 +140,7 @@ func (this *StreamSocket) Send(o interface{}) error {
 func (this *StreamSocket) SendMessage(msg kendynet.Message) error {
 	if msg == nil {
 		return kendynet.ErrInvaildBuff
-	} else if this.sendStop || this.closed {
+	} else if this.closed {
 		return kendynet.ErrSocketClose
 	} else {
 		if nil != this.sendQue.Add(msg) {
@@ -151,15 +151,6 @@ func (this *StreamSocket) SendMessage(msg kendynet.Message) error {
 }
 
 func recvThreadFunc(session *StreamSocket) {
-
-	defer func() {
-		session.mutex.Lock()
-		session.recvStop = true
-		if session.sendStop && nil != session.onClose {
-			session.onClose(session,session.closeReason)
-		} 
-		session.mutex.Unlock()
-	}()
 
 	for !session.sendQue.Closed() {
 		if session.recvTimeout > 0 {
@@ -187,6 +178,10 @@ func recvThreadFunc(session *StreamSocket) {
 	        */	
 			session.onEvent(&event)
 		}
+	}
+
+	if atomic.AddInt32(&session.c,1) == 2 && nil != session.onClose {
+		session.onClose(session,session.closeReason)
 	}
 }
 
@@ -251,13 +246,10 @@ func writeToWriter(writer *bufio.Writer,buffer []byte) error {
 
 func sendThreadFunc(session *StreamSocket) {
 	defer func() {
-		session.mutex.Lock()
 		session.conn.Close()
-		session.sendStop = true
-		if session.recvStop && nil != session.onClose {
+		if atomic.AddInt32(&session.c,1) == 2 && nil != session.onClose {
 			session.onClose(session,session.closeReason)
-		} 
-		session.mutex.Unlock()
+		}
 	}()
 
 	writer := bufio.NewWriter(session.conn)
