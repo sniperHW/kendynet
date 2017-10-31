@@ -39,23 +39,21 @@ func (self *BlockQueue) Closed() bool {
 	return closed
 }
 
-func (self *BlockQueue) Get(out *List) bool {
+func (self *BlockQueue) Get() (closed bool,datas []interface{}) {
 	self.listGuard.Lock()
 	for !self.closed && len(self.list) == 0 {
 		//Cond.Wait不能设置超时，蛋疼
 		self.listCond.Wait()
 	}
 
-	for _, p := range self.list {
-		out.Push(p)
+	if len(self.list) > 0 {
+		datas  = self.list
+		self.list = make([]interface{},0)
 	}
 
-	self.list = self.list[0:0]
-
+	closed = self.closed
 	self.listGuard.Unlock()
-
-	return self.closed
-
+	return
 }
 
 func (self *BlockQueue) Close() {

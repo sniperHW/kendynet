@@ -35,19 +35,24 @@ func (this *EventQueue) Start(onEvent func(interface{})) error {
         return fmt.Errorf("started")
     }
 
-	localList := util.NewList()
+	//localList := util.NewList()
 
 	for {
 
-		closed := this.eventQueue.Get(localList)
+		closed,localList := this.eventQueue.Get()
 
 		if closed {
 			return nil
 		}
 
-		for !localList.Empty() {
+		size := len(localList)
+		for i := 0; i < size; i++ {
+			onEvent(localList[i])
+		}
+
+		/*for !localList.Empty() {
 			ev := localList.Pop()
 			onEvent(ev)
-		}
+		}*/
 	}
 }

@@ -226,18 +226,17 @@ func recvThreadFunc(session *StreamSocket) {
 func sendThreadFunc(session *StreamSocket) {
 
 	writer := bufio.NewWriter(session.conn)
-	localList := util.NewList()
-
 	for {
-		closed := session.sendQue.Get(localList)
-		if closed && localList.Empty() {
+		closed,localList := session.sendQue.Get()
+		size := len(localList)
+		if closed && size == 0 {
 			break
 		}
 
-		for !localList.Empty() {
-			msg := localList.Pop().(kendynet.Message)
+		for i := 0; i < size; i++ {
+			msg := localList[i].(kendynet.Message)
 			data := msg.Bytes()
-			for data != nil || (localList.Empty() && writer.Buffered() > 0) {
+			for data != nil || (i == (size - 1) && writer.Buffered() > 0) {
 				if data != nil {
 					var s int
 					if len(data) > writer.Available() {
@@ -254,7 +253,7 @@ func sendThreadFunc(session *StreamSocket) {
 					}
 				}
 
-				if writer.Available() == 0 || localList.Empty() {
+				if writer.Available() == 0 || i == (size - 1) {
 					timeout := session.getSendTimeout()
 					if timeout > 0 {
 						session.conn.SetWriteDeadline(time.Now().Add(timeout))

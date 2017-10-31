@@ -243,18 +243,18 @@ func recvThreadFunc(session *WebSocket) {
 }
 
 func sendThreadFunc(session *WebSocket) {
-	atomic.AddInt32(&session.c,1)
-	localList := util.NewList()	
+	atomic.AddInt32(&session.c,1)	
 	for {
 
-		closed := session.sendQue.Get(localList)
-		if closed && localList.Empty() {
+		closed,localList := session.sendQue.Get()
+		size := len(localList)
+		if closed && size == 0 {
 			break
 		}
 
-		for !localList.Empty() {
-			var err error
-			msg := localList.Pop().(*WSMessage)
+		for i := 0; i < size; i++ {
+			var err error			
+			msg := localList[i].(*WSMessage)
 			timeout := session.getSendTimeout()
 			if msg.messageType == WSBinaryMessage || msg.messageType == WSTextMessage {
 				if timeout > 0 {
