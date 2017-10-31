@@ -71,6 +71,20 @@ func (self *BlockQueue) Close() {
 	self.listCond.Signal()
 }
 
+func (self *BlockQueue) Len() (length int) {
+	self.listGuard.Lock()
+	length = len(self.list)
+	self.listGuard.Unlock()
+	return
+}
+
+func (self *BlockQueue) Clear() {
+	self.listGuard.Lock()
+	self.list = self.list[0:0]
+	self.listGuard.Unlock()
+	return
+}
+
 func NewBlockQueue() *BlockQueue {
 	self := &BlockQueue{}
 	self.closed = false

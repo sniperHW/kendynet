@@ -8,10 +8,14 @@ import(
 	"os"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/tcp"
-	codec "github.com/sniperHW/kendynet/codec/stream_socket"		
+	codec "github.com/sniperHW/kendynet/codec/stream_socket"	
+	"runtime/pprof"
+	"os/signal"
+	"syscall"
 )
 
 func server(service string) {
+
 	clientcount := int32(0)
 	bytescount  := int32(0)
 	packetcount := int32(0)
@@ -98,6 +102,11 @@ func client(service string,count int) {
 
 func main(){
 
+	f, _ := os.Create("profile_file")
+	pprof.StartCPUProfile(f)  // 开始cpu profile，结果写到文件f中
+	defer pprof.StopCPUProfile()  // 结束profile
+
+
 	if len(os.Args) < 3 {
 		fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")
 		return
@@ -113,8 +122,8 @@ func main(){
 
 	service := os.Args[2]
 
-	sigStop := make(chan bool)
-
+   	c := make(chan os.Signal) 
+    signal.Notify(c, syscall.SIGINT)  //监听指定信号
 	if mode == "server" || mode == "both" {
 		go server(service)
 	}
@@ -135,7 +144,7 @@ func main(){
 
 	}
 
-	_,_ = <- sigStop
+    _ = <-c //阻塞直至有信号传入
 
 	return
 
