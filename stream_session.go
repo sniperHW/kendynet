@@ -38,7 +38,7 @@ type StreamSession interface {
 	SendMessage(msg Message) error
 	
 	/* 
-		关闭会话,如果会话中还有待发送的数据且timeout非0
+		关闭会话,如果会话中还有待发送的数据且timeout > 0
 		将尝试将数据发送完毕后关闭，如果数据未能完成发送则等到timeout秒之后也会被关闭。
 
 		无论何种情况，调用Close之后SendXXX操作都将返回错误

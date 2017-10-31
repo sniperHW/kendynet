@@ -75,21 +75,29 @@ func (this *StreamSocket) Close(reason string, timeout time.Duration) error {
 	this.mutex.Unlock()		
 	if timeout > 0 {
 		ticker := time.NewTicker(timeout)
-		defer func () {
-			ticker.Stop()
-			if nil != this.onClose {
-				this.onClose(this,this.closeReason)
-			}
+		go func() {
+
+			/*
+			 *	timeout > 0,sendThread最多需要经过timeout秒之后才会结束， 
+			 *	为了避免阻塞调用Close的goroutine,启动一个新的goroutine在chan上等待事件
+			*/
+			defer func () {
+				ticker.Stop()
+				if nil != this.onClose {
+					this.onClose(this,this.closeReason)
+				}
+			}()
+			for {
+				select {
+					case <- this.closeChan:
+						return
+					case <- ticker.C:
+						this.conn.Close()
+						return
+				}
+			}		
 		}()
-		for {
-			select {
-				case <- this.closeChan:
-					return nil
-				case <- ticker.C:
-					this.conn.Close()
-					return nil
-			}
-		}		
+		return nil
 	} else {
 		this.conn.Close()
 		if nil != this.onClose {
