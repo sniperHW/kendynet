@@ -7,7 +7,6 @@ package kendynet
 import (
 	   "net"
        "time"
-       //rpc_channel "github.com/sniperHW/kendynet/rpc/channel"
 )
 
 const (
@@ -15,14 +14,15 @@ const (
     EventTypeError   = 2
 )
 
-const (
-    DefaultSendTimeout = 10
-)
-
 type Event struct {
     EventType int16
     Session StreamSession
     Data    interface {}    
+}
+
+type SessionOption struct {
+    SendTimeout time.Duration
+    RecvTimeout time.Duration    
 }
 
 type StreamSession interface {
@@ -66,34 +66,9 @@ type StreamSession interface {
     SetEncoder(encoder EnCoder)
 
     /*
-    *   设置接收超时(如果出现超时调用SetPacketCallBack中传入的回调函数，传递合适的错误)
-    */ 
-    SetReceiveTimeout(timeout time.Duration)
-
-    /*
-    *	设置发送超时(如果出现超时调用SetPacketCallBack中传入的回调函数，传递合适的错误)
-    */
-    SetSendTimeout(timeout time.Duration)
-
-    /*
-    *	获取待发送数据的大小
-    */
-    //GetSendBuffSize() uint32
-
-    /*
     *   启动会话处理
     */
     Start() error
-
-    /*
-    *   暂停会话处理的接收处理
-    */
-    //PauseReceive() error
-
-    /*
-    *   恢复会话处理的接收处理
-    */    
-    //ResumeReceive() error
 
     /*
     *   获取会话的本端地址
