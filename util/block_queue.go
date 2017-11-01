@@ -23,8 +23,9 @@ func (self *BlockQueue) Add(item interface{}) error {
 		self.listGuard.Unlock()
 		return ErrQueueClosed
 	}
+	n := len(self.list)
 	self.list = append(self.list, item)
-	needSignal := self.waited > 0
+	needSignal := self.waited > 0 && n == 0
 	self.listGuard.Unlock()
 	if needSignal {
 		self.listCond.Signal()
