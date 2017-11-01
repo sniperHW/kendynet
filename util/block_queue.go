@@ -14,20 +14,21 @@ type BlockQueue struct {
 	listGuard sync.Mutex
 	listCond  *sync.Cond
 	closed     bool
+	waited     int
 }
 
 func (self *BlockQueue) Add(item interface{}) error {
 	self.listGuard.Lock()
-
 	if self.closed {
 		self.listGuard.Unlock()
 		return ErrQueueClosed
 	}
-
 	self.list = append(self.list, item)
+	needSignal := self.waited > 0
 	self.listGuard.Unlock()
-	self.listCond.Signal()
-
+	if needSignal {
+		self.listCond.Signal()
+	}
 	return nil
 }
 
@@ -43,15 +44,32 @@ func (self *BlockQueue) Get() (closed bool,datas []interface{}) {
 	self.listGuard.Lock()
 	for !self.closed && len(self.list) == 0 {
 		//Cond.Wait不能设置超时，蛋疼
+		self.waited++
 		self.listCond.Wait()
+		self.waited--
 	}
-
 	if len(self.list) > 0 {
 		datas  = self.list
 		self.list = make([]interface{},0)
 	}
 
 	closed = self.closed
+	self.listGuard.Unlock()
+	return
+}
+
+func (self *BlockQueue) Swap(swaped []interface{}) (closed bool,datas []interface{}) {
+	swaped = swaped[0:0]
+	self.listGuard.Lock()
+	for !self.closed && len(self.list) == 0 {
+		self.waited++
+		//Cond.Wait不能设置超时，蛋疼
+		self.listCond.Wait()
+		self.waited--
+	}
+	datas  = self.list
+	closed = self.closed
+	self.list = swaped
 	self.listGuard.Unlock()
 	return
 }
