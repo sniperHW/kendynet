@@ -13,8 +13,12 @@ import (
 	   "io"
 	   "github.com/sniperHW/kendynet/util" 
 	   "github.com/sniperHW/kendynet"
-	   "sync/atomic"
 	   //"fmt"
+)
+
+const (
+	started      = (1 << 0)
+	closed       = (1 << 1)
 )
 
 type StreamSocket struct {
@@ -23,17 +27,13 @@ type StreamSocket struct {
 	sendQue         *util.BlockQueue
 	receiver         kendynet.Receiver
 	encoder          kendynet.EnCoder
-	c                int32
-	closed           bool
-	started          bool
+	flag             int32
 	option           kendynet.SessionOption
-//	recvTimeout      time.Duration
-//	sendTimeout      time.Duration
 	mutex            sync.Mutex
 	onClose          func (kendynet.StreamSession,string)
 	onEvent          func (*kendynet.Event)
 	closeReason      string
-	closeChan        chan int          
+	sendCloseChan    chan int         
 }
 
 
@@ -53,59 +53,67 @@ func (this *StreamSocket) RemoteAddr() net.Addr {
 	return this.conn.RemoteAddr()
 }
 
-func (this *StreamSocket) Close(reason string, timeout time.Duration) error {
+func (this *StreamSocket) isClosed() (ret bool) {
 	this.mutex.Lock()
-	if this.closed {
-		this.mutex.Unlock()
-		return kendynet.ErrSocketClose
-	}
+	ret = (this.flag & closed) > 0
+	this.mutex.Unlock()
+	return
+}
 
-	if timeout < 0 {
-		timeout = 0
+func (this *StreamSocket) doClose() {
+	this.conn.Close()
+	if nil != this.onClose {
+		this.onClose(this,this.closeReason)
+	}	
+} 
+
+func (this *StreamSocket) shutdownRead() {
+	switch this.conn.(type) {
+	case *net.TCPConn:
+		this.conn.(*net.TCPConn).CloseRead()
+		break
+	case *net.UnixConn:
+		this.conn.(*net.UnixConn).CloseRead()
+		break
+	}
+} 
+
+func (this *StreamSocket) Close(reason string, timeout time.Duration) {
+	this.mutex.Lock()
+	if (this.flag & closed) > 0 {
+		this.mutex.Unlock()
+		return
 	}
 
 	this.closeReason = reason
-	this.closed = true
+	this.flag |= closed
+	this.sendQue.Close()
+	this.mutex.Unlock()
 	if this.sendQue.Len() > 0 {
 		timeout = timeout * time.Second
-		if timeout == 0 {
+		if timeout <= 0 {
 			this.sendQue.Clear()
 		}
-	} 
-	this.sendQue.Close()
-	this.mutex.Unlock()		
+	} 		
 	if timeout > 0 {
+		this.shutdownRead()
 		ticker := time.NewTicker(timeout)
 		go func() {
-
 			/*
 			 *	timeout > 0,sendThread最多需要经过timeout秒之后才会结束， 
 			 *	为了避免阻塞调用Close的goroutine,启动一个新的goroutine在chan上等待事件
 			*/
-			defer func () {
-				ticker.Stop()
-				if nil != this.onClose {
-					this.onClose(this,this.closeReason)
-				}
-			}()
-			for {
-				select {
-					case <- this.closeChan:
-						return
-					case <- ticker.C:
-						this.conn.Close()
-						return
-				}
-			}		
+			select {
+				case <- this.sendCloseChan:
+				case <- ticker.C:
+			}
+			ticker.Stop()
+			this.doClose()		
 		}()
-		return nil
-	} else {
-		this.conn.Close()
-		if nil != this.onClose {
-			this.onClose(this,this.closeReason)
-		}
-		return nil		
+	} else{
+		this.doClose()
 	}
+	
 }
     
 func (this *StreamSocket) SetCloseCallBack(cb func (kendynet.StreamSession, string)) {
@@ -141,7 +149,6 @@ func (this *StreamSocket) Send(o interface{}) error {
 	}
 
 	return this.SendMessage(msg)
-
 }
 	
 func (this *StreamSocket) SendMessage(msg kendynet.Message) error {
@@ -151,19 +158,17 @@ func (this *StreamSocket) SendMessage(msg kendynet.Message) error {
 	}()
 	if msg == nil {
 		return kendynet.ErrInvaildBuff
-	} else if this.closed {
+	} else if (this.flag & closed) > 0 {
 		return kendynet.ErrSocketClose
-	} else {
-		if nil != this.sendQue.Add(msg) {
-			return kendynet.ErrSocketClose
-		}
+	} else if nil != this.sendQue.Add(msg) {
+		return kendynet.ErrSocketClose
 	}
 	return nil
 }
 
 func recvThreadFunc(session *StreamSocket) {
 
-	for !session.sendQue.Closed() {
+	for !session.isClosed() {
 
 		recvTimeout := session.option.RecvTimeout
 
@@ -172,7 +177,7 @@ func recvThreadFunc(session *StreamSocket) {
 		}
 		
 		p,err := session.receiver.ReceiveAndUnpack(session)
-		if session.sendQue.Closed() {
+		if session.isClosed() {
 			//上层已经调用关闭，所有事件都不再传递上去
 			break
 		}
@@ -192,14 +197,13 @@ func recvThreadFunc(session *StreamSocket) {
 			session.onEvent(&event)
 		}
 	}
-
-	session.conn.Close()
-	if atomic.AddInt32(&session.c,1) == 2 {
-		session.closeChan <- 1
-	}
 }
 
 func sendThreadFunc(session *StreamSocket) {
+
+	defer func(){
+		session.sendCloseChan <- 1
+	}()
 
 	writer := bufio.NewWriter(session.conn)
 	for {
@@ -235,7 +239,10 @@ func sendThreadFunc(session *StreamSocket) {
 						session.conn.SetWriteDeadline(time.Now().Add(timeout))
 					}
 					err := writer.Flush()
-					if err != nil && err != io.ErrShortWrite && !session.sendQue.Closed() {
+					if err != nil && err != io.ErrShortWrite {
+						if session.sendQue.Closed() {
+							return
+						}
 						if err.(net.Error).Timeout() {
 							err = kendynet.ErrSendTimeout
 						}
@@ -246,10 +253,6 @@ func sendThreadFunc(session *StreamSocket) {
 			}
 		}
 	}
-	session.conn.Close()
-	if atomic.AddInt32(&session.c,1) == 2 {	
-		session.closeChan <- 1	
-	}	
 }
 
 
@@ -261,11 +264,11 @@ func (this *StreamSocket) Start() error {
 
 	this.mutex.Lock()
 
-	if this.closed {
+	if (this.flag & closed) > 0 {
 		return kendynet.ErrSocketClose
 	}
 
-	if this.started {
+	if (this.flag & started) > 0 {
 		return kendynet.ErrStarted
 	}
 
@@ -276,8 +279,7 @@ func (this *StreamSocket) Start() error {
 	if this.receiver == nil {
 		return kendynet.ErrNoReceiver
 	}
-
-	this.started = true
+	this.flag |= started
 	go sendThreadFunc(this)
 	go recvThreadFunc(this)
 	return nil
@@ -295,10 +297,10 @@ func NewStreamSocket(conn net.Conn,option ...kendynet.SessionOption)(kendynet.St
 			return nil
 	}
 
-	session 			:= new(StreamSocket)
-	session.conn 		 = conn
-	session.sendQue      = util.NewBlockQueue()
-	session.closeChan    = make(chan int,1)
+	session 			 := new(StreamSocket)
+	session.conn 		  = conn
+	session.sendQue       = util.NewBlockQueue()
+	session.sendCloseChan = make(chan int,1)
 
 	if len(option) > 0 {
 		session.option = option[0]

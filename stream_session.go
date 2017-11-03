@@ -43,7 +43,7 @@ type StreamSession interface {
 
 		无论何种情况，调用Close之后SendXXX操作都将返回错误
 	*/
-    Close(reason string, timeout time.Duration) error
+    Close(reason string, timeout time.Duration)
     
     /*
     	设置关闭回调，当session被关闭时回调

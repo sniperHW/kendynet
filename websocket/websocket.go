@@ -13,7 +13,12 @@ import (
 	   "github.com/sniperHW/kendynet/util" 
 	   "github.com/sniperHW/kendynet"
 	   gorilla "github.com/gorilla/websocket"
-	   "sync/atomic"
+	   //"sync/atomic"
+)
+
+const (
+	started      = (1 << 0)
+	closed       = (1 << 1)
 )
 
 // The message types are defined in RFC 6455, section 11.8.
@@ -82,17 +87,13 @@ type WebSocket struct {
 	sendQue          *util.BlockQueue
 	receiver          kendynet.Receiver
 	encoder           kendynet.EnCoder
-	sendStop          bool
-	recvStop          bool
-	closed            bool
-	started           bool
+	flag              int32
 	option            kendynet.SessionOption
 	mutex             sync.Mutex
 	onClose           func (kendynet.StreamSession,string)
 	onEvent           func (*kendynet.Event)
 	closeReason       string
-	c                 int32
-	closeChan         chan int	
+	sendCloseChan     chan int 
 }
 
 func (this *WebSocket) SetUserData(ud interface{}) {
@@ -153,7 +154,7 @@ func (this *WebSocket) SendMessage(msg kendynet.Message) error {
 	}()	
 	if msg == nil {
 		return kendynet.ErrInvaildBuff
-	} else if this.closed {
+	} else if (this.flag & closed) > 0 {
 		return kendynet.ErrSocketClose
 	} else {
 		switch msg.(type) {
@@ -173,15 +174,14 @@ func (this *WebSocket) SendMessage(msg kendynet.Message) error {
 }
 
 func recvThreadFunc(session *WebSocket) {
-	atomic.AddInt32(&session.c,1)
-	for !session.sendQue.Closed() {
+	for !session.isClose() {
 		recvTimeout := session.option.RecvTimeout
 		if recvTimeout > 0 {
 			session.conn.SetReadDeadline(time.Now().Add(recvTimeout))
 		}
 		
 		p,err := session.receiver.ReceiveAndUnpack(session)
-		if session.sendQue.Closed() {
+		if session.isClose() {
 			break
 		}
 
@@ -200,15 +200,10 @@ func recvThreadFunc(session *WebSocket) {
 	        */	
 			session.onEvent(&event)
 		}
-	}
-	session.conn.Close()
-	if atomic.AddInt32(&session.c,-1) == 0 {
-		session.closeChan <- 1
 	}	
 }
 
-func sendThreadFunc(session *WebSocket) {
-	atomic.AddInt32(&session.c,1)	
+func sendThreadFunc(session *WebSocket) {	
 	for {
 
 		closed,localList := session.sendQue.Get()
@@ -234,16 +229,16 @@ func sendThreadFunc(session *WebSocket) {
 				err = session.conn.WriteControl(msg.messageType,msg.Bytes(),deadline)
 			}
 
-			if err != nil && msg.messageType != WSCloseMessage && !session.sendQue.Closed() {
+			if err != nil && msg.messageType != WSCloseMessage {
+				if session.sendQue.Closed() {
+					return
+				}
 				event := &kendynet.Event{Session:session,EventType:kendynet.EventTypeError,Data:err}
 				session.onEvent(event)
 			}			
 		}
 	}
-	session.conn.Close()	
-	if atomic.AddInt32(&session.c,-1) == 0 {
-		session.closeChan <- 1
-	}	
+	session.sendCloseChan <- 1
 }
 
 func (this *WebSocket) Start() error {
@@ -254,11 +249,11 @@ func (this *WebSocket) Start() error {
 
 	this.mutex.Lock()
 
-	if this.closed {
+	if (this.flag & closed) > 0 {
 		return kendynet.ErrSocketClose
 	}
 
-	if this.started {
+	if (this.flag & started) > 0 {
 		return kendynet.ErrStarted
 	}
 
@@ -269,79 +264,83 @@ func (this *WebSocket) Start() error {
 	if this.receiver == nil {
 		return kendynet.ErrNoReceiver
 	}
+	this.flag |= started
 
-	this.started = true
 	go sendThreadFunc(this)
 	go recvThreadFunc(this)
+	
 	return nil
 }
 
-func (this *WebSocket) Close(reason string, timeout time.Duration) error {
+func (this *WebSocket) isClose() (ret bool) {
 	this.mutex.Lock()
-	if this.closed {
+	ret = (this.flag & closed) > 0
+	this.mutex.Unlock()
+	return
+}
+
+func (this *WebSocket) shutdownRead() {
+	underConn := this.conn.UnderlyingConn()
+	switch underConn.(type) {
+		case *net.TCPConn:
+			underConn.(*net.TCPConn).CloseRead()
+			break
+		case *net.UnixConn:
+			underConn.(*net.UnixConn).CloseRead()
+			break
+	}
+}
+
+func (this *WebSocket) Close(reason string, timeout time.Duration) {
+	this.mutex.Lock()
+	if (this.flag & closed) > 0 {
 		this.mutex.Unlock()
-		return kendynet.ErrSocketClose
+		return
 	}
-	if timeout < 0 {
-		timeout = 0
-	}
+
 	this.closeReason = reason
-	this.closed = true
+	this.flag |= closed
 	timeout = timeout * time.Second
-	if this.sendQue.Len() > 0 {
-		timeout = timeout * time.Second
-		if timeout == 0 {
-			this.sendQue.Clear()
-		}
-	}
+
 	if timeout > 0 {
+		this.shutdownRead()
 		message := gorilla.FormatCloseMessage(1000, reason)
 		this.sendQue.Add(NewMessage(WSCloseMessage,message))
-		this.sendQue.Close()	
-		if !this.started {
+		this.sendQue.Close()
+		ticker := time.NewTicker(timeout)
+		if (this.flag & started) == 0 {
 			go sendThreadFunc(this)
 		}
-		this.mutex.Unlock()				
-		ticker := time.NewTicker(timeout)
-		go func(){
-			/*
-			 *	timeout > 0,sendThread最多需要经过timeout秒之后才会结束， 
-			 *	为了避免阻塞调用Close的goroutine,启动一个新的goroutine在chan上等待事件
-			*/			
-			defer func () {
-				ticker.Stop()
-				if nil != this.onClose {
-					this.onClose(this,this.closeReason)
-				}
-			}()
-			for {
-				select {
-					case <- this.closeChan:
-						return
-					case <- ticker.C:
-						this.conn.Close()
-						return
-				}
+		this.mutex.Unlock()
+		go func() {
+			select {
+				case <- this.sendCloseChan:
+				case <- ticker.C:
 			}
-		}()
-		return nil	
+			ticker.Stop()
+			this.conn.Close()
+			if nil != this.onClose {
+				this.onClose(this,this.closeReason)
+			}
+			return		
+		}()		
 	} else {
-		this.mutex.Unlock()		
 		this.sendQue.Close()
+		this.mutex.Unlock()
 		this.conn.Close()
 		if nil != this.onClose {
 			this.onClose(this,this.closeReason)
 		}
-		return nil	
+		return				
 	}
 }
 
 
 func NewWSSocket(conn *gorilla.Conn,option ...kendynet.SessionOption)(kendynet.StreamSession){
-	session 			:= new(WebSocket)
-	session.conn 		 = conn
-	session.sendQue      = util.NewBlockQueue()
-	session.closeChan    = make(chan int,1)
+	session 			 := new(WebSocket)
+	session.conn 		  = conn
+	session.sendQue       = util.NewBlockQueue()
+	session.sendCloseChan = make(chan int,1)
 	if len(option) > 0 {
 		session.option = option[0]
 	}

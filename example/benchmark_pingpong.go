@@ -50,6 +50,7 @@ func server(service string) {
 					atomic.AddInt32(&bytescount,int32(len(event.Data.(kendynet.Message).Bytes())))
 					atomic.AddInt32(&packetcount,int32(1))
 					event.Session.SendMessage(event.Data.(kendynet.Message))
+					//event.Session.Close("none",10)
 				}
 			})
 			session.Start()
