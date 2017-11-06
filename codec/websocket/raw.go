@@ -14,11 +14,10 @@ type RawReceiver struct {
 }
 
 func (this *RawReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface{},error) {
-	mt, message, err := sess.(*websocket.WebSocket).ReadMessage()
+	mt, message, err := sess.(*websocket.WebSocket).Read()
 	if err != nil {
 		return nil,err
 	} else {
-		//fmt.Printf("%d,%s\n",mt,(string)(message))
 		return websocket.NewMessage(mt,message),nil
 	}
 }

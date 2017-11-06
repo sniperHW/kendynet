@@ -355,7 +355,7 @@ func (this *WebSocket) GetUnderConn() interface{} {
 	return this.conn
 }
 
-func (this *WebSocket) ReadMessage() (messageType int, p []byte, err error) {
+func (this *WebSocket) Read() (messageType int, p []byte, err error) {
 	return this.conn.ReadMessage()
 }
 

@@ -25,7 +25,7 @@ func (self *BlockQueue) Add(item interface{}) error {
 	}
 	n := len(self.list)
 	self.list = append(self.list, item)
-	needSignal := self.waited > 0 && n == 0
+	needSignal := self.waited > 0 && n == 0/*BlockQueue目前主要用于单消费者队列，这里n == 0的处理是为了这种情况的优化,减少Signal的调用次数*/
 	self.listGuard.Unlock()
 	if needSignal {
 		self.listCond.Signal()

@@ -32,27 +32,17 @@ func (this *EventQueue) Start(onEvent func(interface{})) error {
 	}
 
 	if !atomic.CompareAndSwapInt32(&this.started,0,1) {
-        return fmt.Errorf("started")
+        return fmt.Errorf("already started")
     }
 
-	//localList := util.NewList()
-
 	for {
-
 		closed,localList := this.eventQueue.Get()
-
 		if closed {
 			return nil
 		}
-
 		size := len(localList)
 		for i := 0; i < size; i++ {
 			onEvent(localList[i])
 		}
-
-		/*for !localList.Empty() {
-			ev := localList.Pop()
-			onEvent(ev)
-		}*/
 	}
 }
