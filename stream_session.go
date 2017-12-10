@@ -53,12 +53,6 @@ type StreamSession interface {
     SetCloseCallBack(cb func (StreamSession,string))
 
     /*
-    *   设置事件回调
-    *   需要注意，回调可能在接收或发送goroutine中调用，如回调函数涉及数据竞争，需要自己加锁保护
-    */
-    SetEventCallBack(cb func (*Event))
-
-    /*
     *   设置接收解包器
     */
     SetReceiver(r Receiver)
@@ -68,7 +62,7 @@ type StreamSession interface {
     /*
     *   启动会话处理
     */
-    Start() error
+    Start(eventCB func (*Event)) error
 
     /*
     *   获取会话的本端地址

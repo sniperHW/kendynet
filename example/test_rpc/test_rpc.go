@@ -169,14 +169,13 @@ func (this *RPCServer) Serve(service string) error {
 		channel := NewTcpStreamChannel(session)
 		session.SetEncoder(codec.NewPbEncoder(4096))
 		session.SetReceiver(codec.NewPBReceiver(4096))
-		session.SetEventCallBack(func (event *kendynet.Event) {
+		session.Start(func (event *kendynet.Event) {
 			if event.EventType == kendynet.EventTypeError {
 				channel.Close(event.Data.(error).Error())
 			} else {
 				this.server.OnRPCMessage(channel,event.Data)	
 			}
 		})
-		session.Start()
 	})
 	return err
 }
@@ -238,14 +237,13 @@ func (this *Caller) Dial(service string,timeout time.Duration) error {
 		this.client.OnChannelClose(channel,fmt.Errorf(reason))
 		fmt.Printf("channel close:%s\n",reason)
 	})
-	session.SetEventCallBack(func (event *kendynet.Event) {
+	session.Start(func (event *kendynet.Event) {
 		if event.EventType == kendynet.EventTypeError {
 			channel.Close(event.Data.(error).Error())
 		} else {
 			this.client.OnRPCMessage(channel,event.Data)	
 		}
 	})
-	session.Start()
 	return nil
 }
 

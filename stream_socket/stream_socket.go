@@ -38,10 +38,15 @@ type StreamSocket struct {
 
 
 func (this *StreamSocket) SetUserData(ud interface{}) {
+	this.mutex.Lock()
+	defer this.mutex.Unlock()
 	this.ud = ud
 }
 
-func (this *StreamSocket) GetUserData() interface{} {
+func (this *StreamSocket) GetUserData() (ud interface{}) {
+	this.mutex.Lock()
+	defer this.mutex.Unlock()
+	ud = this.ud
 	return this.ud
 }
 
@@ -62,9 +67,12 @@ func (this *StreamSocket) isClosed() (ret bool) {
 
 func (this *StreamSocket) doClose() {
 	this.conn.Close()
-	if nil != this.onClose {
-		this.onClose(this,this.closeReason)
-	}	
+	this.mutex.Lock()
+	onClose := this.onClose
+	this.mutex.Unlock()
+	if nil != onClose {
+		onClose(this,this.closeReason)
+	}
 } 
 
 func (this *StreamSocket) shutdownRead() {
@@ -117,26 +125,45 @@ func (this *StreamSocket) Close(reason string, timeout time.Duration) {
 }
     
 func (this *StreamSocket) SetCloseCallBack(cb func (kendynet.StreamSession, string)) {
+	this.mutex.Lock()
+	defer this.mutex.Unlock()
 	this.onClose = cb
 }
 
-
-func (this *StreamSocket) SetEventCallBack(cb func (*kendynet.Event)) {
-	this.onEvent = cb
-}
-
 func (this *StreamSocket) SetEncoder(encoder kendynet.EnCoder) {
+	this.mutex.Lock()
+	defer this.mutex.Unlock()
 	this.encoder = encoder
 }
 
 func (this *StreamSocket) SetReceiver(r kendynet.Receiver) {
+	this.mutex.Lock()
+	defer this.mutex.Unlock()
+	if (this.flag & started) > 0 {
+		return
+	}	
 	this.receiver = r
+}
+
+
+func (this *StreamSocket) sendMessage(msg kendynet.Message) error {
+	if msg == nil {
+		return kendynet.ErrInvaildBuff
+	} else if (this.flag & closed) > 0 {
+		return kendynet.ErrSocketClose
+	} else if nil != this.sendQue.Add(msg) {
+		return kendynet.ErrSocketClose
+	}
+	return nil
 }
 
 func (this *StreamSocket) Send(o interface{}) error {
 	if o == nil {
 		return kendynet.ErrInvaildObject
 	}
+
+	this.mutex.Lock()	
+	defer this.mutex.Unlock()	
 
 	if this.encoder == nil {
 		return kendynet.ErrInvaildEncoder
@@ -148,22 +175,13 @@ func (this *StreamSocket) Send(o interface{}) error {
 		return err
 	}
 
-	return this.SendMessage(msg)
+	return this.sendMessage(msg)
 }
 	
 func (this *StreamSocket) SendMessage(msg kendynet.Message) error {
 	this.mutex.Lock()	
-	defer func() {
-		this.mutex.Unlock()
-	}()
-	if msg == nil {
-		return kendynet.ErrInvaildBuff
-	} else if (this.flag & closed) > 0 {
-		return kendynet.ErrSocketClose
-	} else if nil != this.sendQue.Add(msg) {
-		return kendynet.ErrSocketClose
-	}
-	return nil
+	defer this.mutex.Unlock()
+	return this.sendMessage(msg)
 }
 
 func recvThreadFunc(session *StreamSocket) {
@@ -256,13 +274,10 @@ func sendThreadFunc(session *StreamSocket) {
 }
 
 
-func (this *StreamSocket) Start() error {
-
-	defer func(){
-		this.mutex.Unlock()
-	}()
+func (this *StreamSocket) Start(eventCB func (*kendynet.Event)) error {
 
 	this.mutex.Lock()
+	defer this.mutex.Unlock()
 
 	if (this.flag & closed) > 0 {
 		return kendynet.ErrSocketClose
@@ -272,13 +287,15 @@ func (this *StreamSocket) Start() error {
 		return kendynet.ErrStarted
 	}
 
-	if this.onEvent == nil {
+	if eventCB == nil {
 		return kendynet.ErrNoOnEvent
 	}
 
 	if this.receiver == nil {
 		return kendynet.ErrNoReceiver
 	}
+
+	this.onEvent = eventCB
 	this.flag |= started
 	go sendThreadFunc(this)
 	go recvThreadFunc(this)

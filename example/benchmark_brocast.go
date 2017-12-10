@@ -61,14 +61,13 @@ func server(service string) {
 				session.SetCloseCallBack(func (sess kendynet.StreamSession, reason string) {
 					evQueue.PostEvent(&event{eventType:ev_error,session:sess,data:reason})
 				})
-				session.SetEventCallBack(func (ev *kendynet.Event) {
+				session.Start(func (ev *kendynet.Event) {
 					if ev.EventType == kendynet.EventTypeError {
 						evQueue.PostEvent(&event{eventType:ev_disconnect,session:session,data:ev.Data})
 					} else {
 						evQueue.PostEvent(&event{eventType:ev_message,session:session,data:ev.Data})
 					}
 				})
-				session.Start()
 				evQueue.PostEvent(&event{eventType:ev_newclient,session:session})
 			})
 
@@ -120,7 +119,7 @@ func client(service string,count int) {
 			session.SetCloseCallBack(func (sess kendynet.StreamSession, reason string) {
 				fmt.Printf("client client close:%s\n",reason)
 			})
-			session.SetEventCallBack(func (event *kendynet.Event) {
+			session.Start(func (event *kendynet.Event) {
 				if event.EventType == kendynet.EventTypeError {
 					event.Session.Close(event.Data.(error).Error(),0)
 				} else {
@@ -130,7 +129,6 @@ func client(service string,count int) {
 					}
 				}
 			})
-			session.Start()
 			//send the first messge
 			o := &testproto.BrocastPingpong{}
 			o.Id = proto.Int64(int64(selfID))

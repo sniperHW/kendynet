@@ -48,7 +48,7 @@ func server(service string) {
 				fmt.Printf("client close:%s\n",reason)
 				atomic.AddInt32(&clientcount,-1)
 			})
-			session.SetEventCallBack(func (event *kendynet.Event) {
+			session.Start(func (event *kendynet.Event) {
 				if event.EventType == kendynet.EventTypeError {
 					event.Session.Close(event.Data.(error).Error(),0)
 				} else {
@@ -57,7 +57,6 @@ func server(service string) {
 					event.Session.SendMessage(event.Data.(kendynet.Message))
 				}
 			})
-			session.Start()
 		})
 
 		if nil != err {
@@ -89,14 +88,13 @@ func client(service string,count int) {
 			session.SetCloseCallBack(func (sess kendynet.StreamSession, reason string) {
 				fmt.Printf("client close:%s\n",reason)
 			})
-			session.SetEventCallBack(func (event *kendynet.Event) {
+			session.Start(func (event *kendynet.Event) {
 				if event.EventType == kendynet.EventTypeError {
 					event.Session.Close(event.Data.(error).Error(),0)
 				} else {
 					event.Session.SendMessage(event.Data.(kendynet.Message))
 				}
 			})
-			session.Start()
 			//send the first messge
 			msg := websocket.NewMessage(websocket.WSTextMessage , "hello")
 			session.SendMessage(msg)

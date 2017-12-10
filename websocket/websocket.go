@@ -97,10 +97,15 @@ type WebSocket struct {
 }
 
 func (this *WebSocket) SetUserData(ud interface{}) {
+	this.mutex.Lock()
+	defer this.mutex.Unlock()
 	this.ud = ud
 }
 
-func (this *WebSocket) GetUserData() interface{} {
+func (this *WebSocket) GetUserData() (ud interface{}) {
+	this.mutex.Lock()
+	defer this.mutex.Unlock()
+	ud = this.ud
 	return this.ud
 }
 
@@ -111,47 +116,31 @@ func (this *WebSocket) LocalAddr() net.Addr {
 func (this *WebSocket) RemoteAddr() net.Addr {
 	return this.conn.RemoteAddr()
 }
-    
+
+
 func (this *WebSocket) SetCloseCallBack(cb func (kendynet.StreamSession, string)) {
+	this.mutex.Lock()
+	defer this.mutex.Unlock()
 	this.onClose = cb
 }
 
-func (this *WebSocket) SetEventCallBack(cb func (*kendynet.Event)) {
-	this.onEvent = cb
-}
-
 func (this *WebSocket) SetEncoder(encoder kendynet.EnCoder) {
+	this.mutex.Lock()
+	defer this.mutex.Unlock()
 	this.encoder = encoder
 }
 
 func (this *WebSocket) SetReceiver(r kendynet.Receiver) {
+	this.mutex.Lock()
+	defer this.mutex.Unlock()
+	if (this.flag & started) > 0 {
+		return
+	}	
 	this.receiver = r
 }
+    
 
-func (this *WebSocket) Send(o interface{}) error {
-	if o == nil {
-		return kendynet.ErrInvaildObject
-	}
-
-	if this.encoder == nil {
-		return kendynet.ErrInvaildEncoder
-	}
-
-	msg,err := this.encoder.EnCode(o)
-
-	if err != nil {
-		return err
-	}
-
-	return this.SendMessage(msg)
-
-}
-	
-func (this *WebSocket) SendMessage(msg kendynet.Message) error {
-	this.mutex.Lock()	
-	defer func() {
-		this.mutex.Unlock()
-	}()	
+func (this *WebSocket) sendMessage(msg kendynet.Message) error {
 	if msg == nil {
 		return kendynet.ErrInvaildBuff
 	} else if (this.flag & closed) > 0 {
@@ -171,6 +160,34 @@ func (this *WebSocket) SendMessage(msg kendynet.Message) error {
 		}
 	}
 	return nil
+}
+
+func (this *WebSocket) Send(o interface{}) error {
+	if o == nil {
+		return kendynet.ErrInvaildObject
+	}
+
+	this.mutex.Lock()	
+	defer this.mutex.Unlock()	
+
+	if this.encoder == nil {
+		return kendynet.ErrInvaildEncoder
+	}
+
+	msg,err := this.encoder.EnCode(o)
+
+	if err != nil {
+		return err
+	}
+
+	return this.sendMessage(msg)
+}
+
+	
+func (this *WebSocket) SendMessage(msg kendynet.Message) error {
+	this.mutex.Lock()	
+	defer this.mutex.Unlock()
+	return this.sendMessage(msg)
 }
 
 func recvThreadFunc(session *WebSocket) {
@@ -241,13 +258,10 @@ func sendThreadFunc(session *WebSocket) {
 	session.sendCloseChan <- 1
 }
 
-func (this *WebSocket) Start() error {
-
-	defer func(){
-		this.mutex.Unlock()
-	}()
+func (this *WebSocket) Start(eventCB func (*kendynet.Event)) error {
 
 	this.mutex.Lock()
+	defer this.mutex.Unlock()
 
 	if (this.flag & closed) > 0 {
 		return kendynet.ErrSocketClose
@@ -257,7 +271,7 @@ func (this *WebSocket) Start() error {
 		return kendynet.ErrStarted
 	}
 
-	if this.onEvent == nil {
+	if eventCB == nil {
 		return kendynet.ErrNoOnEvent
 	}
 
@@ -265,7 +279,7 @@ func (this *WebSocket) Start() error {
 		return kendynet.ErrNoReceiver
 	}
 	this.flag |= started
-
+	this.onEvent = eventCB
 	go sendThreadFunc(this)
 	go recvThreadFunc(this)
 	
@@ -278,6 +292,16 @@ func (this *WebSocket) isClose() (ret bool) {
 	this.mutex.Unlock()
 	return
 }
+
+func (this *WebSocket) doClose() {
+	this.conn.Close()
+	this.mutex.Lock()
+	onClose := this.onClose
+	this.mutex.Unlock()
+	if nil != onClose {
+		onClose(this,this.closeReason)
+	}
+} 
 
 func (this *WebSocket) shutdownRead() {
 	underConn := this.conn.UnderlyingConn()
@@ -318,19 +342,13 @@ func (this *WebSocket) Close(reason string, timeout time.Duration) {
 				case <- ticker.C:
 			}
 			ticker.Stop()
-			this.conn.Close()
-			if nil != this.onClose {
-				this.onClose(this,this.closeReason)
-			}
+			this.doClose()
 			return		
 		}()		
 	} else {
 		this.sendQue.Close()
 		this.mutex.Unlock()
-		this.conn.Close()
-		if nil != this.onClose {
-			this.onClose(this,this.closeReason)
-		}
+		this.doClose()
 		return				
 	}
 }
