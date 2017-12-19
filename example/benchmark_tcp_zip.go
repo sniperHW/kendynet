@@ -18,6 +18,7 @@ import(
 	"runtime/pprof"
 	"os/signal"
 	"syscall"
+	"io/ioutil"
 )
 
 type ZipPBReceiver struct {
@@ -65,18 +66,10 @@ func (this *ZipPBReceiver) unZip() (bool,error) {
 		return false,err
 	}
 
-	oriSize,err := reader.GetUint32(4)
-
+	zipBytes,err := reader.GetBytes(4,uint64(payload))
 	if err != nil {
 		return false,err
 	}
-
-	zipBytes,err := reader.GetBytes(8,uint64(payload))
-
-	if err != nil {
-		return false,err
-	}
-
 	b := bytes.NewBuffer(zipBytes)
 
 	if nil == this.r {
@@ -89,23 +82,15 @@ func (this *ZipPBReceiver) unZip() (bool,error) {
 		return false,err
 	}
 
-	unzipBytes := make([]byte,oriSize)
+	data,err := ioutil.ReadAll(this.r)
 
-	n,err := this.r.Read(unzipBytes)
-
-	if n <= 0 {
-		return false,err
-	}
-
-	//r.Close()
-
-	this.PBBuffers.Write(unzipBytes[:n])
+	this.PBBuffers.Write(data)
 
 	if this.tail < len(this.recvBuff) {
-		copy(this.recvBuff,this.recvBuff[8 + payload:])
+		copy(this.recvBuff,this.recvBuff[4 + payload:])
 	}
 
-	this.tail -= int(8 + payload)
+	this.tail -= int(4 + payload)
 
 	return true,nil
 }
@@ -137,26 +122,22 @@ func NewZipPBReceiver(buffsize uint64)(*ZipPBReceiver){
 }
 
 type ZipBuffProcessor struct {
-	mergeBuff *kendynet.ByteBuffer
 	b          bytes.Buffer
 	w		  *gzip.Writer     
 }
 
 func (this *ZipBuffProcessor) Process(packets []kendynet.Message) []kendynet.Message {
-	//将packet中的所有包合并成一个包进行zip压缩
+	//将输入的所有包合并成一个包进行zip压缩
 	var ret  []kendynet.Message
 	for i := 0; i < len(packets); i++ {
 		msg := packets[i].(kendynet.Message)
 		data := msg.Bytes()
-		this.mergeBuff.AppendBytes(data)
+		this.w.Write(data)
 	}
-	this.w.Write(this.mergeBuff.Bytes())
 	this.w.Flush()
 	byteBuffer := kendynet.NewByteBuffer(this.b.Len() + 4)
 	byteBuffer.PutUint32(0,uint32(len(this.b.Bytes())))
-	byteBuffer.PutUint32(4,uint32(len(this.mergeBuff.Bytes())))
-	byteBuffer.PutBytes(8,this.b.Bytes())
-	this.mergeBuff.Reset()
+	byteBuffer.PutBytes(4,this.b.Bytes())
 	this.b.Reset()
 	this.w.Reset(&this.b)
 	ret = append(ret,byteBuffer)
@@ -164,7 +145,7 @@ func (this *ZipBuffProcessor) Process(packets []kendynet.Message) []kendynet.Mes
 }
 
 func NewZipBuffProcessor()(*ZipBuffProcessor){
-	z := &ZipBuffProcessor{mergeBuff:kendynet.NewByteBuffer(1024*64)}
+	z := &ZipBuffProcessor{}
 	z.w = gzip.NewWriter(&z.b)
 	return z
 }
