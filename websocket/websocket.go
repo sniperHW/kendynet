@@ -10,7 +10,7 @@ import (
 	   "net"
 	   "time"
 	   "sync"
-	   "github.com/sniperHW/kendynet/util" 
+	   //"github.com/sniperHW/kendynet/util" 
 	   "github.com/sniperHW/kendynet"
 	   gorilla "github.com/gorilla/websocket"
 	   //"sync/atomic"
@@ -84,7 +84,7 @@ func NewMessage(messageType int,optional ...interface{}) *WSMessage {
 type WebSocket struct {
 	conn *gorilla.Conn
 	ud   interface{}
-	sendQue          *util.BlockQueue
+	sendQue          *kendynet.SendQueue
 	receiver          kendynet.Receiver
 	encoder           kendynet.EnCoder
 	flag              int32
@@ -139,7 +139,6 @@ func (this *WebSocket) SetReceiver(r kendynet.Receiver) {
 	this.receiver = r
 }
     
-
 func (this *WebSocket) sendMessage(msg kendynet.Message) error {
 	if msg == nil {
 		return kendynet.ErrInvaildBuff
@@ -357,7 +356,7 @@ func (this *WebSocket) Close(reason string, timeout time.Duration) {
 func NewWSSocket(conn *gorilla.Conn,option ...kendynet.SessionOption)(kendynet.StreamSession){
 	session 			 := new(WebSocket)
 	session.conn 		  = conn
-	session.sendQue       = util.NewBlockQueue()
+	session.sendQue       = kendynet.NewSendQueue()
 	session.sendCloseChan = make(chan int,1)
 	if len(option) > 0 {
 		session.option = option[0]

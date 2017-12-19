@@ -22,18 +22,19 @@ const (
 )
 
 type StreamSocket struct {
-	conn 			 net.Conn
-	ud   			 interface{}
-	sendQue         *util.BlockQueue
-	receiver         kendynet.Receiver
-	encoder          kendynet.EnCoder
-	flag             int32
-	option           kendynet.SessionOption
-	mutex            sync.Mutex
-	onClose          func (kendynet.StreamSession,string)
-	onEvent          func (*kendynet.Event)
-	closeReason      string
-	sendCloseChan    chan int         
+	conn 			  net.Conn
+	ud   			  interface{}
+	sendQue          *kendynet.SendQueue
+	receiver          kendynet.Receiver
+	encoder           kendynet.EnCoder
+	sendBuffProcessor SendBuffProcessor
+	flag              int32
+	option            kendynet.SessionOption
+	mutex             sync.Mutex
+	onClose           func (kendynet.StreamSession,string)
+	onEvent           func (*kendynet.Event)
+	closeReason       string
+	sendCloseChan     chan int         
 }
 
 
@@ -145,6 +146,12 @@ func (this *StreamSocket) SetReceiver(r kendynet.Receiver) {
 	this.receiver = r
 }
 
+func (this *StreamSocket) SetSendBuffProcessor(processor SendBuffProcessor) {
+	this.mutex.Lock()
+	defer this.mutex.Unlock()
+	this.sendBuffProcessor = processor
+}
+
 
 func (this *StreamSocket) sendMessage(msg kendynet.Message) error {
 	if msg == nil {
@@ -231,8 +238,13 @@ func sendThreadFunc(session *StreamSocket) {
 			break
 		}
 
+		if nil != session.sendBuffProcessor {
+			localList = session.sendBuffProcessor.Process(localList)
+			size = len(localList)
+		}
+
 		for i := 0; i < size; i++ {
-			msg := localList[i].(kendynet.Message)
+			msg := localList[i]//.(kendynet.Message)
 			data := msg.Bytes()
 			for data != nil || (i == (size - 1) && writer.Buffered() > 0) {
 				if data != nil {
@@ -316,7 +328,7 @@ func NewStreamSocket(conn net.Conn,option ...kendynet.SessionOption)(kendynet.St
 
 	session 			 := new(StreamSocket)
 	session.conn 		  = conn
-	session.sendQue       = util.NewBlockQueue()
+	session.sendQue       = kendynet.NewSendQueue()
 	session.sendCloseChan = make(chan int,1)
 
 	if len(option) > 0 {
