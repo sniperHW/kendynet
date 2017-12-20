@@ -34,7 +34,8 @@ type StreamSocket struct {
 	onClose           func (kendynet.StreamSession,string)
 	onEvent           func (*kendynet.Event)
 	closeReason       string
-	sendCloseChan     chan int         
+	sendCloseChan     chan int 
+	postQueue         [] kendynet.Message        
 }
 
 
@@ -96,6 +97,9 @@ func (this *StreamSocket) Close(reason string, timeout time.Duration) {
 
 	this.closeReason = reason
 	this.flag |= closed
+	if timeout > 0 {
+		this.flush()
+	}
 	this.sendQue.Close()
 	this.mutex.Unlock()
 	if this.sendQue.Len() > 0 {
@@ -152,14 +156,70 @@ func (this *StreamSocket) SetSendBuffProcessor(processor SendBuffProcessor) {
 	this.sendBuffProcessor = processor
 }
 
+func (this *StreamSocket) flush() {
+	size := len(this.postQueue)
+	if size > 0 {
+		for i := 0; i < size; i++ {
+			this.sendQue.Add(this.postQueue[i])
+		}
+		this.postQueue = this.postQueue[0:0]
+	}
+}
+
+func (this *StreamSocket) Flush() {
+	this.mutex.Lock()	
+	defer this.mutex.Unlock()
+	this.flush()
+}
+
+func (this *StreamSocket) postSendMessage(msg kendynet.Message) error {
+	if msg == nil {
+		return kendynet.ErrInvaildBuff
+	} else if (this.flag & closed) > 0 {
+		return kendynet.ErrSocketClose
+	} else {
+		this.postQueue = append(this.postQueue,msg)
+	}
+	return nil
+}
+
+func (this *StreamSocket) PostSend(o interface{}) error {
+	if o == nil {
+		return kendynet.ErrInvaildObject
+	}
+
+	this.mutex.Lock()	
+	defer this.mutex.Unlock()	
+
+	if this.encoder == nil {
+		return kendynet.ErrInvaildEncoder
+	}
+
+	msg,err := this.encoder.EnCode(o)
+
+	if err != nil {
+		return err
+	}
+
+	return this.postSendMessage(msg)
+}
+	
+func (this *StreamSocket) PostSendMessage(msg kendynet.Message) error {
+	this.mutex.Lock()	
+	defer this.mutex.Unlock()
+	return this.postSendMessage(msg)
+}
 
 func (this *StreamSocket) sendMessage(msg kendynet.Message) error {
 	if msg == nil {
 		return kendynet.ErrInvaildBuff
 	} else if (this.flag & closed) > 0 {
 		return kendynet.ErrSocketClose
-	} else if nil != this.sendQue.Add(msg) {
-		return kendynet.ErrSocketClose
+	} else {
+		this.flush()
+		if nil != this.sendQue.Add(msg) {
+			return kendynet.ErrSocketClose
+		}
 	}
 	return nil
 }

@@ -94,6 +94,7 @@ type WebSocket struct {
 	onEvent           func (*kendynet.Event)
 	closeReason       string
 	sendCloseChan     chan int 
+	postQueue         [] kendynet.Message  
 }
 
 func (this *WebSocket) SetUserData(ud interface{}) {
@@ -138,6 +139,60 @@ func (this *WebSocket) SetReceiver(r kendynet.Receiver) {
 	}	
 	this.receiver = r
 }
+
+func (this *WebSocket) flush() {
+	size := len(this.postQueue)
+	if size > 0 {
+		for i := 0; i < size; i++ {
+			this.sendQue.Add(this.postQueue[i])
+		}
+		this.postQueue = this.postQueue[0:0]
+	}
+}
+
+func (this *WebSocket) Flush() {
+	this.mutex.Lock()	
+	defer this.mutex.Unlock()
+	this.flush()
+}
+
+func (this *WebSocket) postSendMessage(msg kendynet.Message) error {
+	if msg == nil {
+		return kendynet.ErrInvaildBuff
+	} else if (this.flag & closed) > 0 {
+		return kendynet.ErrSocketClose
+	} else {
+		this.postQueue = append(this.postQueue,msg)
+	}
+	return nil
+}
+
+func (this *WebSocket) PostSend(o interface{}) error {
+	if o == nil {
+		return kendynet.ErrInvaildObject
+	}
+
+	this.mutex.Lock()	
+	defer this.mutex.Unlock()	
+
+	if this.encoder == nil {
+		return kendynet.ErrInvaildEncoder
+	}
+
+	msg,err := this.encoder.EnCode(o)
+
+	if err != nil {
+		return err
+	}
+
+	return this.postSendMessage(msg)
+}
+	
+func (this *WebSocket) PostSendMessage(msg kendynet.Message) error {
+	this.mutex.Lock()	
+	defer this.mutex.Unlock()
+	return this.postSendMessage(msg)
+}
     
 func (this *WebSocket) sendMessage(msg kendynet.Message) error {
 	if msg == nil {
@@ -145,6 +200,7 @@ func (this *WebSocket) sendMessage(msg kendynet.Message) error {
 	} else if (this.flag & closed) > 0 {
 		return kendynet.ErrSocketClose
 	} else {
+		this.flush()
 		switch msg.(type) {
 			case *WSMessage:
 				if nil == msg.(*WSMessage) {
@@ -328,6 +384,7 @@ func (this *WebSocket) Close(reason string, timeout time.Duration) {
 	if timeout > 0 {
 		this.shutdownRead()
 		message := gorilla.FormatCloseMessage(1000, reason)
+		this.flush()
 		this.sendQue.Add(NewMessage(WSCloseMessage,message))
 		this.sendQue.Close()
 		ticker := time.NewTicker(timeout)

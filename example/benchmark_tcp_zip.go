@@ -224,12 +224,13 @@ func client(service string,count int) {
 				}
 			})
 			//send the first messge
-			for j := 0; j < 5; j++ {
+			for j := 0; j < 10; j++ {
 				o := &testproto.Test{}
 				o.A = proto.String("hello")
 				o.B = proto.Int32(17)
-				session.Send(o)
+				session.PostSend(o)
 			}
+			session.Flush()
 		}
 	}
 }
