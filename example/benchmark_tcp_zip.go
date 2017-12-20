@@ -175,12 +175,18 @@ func server(service string) {
 				fmt.Printf("server client close:%s\n",reason)
 				atomic.AddInt32(&clientcount,-1)
 			})
+			j := 0
 			session.Start(func (event *kendynet.Event) {
 				if event.EventType == kendynet.EventTypeError {
 					event.Session.Close(event.Data.(error).Error(),0)
 				} else {
+					j++
 					atomic.AddInt32(&packetcount,int32(1))
-					event.Session.Send(event.Data.(proto.Message))
+					//event.Session.Send(event.Data.(proto.Message))
+					event.Session.PostSend(event.Data.(proto.Message))
+					if j % 10 == 0 {
+						event.Session.Flush()
+					}
 				}
 			})
 		})
@@ -216,14 +222,19 @@ func client(service string,count int) {
 			session.SetCloseCallBack(func (sess kendynet.StreamSession, reason string) {
 				fmt.Printf("client client close:%s\n",reason)
 			})
+			j := 0
 			session.Start(func (event *kendynet.Event) {
 				if event.EventType == kendynet.EventTypeError {
 					event.Session.Close(event.Data.(error).Error(),0)
 				} else {
-					event.Session.Send(event.Data.(proto.Message))
+					j++
+					event.Session.PostSend(event.Data.(proto.Message))
+					if j % 10 == 0 {
+						event.Session.Flush()
+					}
 				}
 			})
-			//send the first messge
+			//使用postSend,10个包合并成一个由NewZipBuffProcessor执行压缩后发送
 			for j := 0; j < 10; j++ {
 				o := &testproto.Test{}
 				o.A = proto.String("hello")
