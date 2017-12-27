@@ -62,12 +62,12 @@ func client(service string,count int) {
 
 func main(){
 
-	pb.Register(&testproto.Hello{})
-	pb.Register(&testproto.World{})
-	pb.Register(&testproto.RPCResponse{})
-	pb.Register(&testproto.RPCRequest{})
-	pb.Register(&testproto.RPCPing{})
-	pb.Register(&testproto.RPCPong{})
+	pb.Register(&testproto.Hello{},1)
+	pb.Register(&testproto.World{},2)
+	pb.Register(&testproto.RPCResponse{},3)
+	pb.Register(&testproto.RPCRequest{},4)
+	pb.Register(&testproto.RPCPing{},5)
+	pb.Register(&testproto.RPCPong{},6)
 
 	if len(os.Args) < 3 {
 		fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")

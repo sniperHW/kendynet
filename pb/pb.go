@@ -14,7 +14,6 @@ const (
 )
 
 var (
-	id = uint32(1)
  	nameToTypeID = map[string]uint32{}
  	idToMeta = map[uint32]reflect.Type{}
  	mutex = sync.Mutex{}
@@ -34,11 +33,17 @@ func newMessage(id uint32) (msg proto.Message,err error){
 }
 
 //根据名字注册实例
-func Register(msg proto.Message) (err error) {
+func Register(msg proto.Message,id uint32) (err error) {
     defer func(){
    		mutex.Unlock()
     }()
     mutex.Lock()
+
+    if _,ok := idToMeta[id];ok {
+    	err = fmt.Errorf("duplicate id:%u",id)
+    	return
+    }
+
 	tt := reflect.TypeOf(msg)
 	name := tt.String()
 
@@ -49,7 +54,6 @@ func Register(msg proto.Message) (err error) {
 
     nameToTypeID[name] = id
     idToMeta[id] = tt
-    id++
     return nil
 }
 

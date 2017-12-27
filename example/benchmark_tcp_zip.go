@@ -253,7 +253,7 @@ func main(){
 	pprof.StartCPUProfile(f)  // 开始cpu profile，结果写到文件f中
 	defer pprof.StopCPUProfile()  // 结束profile
 
-	pb.Register(&testproto.Test{})
+	pb.Register(&testproto.Test{},1)
 	if len(os.Args) < 3 {
 		fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")
 		return
