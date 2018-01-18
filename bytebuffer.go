@@ -15,7 +15,6 @@ func SizeofPow2(size uint64) uint64{
 		return size
 	}
 	size = size -1
-	size = size-1
 	size = size | (size>>1)
 	size = size | (size>>2)
 	size = size | (size>>4)
@@ -224,7 +223,7 @@ func (this *ByteBuffer) checkCapacity(idx,size uint64)(error){
 		this.needcopy = false
 		return nil
 	}
-	fmt.Printf("idx:%d,size:%d,this.capacity:%d,this.datasize:%d,len(buffer):%d\n",idx,size,this.capacity,this.datasize,len(this.buffer))
+	//fmt.Printf("idx:%d,size:%d,this.capacity:%d,this.datasize:%d,len(buffer):%d\n",idx,size,this.capacity,this.datasize,len(this.buffer))
 	if idx + size > this.capacity {
 		err := this.expand(idx+size)
 		if err != nil {
