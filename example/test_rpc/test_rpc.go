@@ -6,7 +6,7 @@ import (
 	"github.com/sniperHW/kendynet/example/testproto"
 	"github.com/sniperHW/kendynet/pb"
 	"github.com/sniperHW/kendynet"
-	"github.com/sniperHW/kendynet/tcp"
+	"github.com/sniperHW/kendynet/stream_socket/tcp"
 	codec "github.com/sniperHW/kendynet/codec/stream_socket"
 	"reflect"
 	"fmt"

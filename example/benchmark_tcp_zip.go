@@ -7,7 +7,7 @@ import(
 	"fmt"
 	"os"
 	"github.com/sniperHW/kendynet"
-	"github.com/sniperHW/kendynet/tcp"
+	"github.com/sniperHW/kendynet/stream_socket/tcp"
 	codec "github.com/sniperHW/kendynet/codec/stream_socket"		
 	"github.com/sniperHW/kendynet/example/testproto"
 	"github.com/golang/protobuf/proto"

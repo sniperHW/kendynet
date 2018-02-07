@@ -7,7 +7,7 @@ import(
 	"fmt"
 	"os"
 	"github.com/sniperHW/kendynet"
-	"github.com/sniperHW/kendynet/tcp"
+	"github.com/sniperHW/kendynet/stream_socket/tcp"
 	codec "github.com/sniperHW/kendynet/codec/stream_socket"	
 	"runtime/pprof"
 	"os/signal"
