@@ -20,10 +20,10 @@ type Event struct {
     Data    interface {}    
 }
 
-type SessionOption struct {
+/*type SessionOption struct {
     SendTimeout time.Duration
     RecvTimeout time.Duration    
-}
+}*/
 
 type StreamSession interface {
 
@@ -102,5 +102,9 @@ type StreamSession interface {
     GetUserData() interface{}
 
     GetUnderConn() interface{}
+
+    SetRecvTimeout(time.Duration)
+
+    SetSendTimeout(time.Duration)
 
 }

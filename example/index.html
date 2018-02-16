@@ -7,16 +7,17 @@
     
     window.onload = function () {
         console.log("hello")
-        var ws = new WebSocket("ws://139.224.59.83:8201/gateway");
+        var ws = new WebSocket("ws://127.0.0.1:8010/echo");
         ws.onopen = function(evt) {
+            //alert("open")
             console.log("Connection open ...");
             ws.send('{"Content":"hello world" }');
         };
         ws.onmessage = function(evt) {
             console.log( "Received Message: " + evt.data);
             ws.send('{"Content":"hello world" }');
-            alert(evt.data)
-            ws.close();
+            //alert(evt.data)
+            //ws.close();
         };
         ws.onclose = function(evt) {
             console.log("Connection closed.");

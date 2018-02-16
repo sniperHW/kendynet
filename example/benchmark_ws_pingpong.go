@@ -52,6 +52,7 @@ func server(service string) {
 				if event.EventType == kendynet.EventTypeError {
 					event.Session.Close(event.Data.(error).Error(),0)
 				} else {
+					//fmt.Printf("recv msg\n")
 					atomic.AddInt32(&bytescount,int32(len(event.Data.(kendynet.Message).Bytes())))
 					atomic.AddInt32(&packetcount,int32(1))
 					event.Session.SendMessage(event.Data.(kendynet.Message))
@@ -97,7 +98,10 @@ func client(service string,count int) {
 			})
 			//send the first messge
 			msg := websocket.NewMessage(websocket.WSTextMessage , "hello")
-			session.SendMessage(msg)
+			err = session.SendMessage(msg)
+			if err != nil {
+				fmt.Printf("send err")
+			}
 		}
 	}
 }
