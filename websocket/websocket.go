@@ -74,6 +74,10 @@ func (this *WSMessage) GetString(idx uint64,size uint64) (string,error) {
 	return this.buff.GetString(idx,size)
 }
 
+func (this *WSMessage) Type() int {
+	return this.messageType
+}
+
 func NewMessage(messageType int,optional ...interface{}) *WSMessage {
 	buff := kendynet.NewByteBuffer(optional...)
 	if nil == buff {
