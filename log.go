@@ -28,7 +28,7 @@ func itoa(buf *[]byte, i int, wid int) {
 }
 
 func NewLog(name string) *golog.Logger {
-	Logger := golog.New(name)
+	logger := golog.New(name)
 	t := time.Now()
 	buf := make([]byte,0)
 	year, month, day := t.Date()
@@ -41,22 +41,22 @@ func NewLog(name string) *golog.Logger {
 
 	hour, min, sec := t.Clock()
 	itoa(&buf, hour, 2)
-	buf = append(buf, ':')
+	buf = append(buf, '.')
 	itoa(&buf, min, 2)
-	buf = append(buf, ':')
+	buf = append(buf, '.')
 	itoa(&buf, sec, 2)
 
 	var filename string
 
 	if nil != os.Mkdir("log",os.ModePerm) {
-		filename = fmt.Sprintf("./log/%s[%s].log",name,string(buf))
+		filename = fmt.Sprintf("log/%s[%s].log",name,string(buf))
 	} else {
 		filename = fmt.Sprintf("%s[%s].log",name,string(buf))
 	}
 
 	golog.SetOutputLogger("kendynet",filename)
 
-	return 	Logger
+	return 	logger
 }
 
 func init() {
