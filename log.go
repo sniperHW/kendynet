@@ -66,12 +66,10 @@ func NewLog(name string) *golog.Logger {
 	var filename string
 
 	if nil == os.MkdirAll(folder,os.ModePerm) {
-		filename = fmt.Sprintf("%s/%s[%s].log",folder,name,string(buf))
+		filename = fmt.Sprintf("%s/%s[%s][%d].log",folder,name,string(buf),os.Getpid())
 	} else {
-		filename = fmt.Sprintf("%s[%s].log",name,string(buf))
+		filename = fmt.Sprintf("%s[%s][%s].log",name,string(buf),os.Getpid())
 	}
-
-	fmt.Printf("%s\n",filename)
 
 	golog.SetOutputLogger(name,filename)
 
