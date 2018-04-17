@@ -145,7 +145,7 @@ func (self *ProxySession) ProcessSockV4() {
 			fmt.Printf("NewConnector failed:%s\n",err.Error())
 			return
 		}
-		session,_,err := connector.Dial(time.Second * 10)
+		session,err := connector.Dial(time.Second * 10)
 
 		if err != nil {
 			fmt.Printf("Dial failed:%s\n",err.Error())			
@@ -254,7 +254,7 @@ func (self *ProxySession) ProcessSockV5() {
 				fmt.Printf("NewConnector failed:%s\n",err.Error())
 				return
 			}
-			session,_,err := connector.Dial(time.Second * 10)
+			session,err := connector.Dial(time.Second * 10)
 
 			if err != nil {
 				fmt.Printf("Dial failed:%s\n",err.Error())			

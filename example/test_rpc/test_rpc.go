@@ -225,7 +225,7 @@ func NewCaller(method string) *Caller {
 
 func (this *Caller) Dial(service string,timeout time.Duration) error {
 	connector,err := tcp.NewConnector("tcp",service)
-	session,_,err := connector.Dial(timeout)
+	session,err := connector.Dial(timeout)
 	if err != nil {
 		return err
 	} 

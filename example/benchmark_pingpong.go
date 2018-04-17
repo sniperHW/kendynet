@@ -76,7 +76,7 @@ func client(service string,count int) {
 
 
 	for i := 0; i < count ; i++ {
-		session,_,err := client.Dial(time.Second * 10)
+		session,err := client.Dial(time.Second * 10)
 		if err != nil {
 			fmt.Printf("Dial error:%s\n",err.Error())
 		} else {

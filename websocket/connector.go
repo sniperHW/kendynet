@@ -26,7 +26,7 @@ func NewConnector(url url.URL,requestHeader http.Header,dialer *gorilla.Dialer) 
 	return &client,nil
 }
 
-func (this *Connector) Dial(timeout time.Duration) (kendynet.StreamSession,interface{},error) {
+func (this *Connector) Dial(timeout time.Duration) (kendynet.StreamSession,*http.Response,error) {
 	this.dialer.HandshakeTimeout = timeout
 	c, response, err := this.dialer.Dial(this.u.String(), nil)
 	if err != nil {

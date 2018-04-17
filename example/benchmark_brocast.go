@@ -109,7 +109,7 @@ func client(service string,count int) {
 	}
 
 	for i := 0; i < count ; i++ {
-		session,_,err := client.Dial(10 * time.Second)
+		session,err := client.Dial(10 * time.Second)
 		if err != nil {
 			fmt.Printf("Dial error:%s\n",err.Error())
 		} else {
