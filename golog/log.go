@@ -14,8 +14,8 @@ package golog
 
 import (
 	"fmt"
-	"io"
-	"os"
+	//"io"
+	//"os"
 	"runtime"
 	"sync"
 	"time"
@@ -36,6 +36,24 @@ const (
 
 )
 
+func str2loglevel(level string) Level {
+
+	switch level {
+	case "debug":
+		return Level_Debug
+	case "info":
+		return Level_Info
+	case "warn":
+		return Level_Warn
+	case "error":
+		return Level_Error
+	case "fatal":
+		return Level_Fatal
+	}
+
+	return Level_Debug
+}
+
 // A Logger represents an active logging object that generates lines of
 // output to an io.Writer.  Each logging operation makes a single call to
 // the Writer's Write method.  A Logger can be used simultaneously from
@@ -49,8 +67,7 @@ type Logger struct {
 	enableColor bool
 	name        string
 	colorFile   *ColorFile
-
-	fileOutput *os.File
+	fileOutput  *OutputLogger
 }
 
 // New creates a new Logger.   The out variable sets the
@@ -58,11 +75,8 @@ type Logger struct {
 // The prefix appears at the beginning of each generated log line.
 // The flag argument defines the logging properties.
 
-func New(name string) *Logger {
-	l := &Logger{flag: LstdFlags, level: Level_Debug, name: name, panicLevel: Level_Fatal}
-
-	add(l)
-
+func New(name string,fileOutput *OutputLogger) *Logger {
+	l := &Logger{flag: LstdFlags, level: Level_Debug, name: name, panicLevel: Level_Fatal, fileOutput:fileOutput}
 	return l
 }
 
@@ -137,7 +151,7 @@ func (self *Logger) formatHeader(buf *[]byte, t time.Time, file string, line int
 // already a newline.  Calldepth is used to recover the PC and is
 // provided for generality, although at the moment on all pre-defined
 // paths it will be 2.
-func (self *Logger) Output(calldepth int, prefix string, text string, c Color, out io.Writer) error {
+func (self *Logger) Output(calldepth int, prefix string, text string, c Color, out *OutputLogger) {
 	now := time.Now() // get this early.
 	var file string
 	var line int
@@ -174,9 +188,8 @@ func (self *Logger) Output(calldepth int, prefix string, text string, c Color, o
 		self.buf = append(self.buf, '\n')
 	}
 
-	_, err := out.Write(self.buf)
+	out.Write(&now,self.buf)
 
-	return err
 }
 
 func (self *Logger) Log(c Color, level Level, format string, v ...interface{}) {
@@ -195,8 +208,6 @@ func (self *Logger) Log(c Color, level Level, format string, v ...interface{}) {
 		text = fmt.Sprintf(format, v...)
 	}
 
-	var out io.Writer
-
 /*	if self.enableColor {
 
 		if self.colorFile != nil && c == NoColor {
@@ -211,16 +222,18 @@ func (self *Logger) Log(c Color, level Level, format string, v ...interface{}) {
 	}
 */
 
+	var out *OutputLogger
+
 	if self.fileOutput == nil {
-		out = os.Stdout
+		out = stdOutLogger
 	} else {
 		out = self.fileOutput
 	}
 
-	if out == os.Stdout {
-		self.Output(3, prefix, text, c, os.Stdout)
+	if out == stdOutLogger {
+		self.Output(3, prefix, text, c, out)
 	} else {
-		self.Output(3, prefix, text, c, os.Stdout)
+		self.Output(3, prefix, text, c, stdOutLogger)
 		self.Output(3, prefix, text, NoColor, out)	
 	}
 

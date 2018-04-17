@@ -63,10 +63,7 @@ func client(service string,count int) {
 
 func main(){
 
-	kendynet.SetLogFolder("log/rpc")
-	kendynet.SetLogPrefix("rpc")
-
-	rpcLogger := kendynet.NewLog("rpc")
+	rpcLogger := kendynet.NewLog("log/rpc","rpc")
 
 	rpc.Init(rpcLogger)
 
