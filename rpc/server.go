@@ -23,12 +23,12 @@ func (this *RPCReplyer) Reply(ret interface{},err error) {
 func (this *RPCReplyer) reply(response RPCMessage) {
 	msg,err := this.encoder.Encode(response)
 	if nil != err {
-		Logger.Errorf(util.FormatFileLine("Encode rpc response error:%s\n",err.Error()))
+		Errorf(util.FormatFileLine("Encode rpc response error:%s\n",err.Error()))
 		return
 	}
 	err = this.channel.SendRPCResponse(msg)
 	if nil != err {		
-		Logger.Errorf(util.FormatFileLine("send rpc response to (%s) error:%s\n",this.channel.Name() , err.Error()))
+		Errorf(util.FormatFileLine("send rpc response to (%s) error:%s\n",this.channel.Name() , err.Error()))
 	}	
 }
 
@@ -77,7 +77,7 @@ func (this *RPCServer) callMethod(method RPCMethodHandler,replyer *RPCReplyer,ar
 			buf := make([]byte, 65535)
 			l := runtime.Stack(buf, false)
 			err = fmt.Errorf("%v: %s", r, buf[:l])
-			Logger.Errorf(util.FormatFileLine("%s\n",err.Error()))
+			Errorf(util.FormatFileLine("%s\n",err.Error()))
 		}			
 	}()
 	method(replyer,arg)
@@ -87,7 +87,7 @@ func (this *RPCServer) callMethod(method RPCMethodHandler,replyer *RPCReplyer,ar
 func (this *RPCServer) OnRPCMessage(channel RPCChannel,message interface{}) {
 	msg,err := this.decoder.Decode(message)
 	if nil != err {
-		Logger.Errorf(util.FormatFileLine("RPCServer rpc message from(%s) decode err:%s\n",channel.Name,err.Error()))
+		Errorf(util.FormatFileLine("RPCServer rpc message from(%s) decode err:%s\n",channel.Name,err.Error()))
 		return
 	}
 
@@ -106,7 +106,7 @@ func (this *RPCServer) OnRPCMessage(channel RPCChannel,message interface{}) {
 			this.mutexMethods.Unlock()
 			if !ok {
 				err = fmt.Errorf("invaild method:%s",req.Method)
-				Logger.Errorf(util.FormatFileLine("rpc request from(%s) invaild method %s\n",channel.Name(),req.Method))		
+				Errorf(util.FormatFileLine("rpc request from(%s) invaild method %s\n",channel.Name(),req.Method))		
 			}
 
 			replyer := &RPCReplyer{encoder:this.encoder,channel:channel,req:req}

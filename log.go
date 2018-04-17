@@ -7,7 +7,24 @@ import (
 	"fmt"
 )
 
-var Logger *golog.Logger
+var folder string     = "log"  //默认日誌根目錄
+var logPrefix string  = ""     //日誌文件前綴
+
+func SetLogFolder(_folder string) {
+	folder = _folder
+}
+
+func GetLogFolder() string {
+	return folder
+}
+
+func SetLogPrefix(_logPrefix string) {
+	logPrefix = _logPrefix
+}
+
+func GetLogPrefix() string {
+	return logPrefix
+}
 
 func itoa(buf *[]byte, i int, wid int) {
 	var u uint = uint(i)
@@ -48,18 +65,18 @@ func NewLog(name string) *golog.Logger {
 
 	var filename string
 
-	if nil != os.Mkdir("log",os.ModePerm) {
-		filename = fmt.Sprintf("log/%s[%s].log",name,string(buf))
+	if nil == os.MkdirAll(folder,os.ModePerm) {
+		filename = fmt.Sprintf("%s/%s[%s].log",folder,name,string(buf))
 	} else {
 		filename = fmt.Sprintf("%s[%s].log",name,string(buf))
 	}
 
-	golog.SetOutputLogger("kendynet",filename)
+	fmt.Printf("%s\n",filename)
+
+	golog.SetOutputLogger(name,filename)
 
 	return 	logger
 }
 
-func init() {
-	Logger = NewLog("kendynet")
-	Logger.Infoln("kendynet log init")	
-}
+
+

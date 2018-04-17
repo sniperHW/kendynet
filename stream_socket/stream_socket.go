@@ -6,12 +6,10 @@ package stream_socket
 
 import (
 	   "net"
-	   "reflect"
 	   "time"
 	   "sync"
 	   "bufio"
 	   "io"
-	   "github.com/sniperHW/kendynet/util" 
 	   "github.com/sniperHW/kendynet"
 	   //"fmt"
 )
@@ -400,7 +398,6 @@ func NewStreamSocket(conn net.Conn)(kendynet.StreamSession){
 		case *net.UnixConn:
 			break
 		default:
-			kendynet.Logger.Errorf(util.FormatFileLine("unsupport conn type:%s\n",reflect.TypeOf(conn).String()))
 			return nil
 	}
 

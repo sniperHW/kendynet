@@ -404,7 +404,7 @@ func (this *RPCClient) OnChannelClose(channel RPCChannel,err error) {
 func (this *RPCClient) OnRPCMessage(channel RPCChannel,message interface{}) {
 	msg,err := this.decoder.Decode(message)
 	if nil != err {
-		Logger.Errorf(util.FormatFileLine("RPCClient rpc message from(%s) decode err:%s\n",channel.Name,err.Error()))
+		Errorf(util.FormatFileLine("RPCClient rpc message from(%s) decode err:%s\n",channel.Name,err.Error()))
 		return
 	}
 

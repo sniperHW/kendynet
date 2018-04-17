@@ -11,6 +11,7 @@ import(
 	"github.com/golang/protobuf/proto"
 	"github.com/sniperHW/kendynet/pb"
 	"github.com/sniperHW/kendynet/rpc"
+	"github.com/sniperHW/kendynet"
 )
 
 func server(service string) {
@@ -61,6 +62,13 @@ func client(service string,count int) {
 }
 
 func main(){
+
+	kendynet.SetLogFolder("log/rpc")
+	kendynet.SetLogPrefix("rpc")
+
+	rpcLogger := kendynet.NewLog("rpc")
+
+	rpc.Init(rpcLogger)
 
 	pb.Register(&testproto.Hello{},1)
 	pb.Register(&testproto.World{},2)
