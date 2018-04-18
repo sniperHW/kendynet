@@ -251,3 +251,12 @@ func (this *Caller) Call(arg interface{},cb rpc.RPCResponseHandler) error {
 	return this.client.Call(this.selector,this.method,arg,cb)
 }
 
+func init() {
+	pb.Register(&testproto.Hello{},1)
+	pb.Register(&testproto.World{},2)
+	pb.Register(&testproto.RPCResponse{},3)
+	pb.Register(&testproto.RPCRequest{},4)
+	pb.Register(&testproto.RPCPing{},5)
+	pb.Register(&testproto.RPCPong{},6)
+}
+

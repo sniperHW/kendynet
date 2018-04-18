@@ -9,7 +9,6 @@ import(
 	"github.com/sniperHW/kendynet/example/testproto"
 	"github.com/sniperHW/kendynet/example/test_rpc"
 	"github.com/golang/protobuf/proto"
-	"github.com/sniperHW/kendynet/pb"
 	"github.com/sniperHW/kendynet/rpc"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/golog"
@@ -67,14 +66,6 @@ func main(){
 	outLogger := golog.NewOutputLogger("log","kendynet",1024*1024*1000)
 	kendynet.InitLogger(outLogger)
 	rpc.InitLogger(outLogger)
-
-
-	pb.Register(&testproto.Hello{},1)
-	pb.Register(&testproto.World{},2)
-	pb.Register(&testproto.RPCResponse{},3)
-	pb.Register(&testproto.RPCRequest{},4)
-	pb.Register(&testproto.RPCPing{},5)
-	pb.Register(&testproto.RPCPong{},6)
 
 	if len(os.Args) < 3 {
 		fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")
