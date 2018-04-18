@@ -68,6 +68,7 @@ func main(){
 	kendynet.InitLogger(outLogger)
 	rpc.InitLogger(outLogger)
 
+
 	pb.Register(&testproto.Hello{},1)
 	pb.Register(&testproto.World{},2)
 	pb.Register(&testproto.RPCResponse{},3)

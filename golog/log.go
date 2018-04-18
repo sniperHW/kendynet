@@ -34,6 +34,8 @@ const (
 
 )
 
+var enableStdOut bool = true
+
 func str2loglevel(level string) Level {
 
 	switch level {
@@ -50,6 +52,14 @@ func str2loglevel(level string) Level {
 	}
 
 	return Level_Debug
+}
+
+func EnableStdOut() {
+	enableStdOut = true
+}
+
+func DisableStdOut() {
+	enableStdOut = false
 }
 
 // A Logger represents an active logging object that generates lines of
@@ -195,6 +205,12 @@ func (self *Logger) Log(c Color, level Level, format string, v ...interface{}) {
 		return
 	}
 
+	if nil   == self.fileOutput && 
+	   false == enableStdOut && 
+	   int(level) < int(self.panicLevel) {
+		return
+	}
+
 	prefix := fmt.Sprintf("%s %s", levelString[level], self.name)
 
 	var text string
@@ -205,25 +221,17 @@ func (self *Logger) Log(c Color, level Level, format string, v ...interface{}) {
 		text = fmt.Sprintf(format, v...)
 	}
 
-	var out *OutputLogger
-
-	if self.fileOutput == nil {
-		out = stdOutLogger
-	} else {
-		out = self.fileOutput
+	if enableStdOut {
+		self.Output(3, prefix, text, c, stdOutLogger)
 	}
 
-	if out == stdOutLogger {
-		self.Output(3, prefix, text, c, out)
-	} else {
-		self.Output(3, prefix, text, c, stdOutLogger)
-		self.Output(3, prefix, text, NoColor, out)	
+	if self.fileOutput != nil {
+		self.Output(3, prefix, text, NoColor, self.fileOutput)
 	}
 
 	if int(level) >= int(self.panicLevel) {
 		panic(text)
 	}
-
 }
 
 func (self *Logger) DebugColorf(colorName string, format string, v ...interface{}) {
