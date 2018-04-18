@@ -14,8 +14,6 @@ package golog
 
 import (
 	"fmt"
-	//"io"
-	//"os"
 	"runtime"
 	"sync"
 	"time"
@@ -66,7 +64,6 @@ type Logger struct {
 	panicLevel  Level
 	enableColor bool
 	name        string
-	colorFile   *ColorFile
 	fileOutput  *OutputLogger
 }
 
@@ -208,20 +205,6 @@ func (self *Logger) Log(c Color, level Level, format string, v ...interface{}) {
 		text = fmt.Sprintf(format, v...)
 	}
 
-/*	if self.enableColor {
-
-		if self.colorFile != nil && c == NoColor {
-			c = self.colorFile.ColorFromText(text)
-		}
-
-		if level >= Level_Error {
-			c = Red
-		}
-	} else {
-		c = NoColor
-	}
-*/
-
 	var out *OutputLogger
 
 	if self.fileOutput == nil {
@@ -308,9 +291,7 @@ func (self *Logger) Fatalln(v ...interface{}) {
 }
 
 func (self *Logger) SetLevelByString(level string) {
-
 	self.SetLevel(str2loglevel(level))
-
 }
 
 func (self *Logger) SetLevel(lv Level) {
@@ -326,10 +307,6 @@ func (self *Logger) SetPanicLevelByString(level string) {
 
 }
 
-// 注意, 加色只能在Gogland的main方式启用, Test方式无法加色
-func (self *Logger) SetColorFile(file *ColorFile) {
-	self.colorFile = file
-}
 func (self *Logger) IsDebugEnabled() bool {
 	return self.level == Level_Debug
 }
