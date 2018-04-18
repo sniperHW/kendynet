@@ -54,3 +54,21 @@ func mustGetProcAddress(lib uintptr, name string) uintptr {
 	}
 	return uintptr(addr)
 }
+
+func init() {
+	err := EnableVT100()
+	if nil != err {
+		logColorPrefix = []string{
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+		}		
+		logColorSuffix = ""
+	}
+}

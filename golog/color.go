@@ -1,10 +1,5 @@
 package golog
 
-import (
-	"strings"
-	"runtime"
-)
-
 type Color int
 
 const (
@@ -33,26 +28,6 @@ var logColorPrefix = []string{
 
 var logColorSuffix = "\x1b[0m"
 
-func init() {
-	if runtime.GOOS == "windows" {
-		err := EnableVT100()
-		if nil != err {
-			logColorPrefix = []string{
-				"",
-				"",
-				"",
-				"",
-				"",
-				"",
-				"",
-				"",
-				"",
-			}		
-			logColorSuffix = ""
-		}
-	}
-}
-
 var colorByName = map[string]Color{
 	"none":      NoColor,
 	"black":     Black,
@@ -63,20 +38,6 @@ var colorByName = map[string]Color{
 	"purple":    Purple,
 	"darkgreen": DarkGreen,
 	"white":     White,
-}
-
-func matchColor(name string) Color {
-
-	lower := strings.ToLower(name)
-
-	for cname, c := range colorByName {
-
-		if cname == lower {
-			return c
-		}
-	}
-
-	return NoColor
 }
 
 func ColorFromLevel(l Level) Color {

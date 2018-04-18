@@ -1,10 +1,7 @@
 package golog
 
 import (
-	//"errors"
-	//"io/ioutil"
 	"os"
-	//"sync"
 	"fmt"
 	"time"
 	"io"
