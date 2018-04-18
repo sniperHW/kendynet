@@ -140,7 +140,7 @@ func client(service string,count int) {
 
 
 func main(){
-	pb.Register(&testproto.BrocastPingpong{})
+	pb.Register(&testproto.BrocastPingpong{},1)
 	if len(os.Args) < 3 {
 		fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")
 		return
