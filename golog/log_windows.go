@@ -13,10 +13,6 @@ const (
 	kINVALID_HANDLE_VALUE               uintptr = ^uintptr(0)
 )
 
-func init() {
-	EnableVT100()
-}
-
 func EnableVT100() error {
 	kernel32 := mustLoadLibrary("kernel32.dll")
 	getStdHandle := mustGetProcAddress(kernel32, "GetStdHandle")

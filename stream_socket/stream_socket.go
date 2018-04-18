@@ -29,7 +29,6 @@ type StreamSocket struct {
 	encoder           kendynet.EnCoder
 	sendBuffProcessor SendBuffProcessor
 	flag              int32
-	//option            kendynet.SessionOption
     SendTimeout 	  time.Duration
     RecvTimeout       time.Duration 
 	mutex             sync.Mutex
@@ -398,6 +397,7 @@ func NewStreamSocket(conn net.Conn)(kendynet.StreamSession){
 		case *net.UnixConn:
 			break
 		default:
+			kendynet.Errorf("NewStreamSocket() invaild conn type\n")
 			return nil
 	}
 

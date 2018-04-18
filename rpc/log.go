@@ -8,9 +8,9 @@ import(
 var logger *golog.Logger
 var is_init int32
 
-func Init(_logger *golog.Logger) {
+func InitLogger(out *golog.OutputLogger) {
 	if atomic.CompareAndSwapInt32(&is_init,0,1) {
-		logger = _logger
+		logger = golog.New("rpc",out);
 		logger.Debugf("rpc logger init")
 	}
 }

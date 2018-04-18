@@ -19,6 +19,7 @@ func NewListener(nettype,service string) (*Listener,error) {
     }
     listener, err := net.ListenTCP(nettype, tcpAddr)
     if err != nil{
+        kendynet.Errorf("ListenTCP service:%s error:%s\n",service,err.Error())
         return nil,err
     }
     return &Listener{listener:listener},nil

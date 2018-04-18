@@ -2,6 +2,7 @@ package golog
 
 import (
 	"strings"
+	"runtime"
 )
 
 type Color int
@@ -28,6 +29,28 @@ var logColorPrefix = []string{
 	"\x1b[035m",
 	"\x1b[036m",
 	"\x1b[037m",
+}
+
+var logColorSuffix = "\x1b[0m"
+
+func init() {
+	if runtime.GOOS == "windows" {
+		err := EnableVT100()
+		if nil != err {
+			logColorPrefix = []string{
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+			}		
+			logColorSuffix = ""
+		}
+	}
 }
 
 var colorByName = map[string]Color{
@@ -69,4 +92,4 @@ func ColorFromLevel(l Level) Color {
 	return NoColor
 }
 
-var logColorSuffix = "\x1b[0m"
+

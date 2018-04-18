@@ -6,7 +6,7 @@ import (
 	"net/http"
 	gorilla "github.com/gorilla/websocket"
 	"github.com/sniperHW/kendynet"
-	"fmt"
+	//"fmt"
 )
 
 type Listener struct{
@@ -52,7 +52,7 @@ func (this *Listener) Start(onNewClient func(kendynet.StreamSession)) error {
     http.HandleFunc(this.origin, func (w http.ResponseWriter, r *http.Request) {
 		c, err := this.upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			fmt.Printf("Upgrade failed:%s\n",err.Error())
+			kendynet.Errorf("wssocket Upgrade failed:%s\n",err.Error())
 			return
 		}
 		sess := NewWSSocket(c)
@@ -61,7 +61,7 @@ func (this *Listener) Start(onNewClient func(kendynet.StreamSession)) error {
 
 	err := http.Serve(this.listener,nil)
 	if err != nil {
-		fmt.Printf("%s\n",err.Error())
+		kendynet.Errorf("http.Serve() failed:%s\n",err.Error())
 	}
 
 	this.listener.Close()

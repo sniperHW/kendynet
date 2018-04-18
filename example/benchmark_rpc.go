@@ -12,6 +12,7 @@ import(
 	"github.com/sniperHW/kendynet/pb"
 	"github.com/sniperHW/kendynet/rpc"
 	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/golog"
 )
 
 func server(service string) {
@@ -63,9 +64,9 @@ func client(service string,count int) {
 
 func main(){
 
-	rpcLogger := kendynet.NewLog("log/rpc","rpc")
-
-	rpc.Init(rpcLogger)
+	outLogger := golog.NewOutputLogger("log","kendynet",1024*1024*1000)
+	kendynet.InitLogger(outLogger)
+	rpc.InitLogger(outLogger)
 
 	pb.Register(&testproto.Hello{},1)
 	pb.Register(&testproto.World{},2)
