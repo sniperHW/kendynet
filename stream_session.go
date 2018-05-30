@@ -20,11 +20,6 @@ type Event struct {
     Data    interface {}    
 }
 
-/*type SessionOption struct {
-    SendTimeout time.Duration
-    RecvTimeout time.Duration    
-}*/
-
 type StreamSession interface {
 
 	/* 
@@ -70,10 +65,14 @@ type StreamSession interface {
     SetCloseCallBack(cb func (StreamSession,string))
 
     /*
-    *   设置接收解包器
+    *   设置接收解包器,必须在调用Start前设置，Start成功之后的调用将没有任何效果
     */
     SetReceiver(r Receiver)
 
+    /*
+    *  设置消息序列化器，用于将一个对象序列化成Message对象，
+    *  如果没有设置Send和PostSend将返回错误(只能调用SendMessage,PostSendMessage发送Message)
+    */
     SetEncoder(encoder EnCoder)
 
     /*
