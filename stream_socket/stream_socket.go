@@ -348,7 +348,7 @@ func sendThreadFunc(session *StreamSocket) {
 						if kendynet.IsNetTimeout(err) {
 							err = kendynet.ErrSendTimeout
 						} else {
-							kendynet.Errorf("writer.Flush error:%s\n",err.Errorf())
+							kendynet.Errorf("writer.Flush error:%s\n",err.Error())
 							session.mutex.Lock()
 							session.flag |= wclosed
 							session.mutex.Unlock()							
