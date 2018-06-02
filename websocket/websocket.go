@@ -253,20 +253,6 @@ func (this *WebSocket) SendMessage(msg kendynet.Message) error {
 	return this.sendMessage(msg)
 }
 
-
-func isNetTimeout(err error) bool {
-	switch err.(type) {
-		case net.Error:
-			if err.(net.Error).Timeout() {
-				return true
-			}					
-			break
-		default:
-			break
-	}
-	return false	
-}
-
 func recvThreadFunc(session *WebSocket) {
 	for !session.isClose() {
 		recvTimeout := session.RecvTimeout
@@ -285,7 +271,8 @@ func recvThreadFunc(session *WebSocket) {
 			if err != nil {
 				event.EventType = kendynet.EventTypeError
 				event.Data = err
-				if !isNetTimeout(err) {
+				if !kendynet.IsNetTimeout(err) {
+					kendynet.Errorf("ReceiveAndUnpack error:%s\n",err.Error())
 					session.mutex.Lock()
 					session.flag |= (rclosed | wclosed)
 					session.mutex.Unlock()
@@ -332,9 +319,10 @@ func sendThreadFunc(session *WebSocket) {
 					return
 				}
 
-				if err.(net.Error).Timeout() {
+				if kendynet.IsNetTimeout(err) {
 					err = kendynet.ErrSendTimeout
 				} else {
+					kendynet.Errorf("websocket write error:%s\n",err.Error())
 					session.mutex.Lock()
 					session.flag |= wclosed
 					session.mutex.Unlock()							

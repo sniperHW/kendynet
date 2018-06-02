@@ -2,6 +2,7 @@ package kendynet
 
 import (
 	"fmt"
+    "net"
 )
 
 var (
@@ -13,8 +14,22 @@ var (
     ErrSendTimeout             = fmt.Errorf("send timeout")
     ErrStarted                 = fmt.Errorf("already started")
     ErrInvaildBuff             = fmt.Errorf("buff is nil")
-    ErrNoOnEvent              = fmt.Errorf("onEvent == nil")
+    ErrNoOnEvent               = fmt.Errorf("onEvent == nil")
     ErrNoReceiver              = fmt.Errorf("receiver == nil")
     ErrInvaildObject           = fmt.Errorf("object == nil")
     ErrInvaildEncoder          = fmt.Errorf("encoder == nil")
 )
+
+
+func IsNetTimeout(err error) bool {
+    switch err.(type) {
+        case net.Error:
+            if err.(net.Error).Timeout() {
+                return true
+            }                   
+            break
+        default:
+            break
+    }
+    return false    
+}
