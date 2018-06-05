@@ -2,7 +2,7 @@ package websocket
 
 import (
 	"github.com/sniperHW/kendynet"
-	"github.com/sniperHW/kendynet/websocket"	
+	"github.com/sniperHW/kendynet/socket/websocket"	
 )
 
 /*
