@@ -10,8 +10,8 @@ import(
 	"net/http"
 	"net/url"
 	gorilla "github.com/gorilla/websocket"
-	codec "github.com/sniperHW/kendynet/codec/websocket"	
-	"github.com/sniperHW/kendynet/websocket"	
+	codec "github.com/sniperHW/kendynet/example/codec/websocket"	
+	"github.com/sniperHW/kendynet/socket/websocket"	
 )
 
 func server(service string) {

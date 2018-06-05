@@ -4,7 +4,7 @@ import (
     "net"
     "sync/atomic"
     "github.com/sniperHW/kendynet"
-    "github.com/sniperHW/kendynet/stream_socket"
+    "github.com/sniperHW/kendynet/socket/stream_socket"
 )
 
 type Listener struct{

@@ -9,8 +9,8 @@ import(
 	"os"
 	"github.com/sniperHW/kendynet"
 	"time"
-	codec "github.com/sniperHW/kendynet/codec/stream_socket"		
-	"github.com/sniperHW/kendynet/stream_socket/tcp"
+	codec "github.com/sniperHW/kendynet/example/codec/stream_socket"		
+	"github.com/sniperHW/kendynet/socket/stream_socket/tcp"
 )
 
 const(

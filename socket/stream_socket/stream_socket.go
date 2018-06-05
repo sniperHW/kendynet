@@ -11,6 +11,7 @@ import (
 	   "bufio"
 	   "io"
 	   "github.com/sniperHW/kendynet"
+	   "github.com/sniperHW/kendynet/util"
 	   //"fmt"
 )
 
@@ -24,7 +25,7 @@ const (
 type StreamSocket struct {
 	conn 			  net.Conn
 	ud   			  interface{}
-	sendQue          *kendynet.SendQueue
+	sendQue          *util.BlockQueue
 	receiver          kendynet.Receiver
 	encoder           kendynet.EnCoder
 	sendBuffProcessor SendBuffProcessor
@@ -316,7 +317,7 @@ func sendThreadFunc(session *StreamSocket) {
 		}
 
 		for i := 0; i < size; i++ {
-			msg := localList[i]//.(kendynet.Message)
+			msg := localList[i].(kendynet.Message)
 			data := msg.Bytes()
 			for data != nil || (i == (size - 1) && writer.Buffered() > 0) {
 				if data != nil {
@@ -405,7 +406,7 @@ func NewStreamSocket(conn net.Conn)(kendynet.StreamSession){
 
 	session 			 := new(StreamSocket)
 	session.conn 		  = conn
-	session.sendQue       = kendynet.NewSendQueue()
+	session.sendQue       = util.NewBlockQueue()
 	session.sendCloseChan = make(chan int,1)
 
 	return session

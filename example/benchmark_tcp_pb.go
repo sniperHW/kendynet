@@ -7,11 +7,11 @@ import(
 	"fmt"
 	"os"
 	"github.com/sniperHW/kendynet"
-	"github.com/sniperHW/kendynet/stream_socket/tcp"
-	codec "github.com/sniperHW/kendynet/codec/stream_socket"		
+	"github.com/sniperHW/kendynet/socket/stream_socket/tcp"
+	codec "github.com/sniperHW/kendynet/example/codec/stream_socket"		
 	"github.com/sniperHW/kendynet/example/testproto"
 	"github.com/golang/protobuf/proto"
-	"github.com/sniperHW/kendynet/pb"
+	"github.com/sniperHW/kendynet/example/pb"
 )
 
 func server(service string) {

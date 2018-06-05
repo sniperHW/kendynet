@@ -1,4 +1,4 @@
-package event_queue
+package kendynet
 
 import (
 	"github.com/sniperHW/kendynet/util"
@@ -11,7 +11,7 @@ type EventQueue struct {
 	started     int32
 }
 
-func New() *EventQueue {
+func NewEventQueue() *EventQueue {
 	r := &EventQueue{}
 	r.eventQueue = util.NewBlockQueue()
 	return r

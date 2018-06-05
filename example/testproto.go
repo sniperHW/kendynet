@@ -4,12 +4,12 @@ import (
 	"github.com/golang/protobuf/proto"
 	"fmt"
 	"github.com/sniperHW/kendynet/example/testproto"
-	"github.com/sniperHW/kendynet/pb"
+	"github.com/sniperHW/kendynet/example/pb"
 )
 
 func main() {
 
-	err := pb.Register(&testproto.Test{})
+	err := pb.Register(&testproto.Test{},1)
 
 	if err != nil {
 		fmt.Printf("Register error: %s\n",err.Error())

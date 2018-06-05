@@ -223,7 +223,6 @@ func (this *ByteBuffer) checkCapacity(idx,size uint64)(error){
 		this.needcopy = false
 		return nil
 	}
-	//fmt.Printf("idx:%d,size:%d,this.capacity:%d,this.datasize:%d,len(buffer):%d\n",idx,size,this.capacity,this.datasize,len(this.buffer))
 	if idx + size > this.capacity {
 		err := this.expand(idx+size)
 		if err != nil {

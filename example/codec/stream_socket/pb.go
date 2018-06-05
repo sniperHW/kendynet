@@ -2,8 +2,8 @@ package stream_socket
 
 import (
 	"github.com/sniperHW/kendynet"
-	"github.com/sniperHW/kendynet/stream_socket"
-	"github.com/sniperHW/kendynet/pb"
+	"github.com/sniperHW/kendynet/socket/stream_socket"
+	"github.com/sniperHW/kendynet/example/pb"
 //	"fmt"
 )
 
