@@ -60,18 +60,6 @@ func (this *TestEncoder) Encode(message rpc.RPCMessage) (interface{},error) {
 			request.Arg = buff.Bytes()
 		}
 		return request,nil
-	} else if message.Type() == rpc.RPC_PING {
-		req := message.(*rpc.Ping)
-		request := &testproto.RPCPing{}
-		request.Seq = proto.Uint64(req.Seq)	
-		request.Timestamp = proto.Int64(req.TimeStamp)	
-		return request,nil
-	} else if message.Type() == rpc.RPC_PONG {
-		resp := message.(*rpc.Pong)
-		response := &testproto.RPCPong{}
-		response.Seq = proto.Uint64(resp.Seq)	
-		response.Timestamp = proto.Int64(resp.TimeStamp)	
-		return response,nil
 	} else {
 		resp := message.(*rpc.RPCResponse)
 		response := &testproto.RPCResponse{}
@@ -125,18 +113,6 @@ func (this *TestDecoder) Decode(o interface{}) (rpc.RPCMessage,error) {
 					return nil,err
 				}
 			}
-			return response,nil
-		case *testproto.RPCPing:
-			req := o.(*testproto.RPCPing)
-			request := &rpc.Ping{}
-			request.Seq = req.GetSeq()
-			request.TimeStamp = req.GetTimestamp()
-			return request,nil
-		case *testproto.RPCPong:
-			resp := o.(*testproto.RPCPong)
-			response := &rpc.Pong{}
-			response.Seq = resp.GetSeq()
-			response.TimeStamp = resp.GetTimestamp()
 			return response,nil
 		default:
 			return nil,fmt.Errorf("invaild obj type:%s",reflect.TypeOf(o).String())
@@ -210,14 +186,6 @@ func NewCaller(method string) *Caller {
 	c.method = method
 	option := &rpc.Option{}
 	option.Timeout = 5000*time.Millisecond
-	option.PingInterval = 5000*time.Millisecond
-	option.PingTimeout = 5000*time.Millisecond
-	option.OnPong = func(_ rpc.RPCChannel,_ *rpc.Pong) {
-		fmt.Printf("pong\n")
-	}
-	option.OnPingTimeout = func(c rpc.RPCChannel) {
-		c.Close("ping timeout")
-	}
 	c.client,_ = rpc.NewRPCClient(&TestDecoder{},&TestEncoder{},option)
 	c.selector = &testSelector{}
 	return c
