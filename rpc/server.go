@@ -92,13 +92,6 @@ func (this *RPCServer) OnRPCMessage(channel RPCChannel,message interface{}) {
 	}
 
 	switch msg.(type) {
-		case *Ping:{
-			ping := msg.(*Ping)
-			pong := &Pong{Seq:ping.Seq,TimeStamp:ping.TimeStamp}
-			replyer := &RPCReplyer{encoder:this.encoder,channel:channel}
-			replyer.reply(pong)
-			return			
-		}
 		case *RPCRequest: {
 			req := msg.(*RPCRequest)
 			this.mutexMethods.Lock()

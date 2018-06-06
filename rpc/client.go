@@ -11,14 +11,9 @@ import (
 var sequence uint64 = 0
 var ErrCallTimeout error = fmt.Errorf("rpc call timeout")
 var ErrNoService   error = fmt.Errorf("no available service")
-var ErrPingTimeout error = fmt.Errorf("ping time out")
 
 type Option struct {
 	Timeout 		 time.Duration                //调用超时的时间,毫秒 0 <= 为不超时
-	PingInterval     time.Duration                //发送Ping的间隔时间,毫秒，0 <= 为不发送
-	PingTimeout      time.Duration                //ping请求的超时时间
-	OnPingTimeout    func(RPCChannel) //ping超时回调
-	OnPong           func(RPCChannel,*Pong)
 }
 
 /*
@@ -37,7 +32,6 @@ type reqContext struct {
 	seq         uint64
 	onResponse  RPCResponseHandler
 	deadline    time.Time
-	isPing      bool
 }
 
 type channelContext struct {
@@ -134,9 +128,7 @@ type RPCClient struct {
 	decoder   		  	RPCMessageDecoder
 	option            	Option
 	mutex             	sync.Mutex
-	pendingPings      	reqQueue    				//按deadlie从小到大排列的未收到应答的ping请求
 	pendingCalls      	reqQueue    				//按deadlie从小到大排列的未收到应答的call请求
-	pingRoutine       	bool
 	checkTimeoutRoutine bool
 	mehtodChannelsMap   map[string]*methodChannels   
 	channelNameMap      map[string]RPCChannel
@@ -183,9 +175,6 @@ func (this *RPCClient) AddMethod(channel RPCChannel,method string) {
 		context.channel = channel
 		this.channels[channel] = context
 		this.addMethodChannel(method,channel)
-		if this.option.PingInterval > 0 && len(this.channelNameMap) == 1 { 
-			this.startPingRoutine()
-		}
 	} else {
 		context := this.channels[channel]
 		_,ok = context.methods[method]
@@ -217,15 +206,7 @@ func (this *RPCClient) RemoveMethod(channel RPCChannel,method string) {
 	this.removeMethodChannel(method,channel)
 }
 
-func min(a int64,b int64) int64 {
-	if a > b {
-		return b
-	} else {
-		return a
-	}
-}
-
-//启动一个goroutine检测call和ping超时
+//启动一个goroutine检测call超时
 func (this *RPCClient) startReqTimeoutCheckRoutine() {
 	if this.checkTimeoutRoutine {
 		return
@@ -236,53 +217,25 @@ func (this *RPCClient) startReqTimeoutCheckRoutine() {
 			this.mutex.Unlock()
 		}()
 		this.mutex.Lock()
-		var sleepPing int64
-		var sleepCall int64
 		timeoutList := reqQueue{}
 		timeoutList.init()
 		for {
 			now := time.Now()
-			sleepPing = 0x7FFFFFFFFFFFFFFF
-			sleepCall = 0x7FFFFFFFFFFFFFFF
-
-			if this.option.PingTimeout > 0 {
-				p := this.pendingPings.front()
-				if p != nil {
-					sleepPing = p.deadline.UnixNano() - now.UnixNano()
-				} else {
-					sleepPing = int64(this.option.PingTimeout)
-				}
-			}
-
+			sleepTime := int64(0)
 			if this.option.Timeout > 0 {
 				p := this.pendingCalls.front()
 				if p != nil {
-					sleepCall = p.deadline.UnixNano() - now.UnixNano()
+					sleepTime = p.deadline.UnixNano() - now.UnixNano()
 				} else {
-					sleepCall = int64(this.option.Timeout)
+					sleepTime = int64(this.option.Timeout)
 				}
 			}
-
-			sleepTime := min(sleepPing,sleepCall)
 
 			if sleepTime > 0 {
 				this.mutex.Unlock()
 				time.Sleep(time.Duration(sleepTime))
 				this.mutex.Lock()
 				now = time.Now()				
-			}
-
-			for this.pendingPings.count > 0 {
-				p := this.pendingPings.front()
-				if now.After(p.deadline) {
-					this.pendingPings.popFront()
-					delete(p.chanContext.pendingReqs,p.seq)
-					if this.option.OnPingTimeout != nil {
-						timeoutList.push(p)
-					}
-				} else {
-					break
-				}
 			}
 
 			for this.pendingCalls.count > 0 {
@@ -300,11 +253,7 @@ func (this *RPCClient) startReqTimeoutCheckRoutine() {
 				this.mutex.Unlock()
 				for timeoutList.count > 0 {
 					p := timeoutList.popFront()
-					if p.isPing {
-						this.option.OnPingTimeout(p.chanContext.channel)
-					} else {
-						p.onResponse(nil,ErrCallTimeout)
-					}
+					p.onResponse(nil,ErrCallTimeout)
 				}
 				this.mutex.Lock()
 			}
@@ -317,45 +266,6 @@ func (this *RPCClient) startReqTimeoutCheckRoutine() {
 	}()
 }
 
-func (this *RPCClient) startPingRoutine() {
-	if !this.pingRoutine {
-		this.pingRoutine = true
-		//启动pingRoutine
-		go func(){
-			for {
-				time.Sleep(this.option.PingInterval)
-				this.mutex.Lock()
-				for _,c := range this.channels {
-					this.ping(c)
-				}
-				if len(this.channels) == 0 {
-					this.mutex.Unlock()
-					this.pingRoutine = false
-					return
-				}
-				this.mutex.Unlock()
-			}
-		}()
-	}	
-}
-
-func (this *RPCClient) ping(context *channelContext) {
-	req := &Ping{} 
-	req.Seq = atomic.AddUint64(&sequence,1) 
-
-	request,err := this.encoder.Encode(req)
-	if err != nil {
-		return
-	}	
-	context.channel.SendRPCRequest(request)        //不管返回值,如果Send有错误由pongTimeout处理
-	r := &reqContext{seq:req.Seq,isPing:true,chanContext:context}
-	r.deadline = time.Now().Add(this.option.PingTimeout)
-	context.pendingReqs[req.Seq] = r
-	this.pendingPings.push(r)
-	if !this.checkTimeoutRoutine {
-		this.startReqTimeoutCheckRoutine()
-	}
-}
 
 func (this *RPCClient) OnChannelClose(channel RPCChannel,err error) {
 	if nil == channel {
@@ -385,12 +295,8 @@ func (this *RPCClient) OnChannelClose(channel RPCChannel,err error) {
 	}
 
 	for _,r := range chanContext.pendingReqs {
-		if !r.isPing {
-			respList.push(r)
-			this.pendingCalls.remove(r)
-		} else {
-			this.pendingPings.remove(r)
-		}
+		respList.push(r)
+		this.pendingCalls.remove(r)
 	}
 
 	for m,_ := range chanContext.methods {
@@ -420,22 +326,13 @@ func (this *RPCClient) OnRPCMessage(channel RPCChannel,message interface{}) {
 		return
 	}
 	delete(chanContext.pendingReqs,msg.GetSeq())
-	if pendingReq.isPing {
-		this.pendingPings.remove(pendingReq)
-	} else {
-		this.pendingCalls.remove(pendingReq)
-	}
-
+	this.pendingCalls.remove(pendingReq)
+	
 	this.mutex.Unlock()
 
-	if pendingReq.isPing {
-		if this.option.OnPong != nil {
-			this.option.OnPong(channel,msg.(*Pong))
-		}
-	} else {
-		resp := msg.(*RPCResponse)
-		pendingReq.onResponse(resp.Ret,resp.Err)
-	}
+	resp := msg.(*RPCResponse)
+	pendingReq.onResponse(resp.Ret,resp.Err)
+	
 }
 
 
@@ -490,7 +387,6 @@ func (this *RPCClient) Call(selector ChannelSelector,method string,arg interface
 	return nil	
 }
 
-
 func NewRPCClient(decoder RPCMessageDecoder,encoder RPCMessageEncoder,option *Option) (*RPCClient,error) {
 	if nil == decoder {
 		return nil,fmt.Errorf("decoder == nil")
@@ -502,11 +398,6 @@ func NewRPCClient(decoder RPCMessageDecoder,encoder RPCMessageEncoder,option *Op
 
 	if nil == option {
 		option = &Option{}
-	} else {
-		if option.OnPingTimeout == nil {
-			option.PingInterval = 0
-			option.PingTimeout = 0
-		}
 	}
 
 	c := &RPCClient{}
@@ -514,11 +405,9 @@ func NewRPCClient(decoder RPCMessageDecoder,encoder RPCMessageEncoder,option *Op
 	c.decoder = decoder
 	c.option  = *option
 	c.pendingCalls.init()
-	c.pendingPings.init()
 	c.mehtodChannelsMap = make(map[string]*methodChannels)
 	c.channelNameMap = make(map[string]RPCChannel)
 	c.channels = make(map[RPCChannel]*channelContext)
 	return c,nil
-
 }
 
