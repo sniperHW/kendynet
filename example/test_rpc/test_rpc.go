@@ -194,7 +194,7 @@ func (this *Caller) AsynCall(method string,arg interface{},cb rpc.RPCResponseHan
 }
 
 func (this *Caller) SyncCall(method string,arg interface{}) (interface{},error) {
-	return this.client.SyncCall(method,arg,0)
+	return this.client.SyncCall(method,arg,1)
 }
 
 

@@ -40,7 +40,8 @@ type RPCClient struct {
 	channel             RPCChannel
 	pendingCalls        map[uint64]*reqContext        //等待回复的请求
 	minheap            *util.MinHeap 
-	timeoutRoutine      bool              
+	timeoutRoutine      bool
+	notifyer            chan int              
 }
 
 //通道关闭后调用
@@ -107,6 +108,7 @@ func (this *RPCClient) Post(method string,arg interface{}) error {
 
 //异步调用
 func (this *RPCClient) AsynCall(method string,arg interface{},timeout uint32,cb RPCResponseHandler) error {
+
 	if cb == nil {
 		return fmt.Errorf("cb == nil")
 	}
@@ -115,6 +117,7 @@ func (this *RPCClient) AsynCall(method string,arg interface{},timeout uint32,cb 
 	this.mutex.Lock()
 	channel = this.channel
 	this.mutex.Unlock()
+
 	if nil == channel {	
 		return fmt.Errorf("channel closed")
 	}
@@ -141,9 +144,18 @@ func (this *RPCClient) AsynCall(method string,arg interface{},timeout uint32,cb 
 		this.pendingCalls[req.Seq] = r
 		if timeout > 0 {
 			r.deadline = time.Now().Add(time.Duration(timeout))
+			m := this.minheap.Min()
 			this.minheap.Insert(r)
 			if !this.timeoutRoutine {
 				this.startTimeoutRoutine()
+			} else {
+				/*
+				* 新加入请求的超时时间比小根堆中的最小时间还小
+				* 需要唤醒睡眠中的检测go程以调整睡眠时间
+				*/
+				if nil != m && m.(*reqContext).deadline.After(r.deadline) {
+					this.notifyer <- 1
+				}
 			}
 		}
 	}
@@ -185,26 +197,36 @@ func (this *RPCClient) startTimeoutRoutine() {
 
 	go func() {
 		defer func(){
+			this.timeoutRoutine = false
 			this.mutex.Unlock()
 		}()
 		this.mutex.Lock()
 		for {
-			now := time.Now()
-			sleepTime := int64(0)
+
 			r := this.minheap.Min()
-			if nil != r {
-				sleepTime = r.(*reqContext).deadline.UnixNano() - now.UnixNano()
+			if nil == r {
+				return 
 			}
+
+			now := time.Now()
+			sleepTime := r.(*reqContext).deadline.UnixNano() - now.UnixNano()
 
 			if sleepTime > 0 {
 				this.mutex.Unlock()
-				time.Sleep(time.Duration(sleepTime))
+
+				ticker := time.NewTicker(time.Duration(sleepTime))
+				select {
+					case <- this.notifyer:
+					case <- ticker.C:
+				}
+				ticker.Stop()
+					
 				this.mutex.Lock()
 				now = time.Now()				
 			}
 
 			for {
-				r = this.minheap.Min()
+				r := this.minheap.Min()
 				if nil == r || !now.After(r.(*reqContext).deadline) {
 					break
 				}
@@ -239,5 +261,6 @@ func NewRPCClient(channel RPCChannel,decoder RPCMessageDecoder,encoder RPCMessag
 	c.pendingCalls = map[uint64]*reqContext{}
 	c.minheap = util.NewMinHeap(64)
 	c.channel = channel
+	c.notifyer = make(chan int,64)
 	return c,nil
 }

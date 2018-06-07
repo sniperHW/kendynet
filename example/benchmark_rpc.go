@@ -12,6 +12,7 @@ import(
 	"github.com/sniperHW/kendynet/rpc"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/golog"
+	"math/rand"
 )
 
 func server(service string) {
@@ -29,8 +30,12 @@ func server(service string) {
 	//注册服务
 	server.RegisterMethod("hello",func (replyer *rpc.RPCReplyer,arg interface{}){
 		atomic.AddInt32(&count,1)
-		world := &testproto.World{World:proto.String("world")}
-		replyer.Reply(world,nil)
+		if rand.Int() % 3 == 0 {
+
+		} else {
+			world := &testproto.World{World:proto.String("world")}
+			replyer.Reply(world,nil)
+		}
 	})
 	server.Serve(service)
 }
@@ -47,8 +52,7 @@ func client(service string,count int) {
 			for {
 				_,err := caller.SyncCall("hello",arg)
 				if nil != err {
-					fmt.Println(err.Error())
-					break
+					//fmt.Println(err.Error())
 				}
 			}
 		}()
