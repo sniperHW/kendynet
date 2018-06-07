@@ -8,227 +8,175 @@ import (
 	"github.com/sniperHW/kendynet/util"
 )
 
-var sequence uint64 = 0
-var ErrCallTimeout error = fmt.Errorf("rpc call timeout")
-var ErrNoService   error = fmt.Errorf("no available service")
-
-type Option struct {
-	Timeout 		 time.Duration                //调用超时的时间,毫秒 0 <= 为不超时
-}
-
-/*
-*     channel选择策略接口
-*/
-type ChannelSelector interface {
-	Select([]RPCChannel) RPCChannel
-}
-
 type RPCResponseHandler func(interface{},error)
 
 type reqContext struct {
-	chanContext *channelContext
-	next        *reqContext
-	pre         *reqContext
+	heapIdx     uint32
 	seq         uint64
 	onResponse  RPCResponseHandler
 	deadline    time.Time
 }
 
-type channelContext struct {
-	channel     RPCChannel
-	methods     map[string]bool               //channel上提供的远程方法
-	pendingReqs map[uint64]*reqContext        //等待回复的请求
+
+func (this *reqContext) Less(o util.HeapElement) bool {
+	other := o.(*reqContext)
+	return other.deadline.After(this.deadline)
 }
 
-type reqQueue struct {
-	head  reqContext
-	tail  reqContext
-	count uint64
+func (this *reqContext) GetIndex() uint32 {
+	return this.heapIdx
 }
 
-func (this *reqQueue) init() {
-	this.head.next = &this.tail
-	this.tail.pre  = &this.head 
+func (this *reqContext) SetIndex(idx uint32) {
+	this.heapIdx = idx
 }
 
-func (this *reqQueue) front() *reqContext {
-	if this.count == 0 {
-		return nil
-	} else {
-		return this.head.next 
-	}
-}
-
-func (this *reqQueue) popFront() *reqContext {
-	if this.count == 0 {
-		return nil
-	} else {
-		f := this.head.next
-		this.head.next = f.next
-		f.next.pre = &this.head
-		f.next = nil
-		f.pre  = nil
-		this.count--
-		return f 
-	}	
-}
-
-func (this *reqQueue) remove(p *reqContext) {
-	pre  := p.pre
-	next := p.next
-	pre.next = next
-	next.pre = pre
-	this.count--
-	p.pre = nil
-	p.next = nil
-}
-
-func (this *reqQueue) push(p *reqContext) {
-	if p.next == nil && p.pre == nil {
-		pre := this.tail.pre
-		pre.next = p
-		p.pre = pre
-		p.next = &this.tail
-		this.tail.pre = p
-		this.count++
-	}
-}
-
-//提供method的所有channel
-type methodChannels struct {
-	channels    []RPCChannel
-}
-
-func (this *methodChannels) addChannel(channel RPCChannel) {
-	if this.channels == nil {
-		this.channels = make([]RPCChannel,0,10)
-	}
-	this.channels = append(this.channels,channel)
-}
-
-func (this *methodChannels) removeChannel(channel RPCChannel) {
-	if this.channels == nil {
-		return
-	}
-
-	for i := 0; i < len(this.channels); i++ {
-		if this.channels[i] == channel {
-			//将后面的元素往前移动
-			for j := i; j + 1 < len(this.channels); j++ {
-				this.channels[j] = this.channels[j+1]
-			}
-			this.channels = this.channels[:len(this.channels)-1]
-			return 
-		}
-	}
-}
 
 type RPCClient struct {
 	encoder   		  	RPCMessageEncoder
 	decoder   		  	RPCMessageDecoder
-	option            	Option
+	sequence            uint64
 	mutex             	sync.Mutex
-	pendingCalls      	reqQueue    				//按deadlie从小到大排列的未收到应答的call请求
-	checkTimeoutRoutine bool
-	mehtodChannelsMap   map[string]*methodChannels   
-	channelNameMap      map[string]RPCChannel
-	channels            map[RPCChannel]*channelContext
+	channel             RPCChannel
+	pendingCalls        map[uint64]*reqContext        //等待回复的请求
+	minheap            *util.MinHeap 
+	timeoutRoutine      bool              
 }
 
-//添加一个远程方法的通道
-func (this *RPCClient) addMethodChannel(method string,channel RPCChannel) {
-	m,ok := this.mehtodChannelsMap[method]
-	if !ok {
-		m = &methodChannels{}
-		this.mehtodChannelsMap[method] = m
-	}
-	m.addChannel(channel)
-}
-
-//移除一个远程方法的通道
-func (this *RPCClient) removeMethodChannel(method string,channel RPCChannel) {
-	m,ok := this.mehtodChannelsMap[method]
-	if !ok {
-		return
-	}
-	m.removeChannel(channel)	
-}
-
-//在channel上添加method
-func (this *RPCClient) AddMethod(channel RPCChannel,method string) {
-	if nil == channel {
-		return
-	}
-
-	defer func(){
-		this.mutex.Unlock()
-	}()
+//通道关闭后调用
+func (this *RPCClient) OnChannelClose(err error) {
 	this.mutex.Lock()
+	this.channel = nil
+	this.minheap.Clear()
+	pendingCalls := this.pendingCalls
+	this.pendingCalls = nil
+	this.mutex.Unlock()
+	for _ , v := range pendingCalls {
+		v.onResponse(nil,err)
+	}
+}
 
-	_,ok := this.channelNameMap[channel.Name()]
+//收到RPC消息后调用
+func (this *RPCClient) OnRPCMessage(message interface{}) {
+	msg,err := this.decoder.Decode(message)
+	if nil != err {
+		Errorf(util.FormatFileLine("RPCClient rpc message from(%s) decode err:%s\n",this.channel.Name,err.Error()))
+		return
+	}
+	this.mutex.Lock()
+	pendingReq,ok := this.pendingCalls[msg.GetSeq()] 
 	if !ok {
-		this.channelNameMap[channel.Name()] = channel
-		context := &channelContext{}
-		context.methods = make(map[string]bool)
-		context.pendingReqs = make(map[uint64]*reqContext)
-		context.methods[method] = true
-		context.channel = channel
-		this.channels[channel] = context
-		this.addMethodChannel(method,channel)
-	} else {
-		context := this.channels[channel]
-		_,ok = context.methods[method]
-		if ok {
-			return
+		this.mutex.Unlock()
+		return
+	}
+	delete(this.pendingCalls,msg.GetSeq())
+	this.minheap.Remove(pendingReq)
+	this.mutex.Unlock()
+	resp := msg.(*RPCResponse)
+	pendingReq.onResponse(resp.Ret,resp.Err)
+}
+
+//投递，不关心响应和是否失败
+func (this *RPCClient) Post(method string,arg interface{}) error {
+	var channel RPCChannel
+	this.mutex.Lock()
+	channel = this.channel
+	this.mutex.Unlock()
+
+	if nil == channel {
+		return fmt.Errorf("channel closed")
+	}
+
+	req := &RPCRequest{} 
+	req.Method = method
+	req.Seq = atomic.AddUint64(&this.sequence,1) 
+	req.Arg = arg
+	req.NeedResp = false
+
+	request,err := this.encoder.Encode(req)
+	if err != nil {
+		return fmt.Errorf("encode error:%s\n",err.Error())
+	} 
+
+	err = channel.SendRequest(request)
+	if nil != err {
+		return err
+	}
+	return nil
+}
+
+//异步调用
+func (this *RPCClient) AsynCall(method string,arg interface{},timeout uint32,cb RPCResponseHandler) error {
+	if cb == nil {
+		return fmt.Errorf("cb == nil")
+	}
+
+	var channel RPCChannel
+	this.mutex.Lock()
+	channel = this.channel
+	this.mutex.Unlock()
+	if nil == channel {	
+		return fmt.Errorf("channel closed")
+	}
+
+	req := &RPCRequest{} 
+	req.Method = method
+	req.Seq = atomic.AddUint64(&this.sequence,1) 
+	req.Arg = arg
+	req.NeedResp = true
+
+	request,err := this.encoder.Encode(req)
+	if err != nil {
+		return fmt.Errorf("encode error:%s\n",err.Error())
+	} 
+
+	err = channel.SendRequest(request)
+	if nil != err {
+		return err
+	}
+
+	this.mutex.Lock()
+	if nil != this.pendingCalls {
+		r := &reqContext{seq:req.Seq,onResponse:cb}
+		this.pendingCalls[req.Seq] = r
+		if timeout > 0 {
+			r.deadline = time.Now().Add(time.Duration(timeout))
+			this.minheap.Insert(r)
+			if !this.timeoutRoutine {
+				this.startTimeoutRoutine()
+			}
 		}
-		context.methods[method] = true
-		this.addMethodChannel(method,channel)
 	}
+	this.mutex.Unlock()
+	return nil
 }
 
-//在channel上移除method
-func (this *RPCClient) RemoveMethod(channel RPCChannel,method string) {
-	if nil == channel {
-		return
-	}
-
-	defer func(){
-		this.mutex.Unlock()
-	}()
-	this.mutex.Lock()
-
-	_,ok := this.channelNameMap[channel.Name()]
-	if !ok {
-		return
-	}
-	context := this.channels[channel]
-	delete(context.methods,method)
-	this.removeMethodChannel(method,channel)
+//同步调用
+func (this *RPCClient) SyncCall(method string,arg interface{},timeout uint32) (interface{},error) {
+	return nil,nil
 }
+
+
+var ErrCallTimeout error = fmt.Errorf("rpc call timeout")
 
 //启动一个goroutine检测call超时
-func (this *RPCClient) startReqTimeoutCheckRoutine() {
-	if this.checkTimeoutRoutine {
+func (this *RPCClient) startTimeoutRoutine() {
+	if this.timeoutRoutine {
 		return
 	}
-	this.checkTimeoutRoutine = true
-	go func(){
+	this.timeoutRoutine = true
+
+	go func() {
 		defer func(){
 			this.mutex.Unlock()
 		}()
 		this.mutex.Lock()
-		timeoutList := reqQueue{}
-		timeoutList.init()
 		for {
 			now := time.Now()
 			sleepTime := int64(0)
-			if this.option.Timeout > 0 {
-				p := this.pendingCalls.front()
-				if p != nil {
-					sleepTime = p.deadline.UnixNano() - now.UnixNano()
-				} else {
-					sleepTime = int64(this.option.Timeout)
-				}
+			r := this.minheap.Min()
+			if nil != r {
+				sleepTime = r.(*reqContext).deadline.UnixNano() - now.UnixNano()
 			}
 
 			if sleepTime > 0 {
@@ -238,156 +186,24 @@ func (this *RPCClient) startReqTimeoutCheckRoutine() {
 				now = time.Now()				
 			}
 
-			for this.pendingCalls.count > 0 {
-				p := this.pendingCalls.front()
-				if now.After(p.deadline) {
-					this.pendingCalls.popFront()
-					delete(p.chanContext.pendingReqs,p.seq)
-					timeoutList.push(p)
-				} else {
+			for {
+				r = this.minheap.Min()
+				if nil == r || !now.After(r.(*reqContext).deadline) {
 					break
 				}
-			}
-
-			if timeoutList.count > 0 {
-				this.mutex.Unlock()
-				for timeoutList.count > 0 {
-					p := timeoutList.popFront()
-					p.onResponse(nil,ErrCallTimeout)
-				}
-				this.mutex.Lock()
-			}
-
-			if len(this.channels) == 0 {
-				this.checkTimeoutRoutine = false
-				return
-			}
-		}
+				this.minheap.PopMin()
+				go func() {
+					r.(*reqContext).onResponse(nil,ErrCallTimeout)
+				}()
+ 			}
+ 			if this.channel == nil {
+ 				return
+ 			}
+		}		
 	}()
 }
 
-
-func (this *RPCClient) OnChannelClose(channel RPCChannel,err error) {
-	if nil == channel {
-		return
-	}
-
-	respList := reqQueue{}
-	respList.init()
-
-	defer func(){
-		this.mutex.Unlock()
-		for respList.count > 0 {
-			p := respList.popFront()
-			p.onResponse(nil,err)
-		}
-	}()
-	this.mutex.Lock()
-
-	_,ok := this.channelNameMap[channel.Name()]
-	if !ok {
-		return
-	}
-	delete(this.channelNameMap,channel.Name())
-	chanContext,ok := this.channels[channel]
-	if !ok {
-		return
-	}
-
-	for _,r := range chanContext.pendingReqs {
-		respList.push(r)
-		this.pendingCalls.remove(r)
-	}
-
-	for m,_ := range chanContext.methods {
-		this.removeMethodChannel(m,channel)
-	}
-
-	delete(this.channels,channel)
-
-}
-
-func (this *RPCClient) OnRPCMessage(channel RPCChannel,message interface{}) {
-	msg,err := this.decoder.Decode(message)
-	if nil != err {
-		Errorf(util.FormatFileLine("RPCClient rpc message from(%s) decode err:%s\n",channel.Name,err.Error()))
-		return
-	}
-
-	this.mutex.Lock()
-	chanContext,ok := this.channels[channel]
-	if !ok {
-		this.mutex.Unlock()
-		return
-	}
-	pendingReq,ok := chanContext.pendingReqs[msg.GetSeq()] 
-	if !ok {
-		this.mutex.Unlock()
-		return
-	}
-	delete(chanContext.pendingReqs,msg.GetSeq())
-	this.pendingCalls.remove(pendingReq)
-	
-	this.mutex.Unlock()
-
-	resp := msg.(*RPCResponse)
-	pendingReq.onResponse(resp.Ret,resp.Err)
-	
-}
-
-
-func (this *RPCClient) Call(selector ChannelSelector,method string,arg interface{},cb RPCResponseHandler) error {
-	if cb == nil {
-		return fmt.Errorf("cb == nil")
-	}
-	
-	req := &RPCRequest{} 
-	req.Method = method
-	req.Seq = atomic.AddUint64(&sequence,1) 
-	req.Arg = arg
-	req.NeedResp = true
-
-	request,err := this.encoder.Encode(req)
-	if err != nil {
-		return fmt.Errorf("encode error:%s\n",err.Error())
-	} 
-
-	this.mutex.Lock()
-	defer func(){
-		this.mutex.Unlock()	
-	}()
-
-	channels,ok := this.mehtodChannelsMap[method]
-	if !ok {
-		return ErrNoService
-	} 
-
-	channel := selector.Select(channels.channels)
-
-	if nil == channel {
-		return ErrNoService
-	}
-
-	err = channel.SendRPCRequest(request)
-	if nil != err {
-		return err
-	}
-
-	chanContext := this.channels[channel]
-	r := &reqContext{seq:req.Seq,chanContext:chanContext,onResponse:cb}
-	chanContext.pendingReqs[req.Seq] = r
-	if this.option.Timeout > 0 {
-		r.deadline = time.Now().Add(this.option.Timeout)
-		this.pendingCalls.push(r)
-		if !this.checkTimeoutRoutine {
-			this.startReqTimeoutCheckRoutine()
-		}
-	}
-
-	return nil	
-}
-
-func NewRPCClient(decoder RPCMessageDecoder,encoder RPCMessageEncoder,option *Option) (*RPCClient,error) {
+func NewRPCClient(channel RPCChannel,decoder RPCMessageDecoder,encoder RPCMessageEncoder) (*RPCClient,error) {
 	if nil == decoder {
 		return nil,fmt.Errorf("decoder == nil")
 	}
@@ -396,18 +212,15 @@ func NewRPCClient(decoder RPCMessageDecoder,encoder RPCMessageEncoder,option *Op
 		return nil,fmt.Errorf("encoder == nil")
 	}
 
-	if nil == option {
-		option = &Option{}
+	if nil == channel {
+		return nil,fmt.Errorf("channel == nil")
 	}
 
 	c := &RPCClient{}
 	c.encoder = encoder
 	c.decoder = decoder
-	c.option  = *option
-	c.pendingCalls.init()
-	c.mehtodChannelsMap = make(map[string]*methodChannels)
-	c.channelNameMap = make(map[string]RPCChannel)
-	c.channels = make(map[RPCChannel]*channelContext)
+	c.pendingCalls = map[uint64]*reqContext{}
+	c.minheap = util.NewMinHeap(64)
+	c.channel = channel
 	return c,nil
 }
-

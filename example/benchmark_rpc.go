@@ -37,26 +37,28 @@ func server(service string) {
 
 func client(service string,count int) {
 	hello := &testproto.Hello{Hello:proto.String("hello")}
-	caller := test_rpc.NewCaller("hello")
-	var onResp func(ret interface{},err error)
-	onResp = func(ret interface{},err error){
-		if nil != ret {
-			err := caller.Call(hello,onResp)
-			if err != nil {
-				fmt.Printf("%s\n",err.Error())
-				return
-			}
-		} else if nil != err {
-			fmt.Printf("%s\n",err.Error())
-		}
-	}
-
 	for i := 0; i < count ; i++ {
+		caller := test_rpc.NewCaller()
+		var onResp func(ret interface{},err error)
+		onResp = func(ret interface{},err error){
+			if nil != ret {
+				err := caller.Call("hello",hello,onResp)
+				if err != nil {
+					fmt.Printf("%s\n",err.Error())
+					return
+				}
+			} else if nil != err {
+				fmt.Printf("%s\n",err.Error())
+			}
+		}
+
 		err := caller.Dial(service,10 * time.Second)
 		if err != nil {
 			fmt.Printf("%s\n",err.Error())
 		} else {
-			caller.Call(hello,onResp)
+			for j := 0 ; j < 10; j++ {
+				caller.Call("hello",hello,onResp)
+			}
 		}
 	}
 }

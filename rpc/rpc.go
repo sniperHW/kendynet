@@ -59,8 +59,8 @@ type RPCMessageDecoder interface {
 */
 
 type RPCChannel interface {
-	SendRPCRequest(interface {}) error               //发送RPC请求
-	SendRPCResponse(interface {}) error              //发送RPC回应
-	Close(string)
+	SendRequest(interface {})error               //发送RPC请求
+	SendResponse(interface {})error              //发送RPC回应
+	//GetRPCClient() *RPCClient                    //获得关联的RPCClient
 	Name() string
 }

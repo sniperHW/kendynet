@@ -26,7 +26,7 @@ func (this *RPCReplyer) reply(response RPCMessage) {
 		Errorf(util.FormatFileLine("Encode rpc response error:%s\n",err.Error()))
 		return
 	}
-	err = this.channel.SendRPCResponse(msg)
+	err = this.channel.SendResponse(msg)
 	if nil != err {		
 		Errorf(util.FormatFileLine("send rpc response to (%s) error:%s\n",this.channel.Name() , err.Error()))
 	}	

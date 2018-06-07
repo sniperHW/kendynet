@@ -25,11 +25,11 @@ func NewTcpStreamChannel(sess kendynet.StreamSession) *TcpStreamChannel {
 	return r
 }
 
-func(this *TcpStreamChannel) SendRPCRequest(message interface {}) error {
+func(this *TcpStreamChannel) SendRequest(message interface {}) error {
 	return this.session.Send(message)
 }
 
-func(this *TcpStreamChannel) SendRPCResponse(message interface {}) error {
+func(this *TcpStreamChannel) SendResponse(message interface {}) error {
 	return this.session.Send(message)
 }
 
@@ -149,32 +149,52 @@ func (this *RPCServer) Serve(service string) error {
 			if event.EventType == kendynet.EventTypeError {
 				channel.Close(event.Data.(error).Error())
 			} else {
-				this.server.OnRPCMessage(channel,event.Data)	
+				this.server.OnRPCMessage(channel,event.Data)
 			}
 		})
 	})
 	return err
 }
 
+
+type Caller struct {
+	client     *rpc.RPCClient
+}
+
+func NewCaller() *Caller {
+	return &Caller{}
+}
+
+func (this *Caller) Dial(service string,timeout time.Duration) error {
+	connector,err := tcp.NewConnector("tcp",service)
+	session,err := connector.Dial(timeout)
+	if err != nil {
+		return err
+	} 
+	channel := NewTcpStreamChannel(session)
+	this.client,_ = rpc.NewRPCClient(channel,&TestDecoder{},&TestEncoder{})
+	session.SetEncoder(codec.NewPbEncoder(4096))
+	session.SetReceiver(codec.NewPBReceiver(4096))
+	session.SetCloseCallBack(func (sess kendynet.StreamSession, reason string) {
+		this.client.OnChannelClose(fmt.Errorf(reason))
+		fmt.Printf("channel close:%s\n",reason)
+	})
+	session.Start(func (event *kendynet.Event) {
+		if event.EventType == kendynet.EventTypeError {
+			channel.Close(event.Data.(error).Error())
+		} else {
+			this.client.OnRPCMessage(event.Data)	
+		}
+	})
+	return nil
+}
+
+func (this *Caller) Call(method string,arg interface{},cb rpc.RPCResponseHandler) error {
+	return this.client.AsynCall(method,arg,0,cb)
+}
+
+
 /*
-*  round robin selector
-*/
-
-type testSelector struct {
-	idx int
-}
-
-func (this *testSelector) Select(channels []rpc.RPCChannel) rpc.RPCChannel {
-	l := len(channels)
-	if l == 0 {
-		return nil
-	}
-	c := channels[this.idx]
-	this.idx = (this.idx + 1) % l
-	return c
-}
-
-
 type Caller struct {
 	client     *rpc.RPCClient
 	method      string
@@ -218,13 +238,12 @@ func (this *Caller) Dial(service string,timeout time.Duration) error {
 func (this *Caller) Call(arg interface{},cb rpc.RPCResponseHandler) error {
 	return this.client.Call(this.selector,this.method,arg,cb)
 }
+*/
 
 func init() {
 	pb.Register(&testproto.Hello{},1)
 	pb.Register(&testproto.World{},2)
 	pb.Register(&testproto.RPCResponse{},3)
 	pb.Register(&testproto.RPCRequest{},4)
-	pb.Register(&testproto.RPCPing{},5)
-	pb.Register(&testproto.RPCPong{},6)
 }
 
