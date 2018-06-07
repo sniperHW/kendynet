@@ -153,7 +153,24 @@ func (this *RPCClient) AsynCall(method string,arg interface{},timeout uint32,cb 
 
 //同步调用
 func (this *RPCClient) SyncCall(method string,arg interface{},timeout uint32) (interface{},error) {
-	return nil,nil
+	respChan := make(chan int)
+
+	var result interface{}
+	var respError error 
+
+	err := this.AsynCall(method,arg,timeout,func (ret interface{},err error){
+		result = ret
+		respError = err
+		respChan <- 1
+	})
+
+	if nil != err {
+		return nil,err
+	}
+
+	_ = <- respChan
+
+	return result,respError
 }
 
 

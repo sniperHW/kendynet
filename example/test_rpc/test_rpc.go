@@ -189,8 +189,12 @@ func (this *Caller) Dial(service string,timeout time.Duration) error {
 	return nil
 }
 
-func (this *Caller) Call(method string,arg interface{},cb rpc.RPCResponseHandler) error {
+func (this *Caller) AsynCall(method string,arg interface{},cb rpc.RPCResponseHandler) error {
 	return this.client.AsynCall(method,arg,0,cb)
+}
+
+func (this *Caller) SyncCall(method string,arg interface{}) (interface{},error) {
+	return this.client.SyncCall(method,arg,0)
 }
 
 
