@@ -15,6 +15,9 @@ import(
 	"math/rand"
 )
 
+var timeoutcount int32
+var reqcount int32
+
 func server(service string) {
 	count := int32(0)
 	go func() {
@@ -22,7 +25,11 @@ func server(service string) {
 			time.Sleep(time.Second)
 			tmp := atomic.LoadInt32(&count)
 			atomic.StoreInt32(&count,0)
-			fmt.Printf("count:%d\n",tmp)			
+			tmp1 := atomic.LoadInt32(&timeoutcount)
+			atomic.StoreInt32(&timeoutcount,0)
+			tmp2 := atomic.LoadInt32(&reqcount)
+			atomic.StoreInt32(&reqcount,0)
+			fmt.Printf("count:%d,timeoutcount:%d,reqcount:%d\n",tmp,tmp1,tmp2)			
 		}
 	}()
 
@@ -31,7 +38,9 @@ func server(service string) {
 	server.RegisterMethod("hello",func (replyer *rpc.RPCReplyer,arg interface{}){
 		atomic.AddInt32(&count,1)
 		if rand.Int() % 3 == 0 {
-
+			/*world := &testproto.World{World:proto.String("world")}
+			replyer.Reply(world,nil)
+			*/
 		} else {
 			world := &testproto.World{World:proto.String("world")}
 			replyer.Reply(world,nil)
@@ -51,7 +60,9 @@ func client(service string,count int) {
 			}
 			for {
 				_,err := caller.SyncCall("hello",arg)
+				atomic.AddInt32(&reqcount,1)
 				if nil != err {
+					atomic.AddInt32(&timeoutcount,1)
 					//fmt.Println(err.Error())
 				}
 			}
