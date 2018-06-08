@@ -58,13 +58,13 @@ func server(service string) {
 				session.SetEncoder(codec.NewPbEncoder(4096))
 				session.SetReceiver(codec.NewPBReceiver(4096))
 				session.SetCloseCallBack(func (sess kendynet.StreamSession, reason string) {
-					evQueue.PostEvent(&event{eventType:ev_error,session:sess,data:reason})
+					evQueue.Post(&event{eventType:ev_error,session:sess,data:reason})
 				})
 				session.Start(func (ev *kendynet.Event) {
 					if ev.EventType == kendynet.EventTypeError {
-						evQueue.PostEvent(&event{eventType:ev_disconnect,session:session,data:ev.Data})
+						evQueue.Post(&event{eventType:ev_disconnect,session:session,data:ev.Data})
 					} else {
-						evQueue.PostEvent(&event{eventType:ev_message,session:session,data:ev.Data})
+						evQueue.Post(&event{eventType:ev_message,session:session,data:ev.Data})
 					}
 				})
 				evQueue.PostEvent(&event{eventType:ev_newclient,session:session})

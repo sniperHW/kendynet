@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"sync/atomic"
 	"time"
+	"runtime"	
 	"github.com/sniperHW/kendynet/util"
+	"github.com/sniperHW/kendynet"
 )
 
 var ErrCallTimeout error = fmt.Errorf("rpc call timeout")
@@ -16,6 +18,7 @@ type reqContext struct {
 	seq         uint64
 	onResponse  RPCResponseHandler
 	deadline    time.Time
+	eventQueue *kendynet.EventQueue 
 }
 
 func (this *reqContext) Less(o util.HeapElement) bool {
@@ -28,6 +31,29 @@ func (this *reqContext) GetIndex() uint32 {
 
 func (this *reqContext) SetIndex(idx uint32) {
 	this.heapIdx = idx
+}
+
+func (this *reqContext) callResponseCB(ret interface{},err error) {
+	cb := this.onResponse
+	if nil != this.eventQueue {
+		this.eventQueue.Post(func () {
+			pCallOnResponse(cb,ret,err)
+		})
+	} else {
+		pCallOnResponse(cb,ret,err)
+	}
+}
+
+func pCallOnResponse(onResponse  RPCResponseHandler,ret interface{}, err error) {
+	defer func(){
+		if r := recover(); r != nil {
+			buf := make([]byte, 65535)
+			l := runtime.Stack(buf, false)
+			err := fmt.Errorf("%v: %s", r, buf[:l])
+			Errorf(util.FormatFileLine("%s\n",err.Error()))
+		}			
+	}()
+	onResponse(ret,err)	
 }
 
 const (
@@ -54,19 +80,33 @@ type reqContextMgr struct {
 }
 
 func (this *reqContextMgr) pushRequest(channel RPCChannel,req *reqContext) {
-	this.queue.Add(&message{tt:tt_request,data1:channel,data2:req})
+	m := getMessage()
+	m.tt = tt_request
+	m.data1 = channel
+	m.data2 = req
+	this.queue.Add(m)
 }
 
 func (this *reqContextMgr) pushClose(channel RPCChannel,err error) {
-	this.queue.Add(&message{tt:tt_channel_close,data1:channel,data2:err})
+	m := getMessage()
+	m.tt = tt_channel_close
+	m.data1 = channel
+	m.data2 = err
+	this.queue.Add(m)
 }
 
 func (this *reqContextMgr) pushResponse(channel RPCChannel,rpcMsg RPCMessage) {
-	this.queue.Add(&message{tt:tt_response,data1:channel,data2:rpcMsg})
+	m := getMessage()
+	m.tt = tt_response
+	m.data1 = channel
+	m.data2 = rpcMsg
+	this.queue.Add(m)
 }
 
 func (this *reqContextMgr) pushTimer() {
-	this.queue.Add(&message{tt:tt_timer})
+	m := getMessage()
+	m.tt = tt_timer
+	this.queue.Add(m)
 }
 
 func (this *reqContextMgr) onRequest(msg *message) {
@@ -90,7 +130,8 @@ func (this *reqContextMgr) onClose(msg *message) {
 	if cContext,ok := this.channels[channel] ; ok {
 		delete(this.channels,channel)
 		for _ , v := range cContext.pendingCalls {
-			v.onResponse(nil,err)
+			v.callResponseCB(nil,err)
+			putReqContext(v)
 		}
 	}	
 }
@@ -106,7 +147,8 @@ func (this *reqContextMgr) onResponse(msg *message) {
 			delete(cContext.pendingCalls,rpcMsg.GetSeq())
 			cContext.minheap.Remove(context)
 			resp := rpcMsg.(*RPCResponse)
-			context.onResponse(resp.Ret,resp.Err)			
+			context.callResponseCB(resp.Ret,resp.Err)
+			putReqContext(context)			
 		}
 	}	
 }
@@ -119,7 +161,8 @@ func (this *reqContextMgr) checkTimeout() {
 			if r != nil && now.After(r.(*reqContext).deadline) {
 				v.minheap.PopMin()
 				delete(v.pendingCalls,r.(*reqContext).seq)
-				r.(*reqContext).onResponse(nil,ErrCallTimeout)
+				r.(*reqContext).callResponseCB(nil,ErrCallTimeout)
+				putReqContext(r.(*reqContext))
 			} else {
 				break
 			}
@@ -145,6 +188,7 @@ func (this *reqContextMgr) loop() {
 				default:
 					break	
 			}
+			putMessage(msg)
 		}
 		//检查是否有超时回调
 		this.checkTimeout()
@@ -157,7 +201,8 @@ type RPCClient struct {
 	encoder   		  	RPCMessageEncoder
 	decoder   		  	RPCMessageDecoder
 	sequence            uint64
-	channel             RPCChannel             
+	channel             RPCChannel
+	eventQueue         *kendynet.EventQueue             
 }
 
 //通道关闭后调用
@@ -232,7 +277,8 @@ func (this *RPCClient) AsynCall(method string,arg interface{},timeout uint32,cb 
 	if nil != err {
 		return err
 	}
-	r := &reqContext{seq:req.Seq,onResponse:cb}
+
+	r := getReqContext(req.Seq,cb,this.eventQueue)
 	if timeout > 0 {
 		r.deadline = time.Now().Add(time.Duration(timeout) * time.Millisecond)
 	}
@@ -261,7 +307,7 @@ func (this *RPCClient) SyncCall(method string,arg interface{},timeout uint32) (i
 	return result.ret,result.err
 }
 
-func NewClient(channel RPCChannel,decoder RPCMessageDecoder,encoder RPCMessageEncoder) (*RPCClient,error) {
+func NewClient(channel RPCChannel,decoder RPCMessageDecoder,encoder RPCMessageEncoder,eventQueue *kendynet.EventQueue) (*RPCClient,error) {
 	if nil == decoder {
 		return nil,fmt.Errorf("decoder == nil")
 	}
@@ -274,7 +320,7 @@ func NewClient(channel RPCChannel,decoder RPCMessageDecoder,encoder RPCMessageEn
 		return nil,fmt.Errorf("channel == nil")
 	}
 
-	return &RPCClient{encoder:encoder,decoder:decoder,channel:channel},nil
+	return &RPCClient{encoder:encoder,decoder:decoder,channel:channel,eventQueue:eventQueue},nil
 }
 
 func init() {

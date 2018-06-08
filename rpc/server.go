@@ -2,19 +2,22 @@ package rpc
 
 import (
 	"sync"
+	"sync/atomic"
 	"fmt"
 	"runtime"
+	"github.com/sniperHW/kendynet"	
 	"github.com/sniperHW/kendynet/util"
 )
 
 type RPCReplyer struct {
 	encoder RPCMessageEncoder
 	channel RPCChannel
-	req    *RPCRequest			
+	req    *RPCRequest
+	fired	int32      //防止重复Reply		
 }
 
 func (this *RPCReplyer) Reply(ret interface{},err error) {
-	if this.req.NeedResp {
+	if this.req.NeedResp && atomic.CompareAndSwapInt32(&this.fired,0,1) {
 		response := &RPCResponse{Seq:this.req.Seq,Ret:ret}
 		this.reply(response)
 	}
@@ -71,20 +74,24 @@ func (this *RPCServer) UnRegisterMethod(name string) {
 	delete(this.methods,name)	
 }
 
-func (this *RPCServer) callMethod(method RPCMethodHandler,replyer *RPCReplyer,arg interface{}) (err error) {
+func (this *RPCServer) callMethod(method RPCMethodHandler,replyer *RPCReplyer,arg interface{}) {
 	defer func(){
 		if r := recover(); r != nil {
 			buf := make([]byte, 65535)
 			l := runtime.Stack(buf, false)
-			err = fmt.Errorf("%v: %s", r, buf[:l])
+			err := fmt.Errorf("%v: %s", r, buf[:l])
 			Errorf(util.FormatFileLine("%s\n",err.Error()))
+			replyer.reply(&RPCResponse{Seq:replyer.req.Seq,Err:err})
 		}			
 	}()
 	method(replyer,arg)
 	return
 }
 
-func (this *RPCServer) OnRPCMessage(channel RPCChannel,message interface{}) {
+/* 
+*   如果需要单线程处理,可以提供eventQueue
+*/
+func (this *RPCServer) OnRPCMessage(channel RPCChannel,message interface{},eventQueue *kendynet.EventQueue) {
 	msg,err := this.decoder.Decode(message)
 	if nil != err {
 		Errorf(util.FormatFileLine("RPCServer rpc message from(%s) decode err:%s\n",channel.Name,err.Error()))
@@ -103,24 +110,23 @@ func (this *RPCServer) OnRPCMessage(channel RPCChannel,message interface{}) {
 			}
 
 			replyer := &RPCReplyer{encoder:this.encoder,channel:channel,req:req}
-			if nil == err {
-				err = this.callMethod(method,replyer,req.Arg)
-			}
-
-			if nil != err && req.NeedResp {
-				response := &RPCResponse{Seq:req.Seq,Err:err}
-				replyer.reply(response)
-			}
-			return			
-		}
-		default: {
-
+			if nil != err {
+				replyer.reply(&RPCResponse{Seq:req.Seq,Err:err})
+			} else {
+				if nil == eventQueue { 
+					this.callMethod(method,replyer,req.Arg)
+				} else {
+					eventQueue.Post(func() {
+						this.callMethod(method,replyer,req.Arg)
+					})
+				}
+			}			
 		}
 	}
 
 }
 
-func NewRPCServer(decoder  RPCMessageDecoder,encoder RPCMessageEncoder) (*RPCServer,error) {
+func NewRPCServer(decoder RPCMessageDecoder,encoder RPCMessageEncoder) (*RPCServer,error) {
 	if nil == decoder {
 		return nil,fmt.Errorf("decoder == nil")
 	}

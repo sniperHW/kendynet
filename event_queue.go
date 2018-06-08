@@ -17,7 +17,7 @@ func NewEventQueue() *EventQueue {
 	return r
 }
 
-func (this *EventQueue) PostEvent(ev interface{}) error {
+func (this *EventQueue) Post(ev interface{}) error {
 	return this.eventQueue.Add(ev)
 }
 
