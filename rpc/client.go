@@ -207,7 +207,21 @@ func (this *RPCClient) Post(method string,arg interface{}) error {
 	return nil
 }
 
-//异步调用
+
+func AsynHandler(cb RPCResponseHandler) RPCResponseHandler {
+	if nil != cb {
+		return func (r interface{},e error) {
+			go cb(r,e)
+		}
+	} else {
+		return nil
+	}
+}
+
+/*
+*  异步调用
+*  cb将在一个单独的go程中执行,如需在cb中调用阻塞函数请使用AsynHandler封装cb
+*/
 func (this *RPCClient) AsynCall(method string,arg interface{},timeout uint32,cb RPCResponseHandler) error {
 
 	if cb == nil {
