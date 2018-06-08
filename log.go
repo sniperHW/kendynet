@@ -1,23 +1,23 @@
 package kendynet
 
-import(
+import (
 	"github.com/sniperHW/kendynet/golog"
-	"sync/atomic"	
+	"sync/atomic"
 )
 
 var logger *golog.Logger
 var is_init int32
 
 func InitLogger(out *golog.OutputLogger) {
-	if atomic.CompareAndSwapInt32(&is_init,0,1) {
-		logger = golog.New("kendynet",out);
+	if atomic.CompareAndSwapInt32(&is_init, 0, 1) {
+		logger = golog.New("kendynet", out)
 		logger.Debugf("kendynet logger init")
 	}
 }
 
 func Debugf(format string, v ...interface{}) {
 	if nil != logger {
-		logger.Debugf(format,v...)
+		logger.Debugf(format, v...)
 	}
 }
 
@@ -29,7 +29,7 @@ func Debugln(v ...interface{}) {
 
 func Infof(format string, v ...interface{}) {
 	if nil != logger {
-		logger.Infof(format,v...)
+		logger.Infof(format, v...)
 	}
 }
 
@@ -41,7 +41,7 @@ func Infoln(v ...interface{}) {
 
 func Warnf(format string, v ...interface{}) {
 	if nil != logger {
-		logger.Warnf(format,v...)
+		logger.Warnf(format, v...)
 	}
 }
 
@@ -53,7 +53,7 @@ func Warnln(v ...interface{}) {
 
 func Errorf(format string, v ...interface{}) {
 	if nil != logger {
-		logger.Errorf(format,v...)
+		logger.Errorf(format, v...)
 	}
 }
 
@@ -65,7 +65,7 @@ func Errorln(v ...interface{}) {
 
 func Fatalf(format string, v ...interface{}) {
 	if nil != logger {
-		logger.Fatalf(format,v...)
+		logger.Fatalf(format, v...)
 	}
 }
 
@@ -74,6 +74,3 @@ func Fatalln(v ...interface{}) {
 		logger.Fatalln(v...)
 	}
 }
-
-
-

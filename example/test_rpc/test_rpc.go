@@ -172,7 +172,7 @@ func (this *Caller) Dial(service string,timeout time.Duration) error {
 		return err
 	} 
 	channel := NewTcpStreamChannel(session)
-	this.client,_ = rpc.New(channel,&TestDecoder{},&TestEncoder{})
+	this.client,_ = rpc.NewClient(channel,&TestDecoder{},&TestEncoder{})
 	session.SetEncoder(codec.NewPbEncoder(4096))
 	session.SetReceiver(codec.NewPBReceiver(4096))
 	session.SetCloseCallBack(func (sess kendynet.StreamSession, reason string) {

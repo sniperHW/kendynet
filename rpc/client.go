@@ -273,7 +273,7 @@ func (this *RPCClient) SyncCall(method string,arg interface{},timeout uint32) (i
 	return result,respError
 }
 
-func New(channel RPCChannel,decoder RPCMessageDecoder,encoder RPCMessageEncoder) (*RPCClient,error) {
+func NewClient(channel RPCChannel,decoder RPCMessageDecoder,encoder RPCMessageEncoder) (*RPCClient,error) {
 	if nil == decoder {
 		return nil,fmt.Errorf("decoder == nil")
 	}

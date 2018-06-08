@@ -153,11 +153,11 @@ func (self *ProxySession) ProcessSockV4() {
 		}
 
 		session.SetReceiver(codec.NewRawReceiver(65535))
-		session.SetEventCallBack(onServerEvent)
+		//session.SetEventCallBack(onServerEvent)
 		session.SetUserData(self)
 		self.server = session
 		self.status = ESTABLISHED
-		session.Start()
+		session.Start(onServerEvent)
 		responseBuff.PutByte(1,byte(90))
 		err = self.client.SendMessage(responseBuff)
 		if err != nil {
@@ -295,7 +295,7 @@ func main() {
 			proxySession.buff = kendynet.NewByteBuffer(128)
 			session.SetUserData(proxySession)			
 			session.SetReceiver(codec.NewRawReceiver(65535))
-			session.Start(SetEventCallBack)
+			session.Start(onClientEvent)
 		})
 		if nil != err {
 			fmt.Printf("TcpServer start failed %s\n",err)			
