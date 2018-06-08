@@ -37,10 +37,8 @@ func server(service string) {
 	//注册服务
 	server.RegisterMethod("hello",func (replyer *rpc.RPCReplyer,arg interface{}){
 		atomic.AddInt32(&count,1)
-		if rand.Int() % 3 == 0 {
-			/*world := &testproto.World{World:proto.String("world")}
-			replyer.Reply(world,nil)
-			*/
+		if rand.Int() % 100 == 0 {
+			//不返回消息让客户端超时
 		} else {
 			world := &testproto.World{World:proto.String("world")}
 			replyer.Reply(world,nil)
