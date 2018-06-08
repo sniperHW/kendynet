@@ -37,7 +37,7 @@ func server(service string) {
 	//注册服务
 	server.RegisterMethod("hello",func (replyer *rpc.RPCReplyer,arg interface{}){
 		atomic.AddInt32(&count,1)
-		if rand.Int() % 100 == 0 {
+		if rand.Int() % 1000 == 0 {
 			//不返回消息让客户端超时
 		} else {
 			world := &testproto.World{World:proto.String("world")}
@@ -57,18 +57,17 @@ func client(service string,count int) {
 				return
 			}
 			for {
-				_,err := caller.SyncCall("hello",arg)
+				_,err := caller.SyncCall("hello",arg,10)
 				atomic.AddInt32(&reqcount,1)
 				if nil != err {
 					atomic.AddInt32(&timeoutcount,1)
-					//fmt.Println(err.Error())
 				}
 			}
 		}()
 		/*var onResp func(ret interface{},err error)
 		onResp = func(ret interface{},err error){
 			if nil != ret {
-				err := caller.Call("hello",hello,onResp)
+				err := caller.Call("hello",hello,10,onResp)
 				if err != nil {
 					fmt.Printf("%s\n",err.Error())
 					return

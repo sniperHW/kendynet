@@ -121,7 +121,7 @@ func (this *TestDecoder) Decode(o interface{}) (rpc.RPCMessage,error) {
 
 type RPCServer struct {
 	server     *rpc.RPCServer
-	listener    kendynet.Listener
+	listener   *tcp.Listener
 }
 
 func NewRPCServer() *RPCServer {
@@ -189,60 +189,13 @@ func (this *Caller) Dial(service string,timeout time.Duration) error {
 	return nil
 }
 
-func (this *Caller) AsynCall(method string,arg interface{},cb rpc.RPCResponseHandler) error {
-	return this.client.AsynCall(method,arg,0,cb)
+func (this *Caller) AsynCall(method string,arg interface{},timeout uint32,cb rpc.RPCResponseHandler) error {
+	return this.client.AsynCall(method,arg,timeout,cb)
 }
 
-func (this *Caller) SyncCall(method string,arg interface{}) (interface{},error) {
-	return this.client.SyncCall(method,arg,1)//uint32(time.Millisecond*5))
+func (this *Caller) SyncCall(method string,arg interface{},timeout uint32) (interface{},error) {
+	return this.client.SyncCall(method,arg,timeout)
 }
-
-
-/*
-type Caller struct {
-	client     *rpc.RPCClient
-	method      string
-	selector    rpc.ChannelSelector
-}
-
-func NewCaller(method string) *Caller {
-	c := &Caller{}
-	c.method = method
-	option := &rpc.Option{}
-	option.Timeout = 5000*time.Millisecond
-	c.client,_ = rpc.NewRPCClient(&TestDecoder{},&TestEncoder{},option)
-	c.selector = &testSelector{}
-	return c
-}
-
-func (this *Caller) Dial(service string,timeout time.Duration) error {
-	connector,err := tcp.NewConnector("tcp",service)
-	session,err := connector.Dial(timeout)
-	if err != nil {
-		return err
-	} 
-	channel := NewTcpStreamChannel(session)
-	this.client.AddMethod(channel,this.method)
-	session.SetEncoder(codec.NewPbEncoder(4096))
-	session.SetReceiver(codec.NewPBReceiver(4096))
-	session.SetCloseCallBack(func (sess kendynet.StreamSession, reason string) {
-		this.client.OnChannelClose(channel,fmt.Errorf(reason))
-		fmt.Printf("channel close:%s\n",reason)
-	})
-	session.Start(func (event *kendynet.Event) {
-		if event.EventType == kendynet.EventTypeError {
-			channel.Close(event.Data.(error).Error())
-		} else {
-			this.client.OnRPCMessage(channel,event.Data)	
-		}
-	})
-	return nil
-}
-
-func (this *Caller) Call(arg interface{},cb rpc.RPCResponseHandler) error {
-	return this.client.Call(this.selector,this.method,arg,cb)
-}
-*/
 
 func init() {
 	pb.Register(&testproto.Hello{},1)

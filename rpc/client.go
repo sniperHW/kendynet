@@ -1,7 +1,6 @@
 package rpc
 
 import (
-	//"sync"
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -20,8 +19,7 @@ type reqContext struct {
 }
 
 func (this *reqContext) Less(o util.HeapElement) bool {
-	other := o.(*reqContext)
-	return other.deadline.After(this.deadline)
+	return o.(*reqContext).deadline.After(this.deadline)
 }
 
 func (this *reqContext) GetIndex() uint32 {
@@ -56,27 +54,22 @@ type reqContextMgr struct {
 }
 
 func (this *reqContextMgr) pushRequest(channel RPCChannel,req *reqContext) {
-	m := &message{tt:tt_request,data1:channel,data2:req}
-	this.queue.Add(m)
+	this.queue.Add(&message{tt:tt_request,data1:channel,data2:req})
 }
 
 func (this *reqContextMgr) pushClose(channel RPCChannel,err error) {
-	m := &message{tt:tt_channel_close,data1:channel,data2:err}
-	this.queue.Add(m)
+	this.queue.Add(&message{tt:tt_channel_close,data1:channel,data2:err})
 }
 
 func (this *reqContextMgr) pushResponse(channel RPCChannel,rpcMsg RPCMessage) {
-	m := &message{tt:tt_response,data1:channel,data2:rpcMsg}
-	this.queue.Add(m)
+	this.queue.Add(&message{tt:tt_response,data1:channel,data2:rpcMsg})
 }
 
 func (this *reqContextMgr) pushTimer() {
-	m := &message{tt:tt_timer}
-	this.queue.Add(m)
+	this.queue.Add(&message{tt:tt_timer})
 }
 
 func (this *reqContextMgr) onRequest(msg *message) {
-	//fmt.Println("onRequest")
 	var ok bool
 	var cContext *channelContext
 	channel := msg.data1.(RPCChannel)
@@ -103,7 +96,6 @@ func (this *reqContextMgr) onClose(msg *message) {
 }
 
 func (this *reqContextMgr) onResponse(msg *message) {
-	//fmt.Println("onResponse")
 	var ok bool
 	var cContext *channelContext
 	var context  *reqContext
@@ -138,9 +130,8 @@ func (this *reqContextMgr) checkTimeout() {
 func (this *reqContextMgr) loop() {
 	for {
 		_,localList := this.queue.Get()
-		size := len(localList)
-		for i := 0; i < size; i++ {
-			msg := localList[i].(*message)
+		for _ , v := range localList {
+			msg := v.(*message)
 			switch(msg.tt) {
 				case tt_request:
 					this.onRequest(msg)
@@ -160,9 +151,7 @@ func (this *reqContextMgr) loop() {
 	}
 }
 
-
 var reqMgr *reqContextMgr
-
 
 type RPCClient struct {
 	encoder   		  	RPCMessageEncoder
@@ -253,24 +242,23 @@ func (this *RPCClient) AsynCall(method string,arg interface{},timeout uint32,cb 
 
 //同步调用
 func (this *RPCClient) SyncCall(method string,arg interface{},timeout uint32) (interface{},error) {
-	respChan := make(chan int)
+	type resp struct {
+		ret interface{}
+		err error
+	}
 
-	var result interface{}
-	var respError error 
+	respChan := make(chan *resp)
 
-	err := this.AsynCall(method,arg,timeout,func (ret interface{},err error){
-		result = ret
-		respError = err
-		respChan <- 1
-	})
-
-	if nil != err {
+	f := func (ret interface{},err error) {
+		respChan <- &resp{ret:ret,err:err}
+	}
+	
+	if err := this.AsynCall(method,arg,timeout,f); err != nil {
 		return nil,err
 	}
 
-	_ = <- respChan
-
-	return result,respError
+	result := <- respChan
+	return result.ret,result.err
 }
 
 func NewClient(channel RPCChannel,decoder RPCMessageDecoder,encoder RPCMessageEncoder) (*RPCClient,error) {
@@ -286,18 +274,12 @@ func NewClient(channel RPCChannel,decoder RPCMessageDecoder,encoder RPCMessageEn
 		return nil,fmt.Errorf("channel == nil")
 	}
 
-	c := &RPCClient{}
-	c.encoder = encoder
-	c.decoder = decoder
-	c.channel = channel
-	return c,nil
+	return &RPCClient{encoder:encoder,decoder:decoder,channel:channel},nil
 }
 
 func init() {
-	fmt.Println("rpc.client init")
-	reqMgr = &reqContextMgr{}
-	reqMgr.queue = util.NewBlockQueue()
-	reqMgr.channels = map[RPCChannel]*channelContext{}
+
+	reqMgr = &reqContextMgr{queue:util.NewBlockQueue(),channels:map[RPCChannel]*channelContext{}}
 
 	//启动一个go程，每10毫秒向queue投递一个定时器消息
 	go func() {
