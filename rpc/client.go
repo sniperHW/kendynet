@@ -223,11 +223,12 @@ func (this *RPCClient) OnRPCMessage(message interface{}) {
 //投递，不关心响应和是否失败
 func (this *RPCClient) Post(method string,arg interface{}) error {
 
-	req := &RPCRequest{} 
-	req.Method = method
-	req.Seq = atomic.AddUint64(&this.sequence,1) 
-	req.Arg = arg
-	req.NeedResp = false
+	req := &RPCRequest{
+		Method : method,
+		Seq : atomic.AddUint64(&this.sequence,1), 
+		Arg : arg,
+		NeedResp : false,
+	}
 
 	request,err := this.encoder.Encode(req)
 	if err != nil {
@@ -262,11 +263,12 @@ func (this *RPCClient) AsynCall(method string,arg interface{},timeout uint32,cb 
 		return fmt.Errorf("cb == nil")
 	}
 
-	req := &RPCRequest{} 
-	req.Method = method
-	req.Seq = atomic.AddUint64(&this.sequence,1) 
-	req.Arg = arg
-	req.NeedResp = true
+	req := &RPCRequest{ 
+		Method : method,
+		Seq : atomic.AddUint64(&this.sequence,1), 
+		Arg : arg,
+		NeedResp : true,
+	}
 
 	request,err := this.encoder.Encode(req)
 	if err != nil {

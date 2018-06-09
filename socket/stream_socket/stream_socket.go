@@ -393,23 +393,25 @@ func (this *StreamSocket) Start(eventCB func (*kendynet.Event)) error {
 }
 
 func NewStreamSocket(conn net.Conn)(kendynet.StreamSession){
+	if nil == conn {
+		return nil
+	} else {
+		switch conn.(type) {
+			case *net.TCPConn:
+				break
+			case *net.UnixConn:
+				break
+			default:
+				kendynet.Errorf("NewStreamSocket() invaild conn type\n")
+				return nil
+		}
 
-	switch conn.(type) {
-		case *net.TCPConn:
-			break
-		case *net.UnixConn:
-			break
-		default:
-			kendynet.Errorf("NewStreamSocket() invaild conn type\n")
-			return nil
+		return &StreamSocket{
+			conn : conn,
+			sendQue : util.NewBlockQueue(),
+			sendCloseChan : make(chan int,1),
+		}
 	}
-
-	session 			 := new(StreamSocket)
-	session.conn 		  = conn
-	session.sendQue       = util.NewBlockQueue()
-	session.sendCloseChan = make(chan int,1)
-
-	return session
 }
 
 func (this *StreamSocket) GetUnderConn() interface{} {

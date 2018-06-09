@@ -437,16 +437,18 @@ func (this *WebSocket) Close(reason string, delay time.Duration) {
 
 
 func NewWSSocket(conn *gorilla.Conn)(kendynet.StreamSession){
-	session 			 := new(WebSocket)
-	session.conn 		  = conn
-	session.sendQue       = util.NewBlockQueue()
-	session.sendCloseChan = make(chan int,1)
-
-	session.conn.SetCloseHandler(func(code int, text string) error {
-		return fmt.Errorf("peer close reason[%s]",text)
-	})
-
-	return session
+	if nil == conn {
+		return nil
+	} else { 
+		conn.SetCloseHandler(func(code int, text string) error {
+			return fmt.Errorf("peer close reason[%s]",text)
+		})
+		return &WebSocket{
+			conn : conn,
+			sendQue : sendQue,
+			sendCloseChan : sendCloseChan,
+		}
+	}
 }
 
 func (this *WebSocket) SetPingHandler(h func(appData string) error) {

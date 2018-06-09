@@ -5,7 +5,6 @@ import (
 	"github.com/sniperHW/kendynet"
 	"fmt"
 	"reflect"
-	"sync"
 )
 
 const (
@@ -16,14 +15,9 @@ const (
 var (
  	nameToTypeID = map[string]uint32{}
  	idToMeta = map[uint32]reflect.Type{}
- 	mutex = sync.Mutex{}
  )
 
 func newMessage(id uint32) (msg proto.Message,err error){
-    defer func(){
-   		mutex.Unlock()
-    }()
-    mutex.Lock()
    if mt,ok := idToMeta[id];ok{
           msg = reflect.New(mt.Elem()).Interface().(proto.Message)
    } else{
@@ -34,11 +28,6 @@ func newMessage(id uint32) (msg proto.Message,err error){
 
 //根据名字注册实例
 func Register(msg proto.Message,id uint32) (err error) {
-    defer func(){
-   		mutex.Unlock()
-    }()
-    mutex.Lock()
-
     if _,ok := idToMeta[id];ok {
     	err = fmt.Errorf("duplicate id:%u",id)
     	return
@@ -59,9 +48,7 @@ func Register(msg proto.Message,id uint32) (err error) {
 
 
 func Encode(o interface{},maxMsgSize uint64) (r *kendynet.ByteBuffer,e error) {
-    mutex.Lock()
 	typeID,ok := nameToTypeID[reflect.TypeOf(o).String()]
-	mutex.Unlock()
 	if !ok {
 		e = fmt.Errorf("unregister type:%s",reflect.TypeOf(o).String())
 	}

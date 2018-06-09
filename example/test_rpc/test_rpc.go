@@ -33,10 +33,6 @@ func(this *TcpStreamChannel) SendResponse(message interface {}) error {
 	return this.session.Send(message)
 }
 
-func(this *TcpStreamChannel) Close(reason string) {
-	this.session.Close(reason,0)
-}
-
 func(this *TcpStreamChannel) Name() string {
 	return this.name
 }
@@ -47,10 +43,11 @@ type TestEncoder struct {
 func (this *TestEncoder) Encode(message rpc.RPCMessage) (interface{},error) {
 	if message.Type() == rpc.RPC_REQUEST {
 		req := message.(*rpc.RPCRequest)
-		request := &testproto.RPCRequest{}
-		request.Seq = proto.Uint64(req.Seq)
-		request.Method = proto.String(req.Method)
-		request.NeedResp = proto.Bool(req.NeedResp)
+		request := &testproto.RPCRequest{
+			Seq : proto.Uint64(req.Seq),
+			Method : proto.String(req.Method),
+			NeedResp : proto.Bool(req.NeedResp),
+		}
 		if req.Arg != nil {
 			buff,err := pb.Encode(req.Arg,1000)
 			if err != nil {
@@ -62,8 +59,7 @@ func (this *TestEncoder) Encode(message rpc.RPCMessage) (interface{},error) {
 		return request,nil
 	} else {
 		resp := message.(*rpc.RPCResponse)
-		response := &testproto.RPCResponse{}
-		response.Seq = proto.Uint64(resp.Seq)
+		response := &testproto.RPCResponse{Seq : proto.Uint64(resp.Seq)}
 		if resp.Err != nil {
 			response.Err = proto.String(resp.Err.Error())
 		}
@@ -86,10 +82,11 @@ func (this *TestDecoder) Decode(o interface{}) (rpc.RPCMessage,error) {
 	switch o.(type) {
 		case *testproto.RPCRequest:
 			req := o.(*testproto.RPCRequest)
-			request := &rpc.RPCRequest{}
-			request.Seq = req.GetSeq()
-			request.Method = req.GetMethod()
-			request.NeedResp = req.GetNeedResp()
+			request := &rpc.RPCRequest{
+				Seq : req.GetSeq(),
+				Method : req.GetMethod(),
+				NeedResp : req.GetNeedResp(),
+			}
 			if len(req.Arg) > 0 {
 				var err error
 				request.Arg,_,err = pb.Decode(req.Arg,0,(uint64)(len(req.Arg)),1000)
@@ -101,8 +98,7 @@ func (this *TestDecoder) Decode(o interface{}) (rpc.RPCMessage,error) {
 			return request,nil
 		case *testproto.RPCResponse:
 			resp := o.(*testproto.RPCResponse)
-			response := &rpc.RPCResponse{}
-			response.Seq = resp.GetSeq()
+			response := &rpc.RPCResponse{Seq : resp.GetSeq()}
 			if resp.Err != nil {
 				response.Err = fmt.Errorf(resp.GetErr())
 			}
@@ -147,7 +143,7 @@ func (this *RPCServer) Serve(service string) error {
 		session.SetReceiver(codec.NewPBReceiver(4096))
 		session.Start(func (event *kendynet.Event) {
 			if event.EventType == kendynet.EventTypeError {
-				channel.Close(event.Data.(error).Error())
+				session.Close(event.Data.(error).Error(),0)
 			} else {
 				this.server.OnRPCMessage(channel,event.Data,nil)
 			}
@@ -181,7 +177,7 @@ func (this *Caller) Dial(service string,timeout time.Duration) error {
 	})
 	session.Start(func (event *kendynet.Event) {
 		if event.EventType == kendynet.EventTypeError {
-			channel.Close(event.Data.(error).Error())
+			session.Close(event.Data.(error).Error(),0)
 		} else {
 			this.client.OnRPCMessage(event.Data)	
 		}
