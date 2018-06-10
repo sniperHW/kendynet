@@ -445,8 +445,8 @@ func NewWSSocket(conn *gorilla.Conn)(kendynet.StreamSession){
 		})
 		return &WebSocket{
 			conn : conn,
-			sendQue : sendQue,
-			sendCloseChan : sendCloseChan,
+			sendQue : util.NewBlockQueue(),
+			sendCloseChan : make(chan int,1),
 		}
 	}
 }
