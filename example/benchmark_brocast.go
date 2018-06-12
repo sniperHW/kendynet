@@ -7,6 +7,7 @@ import(
 	"fmt"
 	"os"
 	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/timer"
 	"github.com/sniperHW/kendynet/socket/stream_socket/tcp"
 	codec "github.com/sniperHW/kendynet/example/codec/stream_socket"		
 	"github.com/sniperHW/kendynet/example/testproto"
@@ -39,14 +40,11 @@ func server(service string) {
 	//clientMap只被单个goroutine访问，不需要任何保护
 	clientMap := make(map[kendynet.StreamSession]bool)
 
-	go func() {
-		for {
-			time.Sleep(time.Second)
-			tmp := atomic.LoadInt32(&packetcount)
-			atomic.StoreInt32(&packetcount,0)
-			fmt.Printf("clientcount:%d,packetcount:%d\n",clientcount,tmp)			
-		}
-	}()
+	timer.Repeat(time.Second,nil,func (_ timer.TimerID) {
+		tmp := atomic.LoadInt32(&packetcount)
+		atomic.StoreInt32(&packetcount,0)
+		fmt.Printf("clientcount:%d,packetcount:%d\n",clientcount,tmp)		
+	})
 
 	evQueue := kendynet.NewEventQueue()
 
@@ -67,7 +65,7 @@ func server(service string) {
 						evQueue.Post(&event{eventType:ev_message,session:session,data:ev.Data})
 					}
 				})
-				evQueue.PostEvent(&event{eventType:ev_newclient,session:session})
+				evQueue.Post(&event{eventType:ev_newclient,session:session})
 			})
 
 			if nil != err {

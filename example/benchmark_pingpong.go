@@ -7,6 +7,7 @@ import(
 	"fmt"
 	"os"
 	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/timer"
 	"github.com/sniperHW/kendynet/socket/stream_socket/tcp"
 	codec "github.com/sniperHW/kendynet/example/codec/stream_socket"	
 	"runtime/pprof"
@@ -20,18 +21,13 @@ func server(service string) {
 	bytescount  := int32(0)
 	packetcount := int32(0)
 
-
-
-	go func() {
-		for {
-			time.Sleep(time.Second)
-			tmp1 := atomic.LoadInt32(&bytescount)
-			tmp2 := atomic.LoadInt32(&packetcount)
-			atomic.StoreInt32(&bytescount,0)
-			atomic.StoreInt32(&packetcount,0)
-			fmt.Printf("clientcount:%d,transrfer:%d KB/s,packetcount:%d\n",clientcount,tmp1/1024,tmp2)			
-		}
-	}()
+	timer.Repeat(time.Second,nil,func (_ timer.TimerID) {
+		tmp1 := atomic.LoadInt32(&bytescount)
+		tmp2 := atomic.LoadInt32(&packetcount)
+		atomic.StoreInt32(&bytescount,0)
+		atomic.StoreInt32(&packetcount,0)
+		fmt.Printf("clientcount:%d,transrfer:%d KB/s,packetcount:%d\n",clientcount,tmp1/1024,tmp2)		
+	})
 
 	server,err := tcp.NewListener("tcp4",service)
 	if server != nil {

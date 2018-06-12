@@ -41,6 +41,7 @@ var	(
 	minheap    *util.MinHeap
 	timer_pool  sync.Pool
 	op_pool     sync.Pool
+	mtx         sync.Mutex
 	idTimerMap  map[TimerID]*timer
 )
 
@@ -92,6 +93,7 @@ func loop() {
 
 	defaultSleepTime := 10 * time.Second
 	var t *time.Timer
+	var ok bool
 	var min util.HeapElement
 	for {
 		now := time.Now()
@@ -100,20 +102,26 @@ func loop() {
 			if nil != min && now.After(min.(*timer).expired) {
 				t := min.(*timer)
 				minheap.PopMin()
-				if t.repeat {
-					//再次注册
-					t.expired = time.Now().Add(t.timeout)
-					minheap.Insert(t)
-				} else {
- 					delete(idTimerMap, t.id)
-					timer_put(t)
-				}
-				if nil == t.eventQue {
-					pcall(t.callback,t.id)
-				} else {
-					t.eventQue.Post(func () {
+				mtx.Lock()
+				_,ok = idTimerMap[t.id]
+				mtx.Unlock()
+				if ok { //ok==false表示已经被调用过DropTimer
+					//执行到这里之后,DropTimer将无法终止定时器的下次执行
+					if t.repeat {
+						//再次注册
+						t.expired = time.Now().Add(t.timeout)
+						minheap.Insert(t)
+					} else {
+	 					delete(idTimerMap, t.id)
+						timer_put(t)
+					}
+					if nil == t.eventQue {
 						pcall(t.callback,t.id)
-					})
+					} else {
+						t.eventQue.Post(func () {
+							pcall(t.callback,t.id)
+						})
+					}
 				}
 			} else {
 				break
@@ -140,15 +148,18 @@ func loop() {
 		switch (o.tt) {
 		case op_register:
 			t := o.data.(*timer)
-			minheap.Insert(t)
-			idTimerMap[t.id] = t
+
+			mtx.Lock()
+			if _,ok := idTimerMap[t.id]; ok {
+				//确保timer没有被Drop
+				minheap.Insert(t)				
+			}
+			mtx.Unlock()
 			break
 		case op_drop:
-			if t,ok := idTimerMap[o.data.(TimerID)]; ok {
-				minheap.Remove(t)
-				delete(idTimerMap,t.id)
-				timer_put(t)
-			}
+			t := o.data.(*timer)
+			minheap.Remove(t)
+			timer_put(t)
 			break
 		default:
 			break
@@ -165,7 +176,7 @@ func loop() {
 *  返回定时器ID,后面要取消定时器时需要使用这个ID
 */
 
-func New(timeout time.Duration,repeat bool,eventQue *kendynet.EventQueue,callback func(TimerID)) TimerID {
+func newTimer(timeout time.Duration,repeat bool,eventQue *kendynet.EventQueue,callback func(TimerID)) TimerID {
 	if nil == callback {
 		return 0
 	}
@@ -175,6 +186,13 @@ func New(timeout time.Duration,repeat bool,eventQue *kendynet.EventQueue,callbac
 	t.repeat   = repeat
 	t.callback = callback
 	t.eventQue = eventQue
+
+
+	//先插入到idTimerMap中，以允许后面执行DropTimer
+	mtx.Lock()
+	idTimerMap[t.id] = t
+	mtx.Unlock()
+
 	o := op_get()
 	o.tt = op_register
 	o.data = t
@@ -182,16 +200,35 @@ func New(timeout time.Duration,repeat bool,eventQue *kendynet.EventQueue,callbac
 	return t.id
 }
 
-func DelayDo(timeout time.Duration,eventQue *kendynet.EventQueue,callback func(TimerID)) TimerID {
-	return New(timeout,false,eventQue,callback)
+//一次性定时器
+func Once(timeout time.Duration,eventQue *kendynet.EventQueue,callback func(TimerID)) TimerID {
+	return newTimer(timeout,false,eventQue,callback)
 }
 
-//终止定时器
+//重复定时器
+func Repeat(timeout time.Duration,eventQue *kendynet.EventQueue,callback func(TimerID)) TimerID {
+	return newTimer(timeout,true,eventQue,callback)
+}
+
+/*
+*  终止定时器
+*  注意：因为定时器在单独go程序中调度，DropTimer不保证能终止定时器的下次执行（例如定时器马上将要被调度执行，此时在另外
+*        一个go程中调用DropTimer），对于重复定时器，可以保证定时器最多在执行一次之后终止。
+*/
 func DropTimer(id TimerID) {
-	o := op_get()
-	o.tt = op_drop
-	o.data = id
-	opChan <- o
+	mtx.Lock()
+	t,ok := idTimerMap[id]
+	if ok {
+		delete(idTimerMap,id)
+	}
+	mtx.Unlock()
+
+	if ok {
+		o := op_get()
+		o.tt = op_drop
+		o.data = t
+		opChan <- o
+	}
 }
 
 

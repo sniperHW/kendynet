@@ -13,7 +13,7 @@ import(
 
 func main() {
 
-	timer.New(1 * time.Second,true,nil,func (timer timer.TimerID) {
+	timer.Repeat(1 * time.Second,nil,func (timer timer.TimerID) {
 		fmt.Println("timer")
 	})
 
