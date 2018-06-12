@@ -4,8 +4,6 @@ package main
 import(
 	"time"
 	"github.com/sniperHW/kendynet/util/asyn"
-	"github.com/sniperHW/kendynet/util"	
-	"github.com/sniperHW/kendynet"
 	"fmt"
 )
 
@@ -120,8 +118,6 @@ func test4(){
 }
 
 func main() {
-
-	kendynet.Logger.Debugf(util.FormatFileLine("start\n"))
 
 	test1()
 	test2()
