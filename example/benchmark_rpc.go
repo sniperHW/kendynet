@@ -8,6 +8,7 @@ import(
 	"os"
 	"github.com/sniperHW/kendynet/example/testproto"
 	"github.com/sniperHW/kendynet/example/test_rpc"
+	"github.com/sniperHW/kendynet/timer"
 	"github.com/golang/protobuf/proto"
 	"github.com/sniperHW/kendynet/rpc"
 	"github.com/sniperHW/kendynet"
@@ -20,18 +21,15 @@ var reqcount int32
 
 func server(service string) {
 	count := int32(0)
-	go func() {
-		for {
-			time.Sleep(time.Second)
-			tmp := atomic.LoadInt32(&count)
-			atomic.StoreInt32(&count,0)
-			tmp1 := atomic.LoadInt32(&timeoutcount)
-			atomic.StoreInt32(&timeoutcount,0)
-			tmp2 := atomic.LoadInt32(&reqcount)
-			atomic.StoreInt32(&reqcount,0)
-			fmt.Printf("count:%d,timeoutcount:%d,reqcount:%d\n",tmp,tmp1,tmp2)			
-		}
-	}()
+	timer.Repeat(time.Second,nil,func (_ timer.TimerID) {
+		tmp := atomic.LoadInt32(&count)
+		atomic.StoreInt32(&count,0)
+		tmp1 := atomic.LoadInt32(&timeoutcount)
+		atomic.StoreInt32(&timeoutcount,0)
+		tmp2 := atomic.LoadInt32(&reqcount)
+		atomic.StoreInt32(&reqcount,0)
+		fmt.Printf("count:%d,timeoutcount:%d,reqcount:%d\n",tmp,tmp1,tmp2)	
+	})
 
 	server := test_rpc.NewRPCServer()
 	//注册服务
