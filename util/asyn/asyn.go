@@ -3,6 +3,7 @@ package asyn
 import(
 	"time"
 	"fmt"
+	"context"
 )
 
 var (
@@ -13,6 +14,7 @@ type Future struct {
 	channel chan interface{}
 	ret     [] interface{}
 	c       int
+	cancel  context.CancelFunc
 }
 
 /*
@@ -25,6 +27,7 @@ func (this *Future) Wait(timeout ...int) ([]interface{},error) {
 		for {
 			now := time.Now().UnixNano() / int64(time.Millisecond)
 			if now > deadline {
+				this.cancel()
 				return nil,ErrTimeout
 			}
 			remain := deadline - now
@@ -39,6 +42,7 @@ func (this *Future) Wait(timeout ...int) ([]interface{},error) {
 						return this.ret,nil
 					}
     			case <-time.After(time.Duration(remain) * time.Millisecond):
+        			this.cancel()
         			return nil,ErrTimeout
     		}
 		}
@@ -66,6 +70,7 @@ func (this *Future) WaitAny(timeout ...int) (interface{},error) {
     		case ret := <- this.channel: //拿到锁
 				return ret.([2]interface{})[1],nil
     		case <-time.After(time.Duration(timeout[0]) * time.Millisecond):
+    			this.cancel()
         		return nil,ErrTimeout
     		}		
 	}else {
@@ -79,19 +84,20 @@ func (this *Future) WaitAny(timeout ...int) (interface{},error) {
 *  并行执行多个闭包(每个闭包在单独的goroutine上下文执行)
 *  返回一个future,可以在将来的任何时刻等待闭包执行结果
 */
-func Paralell(funcs ...func()interface{}) *Future {
+func Paralell(funcs ...func(done context.Context)interface{}) *Future {
 	if 0 == len(funcs) {
 		return nil
 	}
-
+	var ctx context.Context
 	future := &Future{}
 	future.channel = make(chan interface{},len(funcs))
 	future.ret = make([]interface{},len(funcs))
+	ctx,future.cancel = context.WithCancel(context.Background())
 	for i := 0; i < len(funcs); i++ {
 		go func(index int){
 			ret := [2]interface{}{nil,nil}
 			ret[0] = index
-			ret[1] = funcs[index]()
+			ret[1] = funcs[index](ctx)
 			future.channel <- ret 
 		}(i)
 	}

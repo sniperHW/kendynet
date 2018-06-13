@@ -5,20 +5,22 @@ import(
 	"time"
 	"github.com/sniperHW/kendynet/util/asyn"
 	"fmt"
+	"context"
+	"sync"
 )
 
 func test1(){
 	fmt.Printf("test1()\n")
 	ret,err := asyn.Paralell(
-		func()interface{}{
+		func(_ context.Context)interface{}{
 			time.Sleep(time.Second * 1)
 			return 1
 		},
-		func()interface{}{
+		func(_ context.Context)interface{}{
 			time.Sleep(time.Second * 2)
 			return 2
 		},
-		func()interface{}{
+		func(_ context.Context)interface{}{
 			time.Sleep(time.Second * 3)
 			return 3
 		},				
@@ -36,15 +38,15 @@ func test1(){
 func test2() {
 	fmt.Printf("test2()\n")
 	ret,err := asyn.Paralell(
-		func()interface{}{
+		func(_ context.Context)interface{}{
 			time.Sleep(time.Second * 1)
 			return 1
 		},
-		func()interface{}{
+		func(_ context.Context)interface{}{
 			time.Sleep(time.Second * 2)
 			return 2
 		},
-		func()interface{}{
+		func(_ context.Context)interface{}{
 			time.Sleep(time.Second * 3)
 			return 3
 		},				
@@ -59,17 +61,48 @@ func test2() {
 
 func test3(){
 	fmt.Printf("test3()\n")	
+	wg := &sync.WaitGroup{}
 	ret,err := asyn.Paralell(
-		func()interface{}{
-			time.Sleep(time.Second * 1)
+		func(done context.Context)interface{}{
+			defer wg.Done()
+			wg.Add(1)
+			for i := 1 ; i < 3 ; i++ {
+        		select {
+        			case <-done.Done():
+            			fmt.Printf("stop 1\n")
+            			return nil
+        			default:
+						time.Sleep(time.Second * 1)
+					}
+				}
 			return 1
 		},
-		func()interface{}{
-			time.Sleep(time.Second * 2)
+		func(done context.Context)interface{}{
+			defer wg.Done()
+			wg.Add(1)
+			for i := 1 ; i < 3 ; i++ {
+        		select {
+        			case <-done.Done():
+            			fmt.Printf("stop 2\n")
+            			return nil
+        			default:
+						time.Sleep(time.Second * 1)
+					}
+				}
 			return 2
 		},
-		func()interface{}{
-			time.Sleep(time.Second * 3)
+		func(done context.Context)interface{}{
+			defer wg.Done()
+			wg.Add(1)
+			for i := 1 ; i < 3 ; i++ {
+        		select {
+        			case <-done.Done():
+            			fmt.Printf("stop 3\n")
+            			return nil
+        			default:
+						time.Sleep(time.Second * 1)
+					}
+				}
 			return 3
 		},				
 	).Wait(500)
@@ -84,20 +117,23 @@ func test3(){
 	}else{
 		fmt.Printf("%s\n",err.Error())
 	}
+
+	wg.Wait()
+
 }
 
 func test4(){
 	fmt.Printf("test4()\n")	
 	future := asyn.Paralell(
-		func()interface{}{
+		func(_ context.Context)interface{}{
 			time.Sleep(time.Second * 1)
 			return 1
 		},
-		func()interface{}{
+		func(_ context.Context)interface{}{
 			time.Sleep(time.Second * 2)
 			return 2
 		},
-		func()interface{}{
+		func(_ context.Context)interface{}{
 			time.Sleep(time.Second * 3)
 			return 3
 		},				
