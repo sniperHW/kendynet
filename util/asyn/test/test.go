@@ -65,12 +65,12 @@ func test3(){
 	fmt.Printf("test3\n")	
 	wg := &sync.WaitGroup{}
 	ret,err := asyn.Paralell(
-		func(done context.Context)interface{}{
+		func(ctx context.Context)interface{}{
 			defer wg.Done()
 			wg.Add(1)
 			for i := 1 ; i < 3 ; i++ {
         		select {
-        			case <-done.Done():
+        			case <-ctx.Done():
             			fmt.Printf("stop 1\n")
             			return nil
         			default:
@@ -79,12 +79,12 @@ func test3(){
 				}
 			return 1
 		},
-		func(done context.Context)interface{}{
+		func(ctx context.Context)interface{}{
 			defer wg.Done()
 			wg.Add(1)
 			for i := 1 ; i < 3 ; i++ {
         		select {
-        			case <-done.Done():
+        			case <-ctx.Done():
             			fmt.Printf("stop 2\n")
             			return nil
         			default:
@@ -93,12 +93,12 @@ func test3(){
 				}
 			return 2
 		},
-		func(done context.Context)interface{}{
+		func(ctx context.Context)interface{}{
 			defer wg.Done()
 			wg.Add(1)
 			for i := 1 ; i < 3 ; i++ {
         		select {
-        			case <-done.Done():
+        			case <-ctx.Done():
             			fmt.Printf("stop 3\n")
             			return nil
         			default:

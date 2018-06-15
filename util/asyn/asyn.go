@@ -84,7 +84,7 @@ func (this *Future) WaitAny(timeout ...int) (interface{},error) {
 *  并行执行多个闭包(每个闭包在单独的goroutine上下文执行)
 *  返回一个future,可以在将来的任何时刻等待闭包执行结果
 */
-func Paralell(funcs ...func(done context.Context)interface{}) *Future {
+func Paralell(funcs ...func(ctx context.Context)interface{}) *Future {
 	if 0 == len(funcs) {
 		return nil
 	}
