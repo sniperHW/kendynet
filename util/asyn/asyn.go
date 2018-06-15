@@ -22,6 +22,7 @@ type Future struct {
 */
 
 func (this *Future) Wait(timeout ...int) ([]interface{},error) {
+	defer this.cancel()
 	if len(timeout) > 0 && timeout[0] > 0 {
 		deadline :=  time.Now().UnixNano() / int64(time.Millisecond) + int64(timeout[0])
 		for {
@@ -42,7 +43,6 @@ func (this *Future) Wait(timeout ...int) ([]interface{},error) {
 						return this.ret,nil
 					}
     			case <-time.After(time.Duration(remain) * time.Millisecond):
-        			this.cancel()
         			return nil,ErrTimeout
     		}
 		}
@@ -65,12 +65,12 @@ func (this *Future) Wait(timeout ...int) ([]interface{},error) {
 *  等待任意一个闭包调用返回
 */
 func (this *Future) WaitAny(timeout ...int) (interface{},error) {
+	defer this.cancel()
 	if len(timeout) > 0 && timeout[0] > 0 {
 		select {
     		case ret := <- this.channel: //拿到锁
 				return ret.([2]interface{})[1],nil
     		case <-time.After(time.Duration(timeout[0]) * time.Millisecond):
-    			this.cancel()
         		return nil,ErrTimeout
     		}		
 	}else {

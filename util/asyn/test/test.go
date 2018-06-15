@@ -10,7 +10,7 @@ import(
 )
 
 func test1(){
-	fmt.Printf("test1()\n")
+	fmt.Printf("test1\n")
 	ret,err := asyn.Paralell(
 		func(_ context.Context)interface{}{
 			time.Sleep(time.Second * 1)
@@ -33,10 +33,11 @@ func test1(){
 			fmt.Printf("%d\n",ret[i].(int))
 		}
 	}
+	fmt.Printf("test1 done\n")
 }
 
 func test2() {
-	fmt.Printf("test2()\n")
+	fmt.Printf("test2\n")
 	ret,err := asyn.Paralell(
 		func(_ context.Context)interface{}{
 			time.Sleep(time.Second * 1)
@@ -57,10 +58,11 @@ func test2() {
 	if nil == err {
 		fmt.Printf("%d\n",ret.(int))
 	}
+	fmt.Printf("test2 done\n")
 }
 
 func test3(){
-	fmt.Printf("test3()\n")	
+	fmt.Printf("test3\n")	
 	wg := &sync.WaitGroup{}
 	ret,err := asyn.Paralell(
 		func(done context.Context)interface{}{
@@ -120,10 +122,13 @@ func test3(){
 
 	wg.Wait()
 
+
+	fmt.Printf("test3 done\n")
+
 }
 
 func test4(){
-	fmt.Printf("test4()\n")	
+	fmt.Printf("test4\n")	
 	future := asyn.Paralell(
 		func(_ context.Context)interface{}{
 			time.Sleep(time.Second * 1)
@@ -151,6 +156,8 @@ func test4(){
 			fmt.Printf("%d\n",ret[i].(int))
 		}
 	}
+
+	fmt.Printf("test4 done\n")
 }
 
 func main() {
