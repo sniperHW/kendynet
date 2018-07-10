@@ -34,14 +34,7 @@ func (this *reqContext) SetIndex(idx uint32) {
 }
 
 func (this *reqContext) callResponseCB(ret interface{},err error) {
-	cb := this.onResponse
-	if nil != this.eventQueue {
-		this.eventQueue.Post(func () {
-			pCallOnResponse(cb,ret,err)
-		})
-	} else {
-		pCallOnResponse(cb,ret,err)
-	}
+	pCallOnResponse(this.onResponse,ret,err)
 }
 
 func pCallOnResponse(onResponse  RPCResponseHandler,ret interface{}, err error) {
@@ -201,8 +194,7 @@ type RPCClient struct {
 	encoder   		  	RPCMessageEncoder
 	decoder   		  	RPCMessageDecoder
 	sequence            uint64
-	channel             RPCChannel
-	eventQueue         *kendynet.EventQueue             
+	channel             RPCChannel           
 }
 
 //通道关闭后调用
@@ -280,7 +272,7 @@ func (this *RPCClient) AsynCall(method string,arg interface{},timeout uint32,cb 
 		return err
 	}
 
-	r := getReqContext(req.Seq,cb,this.eventQueue)
+	r := getReqContext(req.Seq,cb)
 	if timeout > 0 {
 		r.deadline = time.Now().Add(time.Duration(timeout) * time.Millisecond)
 	}
@@ -309,7 +301,7 @@ func (this *RPCClient) SyncCall(method string,arg interface{},timeout uint32) (i
 	return result.ret,result.err
 }
 
-func NewClient(channel RPCChannel,decoder RPCMessageDecoder,encoder RPCMessageEncoder,eventQueue *kendynet.EventQueue) (*RPCClient,error) {
+func NewClient(channel RPCChannel,decoder RPCMessageDecoder,encoder RPCMessageEncoder) (*RPCClient,error) {
 	if nil == decoder {
 		return nil,fmt.Errorf("decoder == nil")
 	}
@@ -322,7 +314,7 @@ func NewClient(channel RPCChannel,decoder RPCMessageDecoder,encoder RPCMessageEn
 		return nil,fmt.Errorf("channel == nil")
 	}
 
-	return &RPCClient{encoder:encoder,decoder:decoder,channel:channel,eventQueue:eventQueue},nil
+	return &RPCClient{encoder:encoder,decoder:decoder,channel:channel},nil
 }
 
 func init() {

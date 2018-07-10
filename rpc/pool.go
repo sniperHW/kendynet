@@ -3,21 +3,20 @@ package rpc
 import (	
 	"sync"
 	"time"
-	"github.com/sniperHW/kendynet"
+	//"github.com/sniperHW/kendynet"
 )
 
 var reqContextPool sync.Pool
 
 var messagePool sync.Pool
 
-func getReqContext(seq uint64,cb RPCResponseHandler,eventQueue *kendynet.EventQueue ) *reqContext {
+func getReqContext(seq uint64,cb RPCResponseHandler) *reqContext {
 	var zero time.Time
 	c := reqContextPool.Get().(*reqContext)
 	c.heapIdx = 0
 	c.seq = seq
 	c.onResponse = cb
 	c.deadline = zero
-	c.eventQueue = eventQueue
 	return c
 }
 

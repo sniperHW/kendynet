@@ -145,7 +145,7 @@ func (this *RPCServer) Serve(service string) error {
 			if event.EventType == kendynet.EventTypeError {
 				session.Close(event.Data.(error).Error(),0)
 			} else {
-				this.server.OnRPCMessage(channel,event.Data,nil)
+				this.server.OnRPCMessage(channel,event.Data)
 			}
 		})
 	})
@@ -168,7 +168,7 @@ func (this *Caller) Dial(service string,timeout time.Duration) error {
 		return err
 	} 
 	channel := NewTcpStreamChannel(session)
-	this.client,_ = rpc.NewClient(channel,&TestDecoder{},&TestEncoder{},nil)
+	this.client,_ = rpc.NewClient(channel,&TestDecoder{},&TestEncoder{})
 	session.SetEncoder(codec.NewPbEncoder(4096))
 	session.SetReceiver(codec.NewPBReceiver(4096))
 	session.SetCloseCallBack(func (sess kendynet.StreamSession, reason string) {

@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"fmt"
 	"runtime"
-	"github.com/sniperHW/kendynet"	
+	//"github.com/sniperHW/kendynet"	
 	"github.com/sniperHW/kendynet/util"
 )
 
@@ -91,7 +91,7 @@ func (this *RPCServer) callMethod(method RPCMethodHandler,replyer *RPCReplyer,ar
 /* 
 *   如果需要单线程处理,可以提供eventQueue
 */
-func (this *RPCServer) OnRPCMessage(channel RPCChannel,message interface{},eventQueue *kendynet.EventQueue) {
+func (this *RPCServer) OnRPCMessage(channel RPCChannel,message interface{}) {
 	msg,err := this.decoder.Decode(message)
 	if nil != err {
 		Errorf(util.FormatFileLine("RPCServer rpc message from(%s) decode err:%s\n",channel.Name,err.Error()))
@@ -113,13 +113,7 @@ func (this *RPCServer) OnRPCMessage(channel RPCChannel,message interface{},event
 			if nil != err {
 				replyer.reply(&RPCResponse{Seq:req.Seq,Err:err})
 			} else {
-				if nil == eventQueue { 
-					this.callMethod(method,replyer,req.Arg)
-				} else {
-					eventQueue.Post(func() {
-						this.callMethod(method,replyer,req.Arg)
-					})
-				}
+				this.callMethod(method,replyer,req.Arg)
 			}			
 		}
 	}
