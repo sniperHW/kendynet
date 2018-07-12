@@ -253,13 +253,20 @@ func (this *WebSocket) SendMessage(msg kendynet.Message) error {
 }
 
 func recvThreadFunc(session *WebSocket) {
+	
+	var p interface{}
+	var err error
+
 	for !session.isClose() {
 		recvTimeout := session.RecvTimeout
 		if recvTimeout > 0 {
 			session.conn.SetReadDeadline(time.Now().Add(recvTimeout))
+			p,err = session.receiver.ReceiveAndUnpack(session)
+			session.conn.SetReadDeadline(time.Time{})			
+		} else {
+			p,err = session.receiver.ReceiveAndUnpack(session)			
 		}
 		
-		p,err := session.receiver.ReceiveAndUnpack(session)
 		if session.isClose() {
 			break
 		}
@@ -270,9 +277,7 @@ func recvThreadFunc(session *WebSocket) {
 			if err != nil {
 				event.EventType = kendynet.EventTypeError
 				event.Data = err
-				if kendynet.IsNetTimeout(err) {
-					session.conn.SetReadDeadline(time.Time{})
-				} else {
+				if !kendynet.IsNetTimeout(err) {
 					kendynet.Errorf("ReceiveAndUnpack error:%s\n",err.Error())
 					session.mutex.Lock()
 					session.flag |= (rclosed | wclosed)
@@ -303,10 +308,14 @@ func sendThreadFunc(session *WebSocket) {
 			msg := localList[i].(*WSMessage)
 			timeout := session.SendTimeout
 			if msg.messageType == WSBinaryMessage || msg.messageType == WSTextMessage {
-				if timeout > 0 {
+				if timeout > 0{
 					session.conn.SetWriteDeadline(time.Now().Add(timeout))
+					err = session.conn.WriteMessage(msg.messageType,msg.Bytes())
+					session.conn.SetWriteDeadline(time.Time{})	
+				} else {
+					err = session.conn.WriteMessage(msg.messageType,msg.Bytes())
 				}
-				err = session.conn.WriteMessage(msg.messageType,msg.Bytes())
+
 			} else if msg.messageType == WSCloseMessage || msg.messageType == WSPingMessage || msg.messageType == WSPingMessage {
 				var deadline time.Time
 				if timeout > 0 {
@@ -321,7 +330,6 @@ func sendThreadFunc(session *WebSocket) {
 				}
 
 				if kendynet.IsNetTimeout(err) {
-					session.conn.SetWriteDeadline(time.Time{})
 					err = kendynet.ErrSendTimeout
 				} else {
 					kendynet.Errorf("websocket write error:%s\n",err.Error())

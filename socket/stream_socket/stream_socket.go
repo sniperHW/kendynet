@@ -260,13 +260,19 @@ func recvThreadFunc(session *StreamSocket) {
 
 	for !session.isClosed() {
 
+		var p interface{}
+		var err error
+
 		recvTimeout := session.RecvTimeout
 
 		if recvTimeout > 0 {
-			session.conn.SetReadDeadline(time.Now().Add(recvTimeout))
+			session.conn.SetReadDeadline(time.Now().Add(recvTimeout))		
+			p,err = session.receiver.ReceiveAndUnpack(session)
+			session.conn.SetReadDeadline(time.Time{})
+		} else {
+			p,err = session.receiver.ReceiveAndUnpack(session)
 		}
 		
-		p,err := session.receiver.ReceiveAndUnpack(session)
 		if session.isClosed() {
 			//上层已经调用关闭，所有事件都不再传递上去
 			break
@@ -280,8 +286,6 @@ func recvThreadFunc(session *StreamSocket) {
 				session.mutex.Lock()
 				if err == io.EOF {
 					session.flag |= rclosed
-				} else if kendynet.IsNetTimeout(err) {
-					session.conn.SetReadDeadline(time.Time{})
 				} else if !kendynet.IsNetTimeout(err) {
 					kendynet.Errorf("ReceiveAndUnpack error:%s\n",err.Error())
 					session.flag |= (rclosed | wclosed)
@@ -300,6 +304,8 @@ func recvThreadFunc(session *StreamSocket) {
 }
 
 func sendThreadFunc(session *StreamSocket) {
+
+	var err error
 
 	defer func(){
 		session.sendCloseChan <- 1
@@ -342,14 +348,16 @@ func sendThreadFunc(session *StreamSocket) {
 					timeout := session.SendTimeout
 					if timeout > 0 {
 						session.conn.SetWriteDeadline(time.Now().Add(timeout))
+						err = writer.Flush()
+						session.conn.SetWriteDeadline(time.Time{})	
+					} else {
+						err = writer.Flush()
 					}
-					err := writer.Flush()
 					if err != nil && err != io.ErrShortWrite {
 						if session.sendQue.Closed() {
 							return
 						}
 						if kendynet.IsNetTimeout(err) {
-							session.conn.SetWriteDeadline(time.Time{})
 							err = kendynet.ErrSendTimeout
 						} else {
 							kendynet.Errorf("writer.Flush error:%s\n",err.Error())
