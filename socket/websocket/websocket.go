@@ -270,7 +270,9 @@ func recvThreadFunc(session *WebSocket) {
 			if err != nil {
 				event.EventType = kendynet.EventTypeError
 				event.Data = err
-				if !kendynet.IsNetTimeout(err) {
+				if kendynet.IsNetTimeout(err) {
+					session.conn.SetReadDeadline(time.Time{})
+				} else {
 					kendynet.Errorf("ReceiveAndUnpack error:%s\n",err.Error())
 					session.mutex.Lock()
 					session.flag |= (rclosed | wclosed)
@@ -319,6 +321,7 @@ func sendThreadFunc(session *WebSocket) {
 				}
 
 				if kendynet.IsNetTimeout(err) {
+					session.conn.SetWriteDeadline(time.Time{})
 					err = kendynet.ErrSendTimeout
 				} else {
 					kendynet.Errorf("websocket write error:%s\n",err.Error())

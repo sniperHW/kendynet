@@ -280,6 +280,8 @@ func recvThreadFunc(session *StreamSocket) {
 				session.mutex.Lock()
 				if err == io.EOF {
 					session.flag |= rclosed
+				} else if kendynet.IsNetTimeout(err) {
+					session.conn.SetReadDeadline(time.Time{})
 				} else if !kendynet.IsNetTimeout(err) {
 					kendynet.Errorf("ReceiveAndUnpack error:%s\n",err.Error())
 					session.flag |= (rclosed | wclosed)
@@ -347,6 +349,7 @@ func sendThreadFunc(session *StreamSocket) {
 							return
 						}
 						if kendynet.IsNetTimeout(err) {
+							session.conn.SetWriteDeadline(time.Time{})
 							err = kendynet.ErrSendTimeout
 						} else {
 							kendynet.Errorf("writer.Flush error:%s\n",err.Error())
