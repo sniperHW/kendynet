@@ -13,7 +13,7 @@ import(
 	"github.com/sniperHW/kendynet/rpc"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/golog"
-	"math/rand"
+	//"math/rand"
 )
 
 var timeoutcount int32
@@ -21,6 +21,7 @@ var reqcount int32
 
 func server(service string) {
 	count := int32(0)
+	total := 0
 	timer.Repeat(time.Second,nil,func (_ timer.TimerID) {
 		tmp := atomic.LoadInt32(&count)
 		atomic.StoreInt32(&count,0)
@@ -28,19 +29,20 @@ func server(service string) {
 		atomic.StoreInt32(&timeoutcount,0)
 		tmp2 := atomic.LoadInt32(&reqcount)
 		atomic.StoreInt32(&reqcount,0)
-		fmt.Printf("count:%d,timeoutcount:%d,reqcount:%d\n",tmp,tmp1,tmp2)	
+		fmt.Printf("count:%d,timeoutcount:%d,reqcount:%d,total:%d\n",tmp,tmp1,tmp2,total)	
 	})
 
 	server := test_rpc.NewRPCServer()
 	//注册服务
 	server.RegisterMethod("hello",func (replyer *rpc.RPCReplyer,arg interface{}){
 		atomic.AddInt32(&count,1)
-		if rand.Int() % 1000 == 0 {
+		total = total + 1
+		//if rand.Int() % 1000 == 0 {
 			//不返回消息让客户端超时
-		} else {
+		//} else {
 			world := &testproto.World{World:proto.String("world")}
 			replyer.Reply(world,nil)
-		}
+		//}
 	})
 	server.Serve(service)
 }
@@ -55,10 +57,12 @@ func client(service string,count int) {
 				return
 			}
 			for {
-				_,err := caller.SyncCall("hello",arg,10)
+				_,err := caller.SyncCall("hello",arg,10000)
 				atomic.AddInt32(&reqcount,1)
 				if nil != err {
-					atomic.AddInt32(&timeoutcount,1)
+					fmt.Printf("err:%s\n",err.Error())
+					return
+					//atomic.AddInt32(&timeoutcount,1)
 				}
 			}
 		}()

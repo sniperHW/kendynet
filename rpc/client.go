@@ -54,6 +54,7 @@ const (
 	tt_channel_close = 2
 	tt_response = 3
 	tt_timer    = 4
+	tt_cancel   = 5
 )
 
 type message struct {
@@ -70,6 +71,14 @@ type channelContext struct {
 type reqContextMgr struct {
 	queue            *util.BlockQueue   
 	channels         map[RPCChannel]*channelContext
+}
+
+func (this *reqContextMgr) pushCancel(channel RPCChannel,req *reqContext) {
+	m := getMessage()
+	m.tt = tt_cancel
+	m.data1 = channel
+	m.data2 = req
+	this.queue.Add(m)
 }
 
 func (this *reqContextMgr) pushRequest(channel RPCChannel,req *reqContext) {
@@ -100,6 +109,22 @@ func (this *reqContextMgr) pushTimer() {
 	m := getMessage()
 	m.tt = tt_timer
 	this.queue.Add(m)
+}
+
+func (this *reqContextMgr) onCancel(msg *message) {
+	var ok bool
+	var cContext *channelContext
+	var context  *reqContext
+	channel := msg.data1.(RPCChannel)
+	rpcMsg  := msg.data2.(RPCMessage)
+	if cContext,ok = this.channels[channel] ; ok {
+		if context,ok = cContext.pendingCalls[rpcMsg.GetSeq()] ; ok {
+			delete(cContext.pendingCalls,rpcMsg.GetSeq())
+			cContext.minheap.Remove(context)
+			context.callResponseCB(nil,fmt.Errorf("send error"))
+			putReqContext(context)			
+		}
+	}	
 }
 
 func (this *reqContextMgr) onRequest(msg *message) {
@@ -178,6 +203,8 @@ func (this *reqContextMgr) loop() {
 				case tt_response:
 					this.onResponse(msg)
 					break
+				case tt_cancel:
+					this.onCancel(msg)
 				default:
 					break	
 			}
@@ -267,16 +294,23 @@ func (this *RPCClient) AsynCall(method string,arg interface{},timeout uint32,cb 
 		return fmt.Errorf("encode error:%s\n",err.Error())
 	} 
 
-	err = this.channel.SendRequest(request)
-	if nil != err {
-		return err
-	}
+	/*
+	* 必须在调用SendRequest之前执行pushRequest,否则可能出现收到response的时候在
+	* onResponse找不到相应请求的情况
+	*/
 
 	r := getReqContext(req.Seq,cb)
 	if timeout > 0 {
 		r.deadline = time.Now().Add(time.Duration(timeout) * time.Millisecond)
 	}
 	reqMgr.pushRequest(this.channel,r)
+
+	err = this.channel.SendRequest(request)
+	if nil != err {
+		//发送失败，需要投递一个取消请求，将之前投递的request取消并调用响应回调通告用户请求失败
+		reqMgr.pushCancel(this.channel,r)
+	}
+
 	return nil
 }
 

@@ -13,6 +13,7 @@ import(
 	"github.com/sniperHW/kendynet/example/testproto"
 	"github.com/golang/protobuf/proto"
 	"github.com/sniperHW/kendynet/example/pb"
+	"sync/atomic"
 )
 
 const (
