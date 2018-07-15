@@ -18,7 +18,8 @@ type reqContext struct {
 	seq         uint64
 	onResponse  RPCResponseHandler
 	deadline    time.Time
-	eventQueue *kendynet.EventQueue 
+	eventQueue *kendynet.EventQueue
+	timestamp   int64 
 }
 
 func (this *reqContext) Less(o util.HeapElement) bool {
@@ -137,9 +138,7 @@ func (this *reqContextMgr) onRequest(msg *message) {
 		this.channels[channel] = cContext
 	}
 	cContext.pendingCalls[context.seq] = context
-	if !context.deadline.IsZero() {
-		cContext.minheap.Insert(context)
-	}
+	cContext.minheap.Insert(context)
 }
 
 func (this *reqContextMgr) onClose(msg *message) {
@@ -167,8 +166,10 @@ func (this *reqContextMgr) onResponse(msg *message) {
 			resp := rpcMsg.(*RPCResponse)
 			context.callResponseCB(resp.Ret,resp.Err)
 			putReqContext(context)			
-		}
-	}	
+		} else {
+			kendynet.Debugf("on response,but missing reqContext\n")
+		}	
+	} 
 }
 
 func (this *reqContextMgr) checkTimeout() {
@@ -300,9 +301,13 @@ func (this *RPCClient) AsynCall(method string,arg interface{},timeout uint32,cb 
 	*/
 
 	r := getReqContext(req.Seq,cb)
-	if timeout > 0 {
-		r.deadline = time.Now().Add(time.Duration(timeout) * time.Millisecond)
+	if timeout <= 0 {
+		timeout = 5000
 	}
+
+	r.deadline = time.Now().Add(time.Duration(timeout) * time.Millisecond)
+	r.timestamp = time.Now().UnixNano()
+
 	reqMgr.pushRequest(this.channel,r)
 
 	err = this.channel.SendRequest(request)
