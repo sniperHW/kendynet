@@ -8,7 +8,7 @@ import (
 	"github.com/sniperHW/kendynet/util"
 	"github.com/sniperHW/kendynet"
 	//"github.com/sniperHW/kendynet/socket/stream_socket"
-	//"os"
+	"os"
 	//"net"
 )
 
@@ -101,6 +101,7 @@ func (this *reqContextMgr) onResponse(channel RPCChannel,rpcMsg RPCMessage) {
 			context.callResponseCB(resp.Ret,resp.Err)			
 		} else {			
 			kendynet.Debugf("on response,but missing reqContext:%d\n",rpcMsg.GetSeq())
+			fmt.Fprintf(os.Stderr,"on response,but missing reqContext:%d\n",rpcMsg.GetSeq())
 		}	
 	} else {
 		kendynet.Debugf("on response,but missing channel reqContext:%d\n",rpcMsg.GetSeq())		
@@ -115,10 +116,8 @@ func (this *reqContextMgr) checkTimeout() {
 			if r != nil && now.After(r.(*reqContext).deadline) {
 				v.minheap.PopMin()
 				delete(v.pendingCalls,r.(*reqContext).seq)
-				if r.(*reqContext).onResponse == nil {
-					kendynet.Infof("remove timeout context:%d\n",r.(*reqContext).seq)
-				}
 				kendynet.Infof("timeout context:%d\n",r.(*reqContext).seq)
+				fmt.Fprintf(os.Stderr,"timeout context:%d\n",r.(*reqContext).seq)				
 				r.(*reqContext).callResponseCB(nil,ErrCallTimeout)
 			} else {
 				break
@@ -209,6 +208,36 @@ func (this *RPCClient) AsynCall(method string,arg interface{},timeout uint32,cb 
 		return fmt.Errorf("cb == nil")
 	}
 
+	reqMgr.queue.Add(func (){
+		req := &RPCRequest{ 
+			Method : method,
+			Seq : atomic.AddUint64(&this.sequence,1), 
+			Arg : arg,
+			NeedResp : true,
+		}
+
+		request,err := this.encoder.Encode(req)
+		if err != nil {
+			cb(nil,fmt.Errorf("encode error:%s\n",err.Error()))
+			return
+		} 
+
+		if timeout <= 0 {
+			timeout = 5000
+		}
+
+		context := &reqContext{}
+		context.heapIdx = 0
+		context.seq = req.Seq
+		context.onResponse = cb
+		context.deadline = time.Now().Add(time.Duration(timeout) * time.Millisecond)
+		context.timestamp = time.Now().UnixNano()
+		reqMgr.onRequest(this.channel,context,request)
+	})
+
+
+
+/*
 	req := &RPCRequest{ 
 		Method : method,
 		Seq : atomic.AddUint64(&this.sequence,1), 
@@ -235,7 +264,7 @@ func (this *RPCClient) AsynCall(method string,arg interface{},timeout uint32,cb 
 	reqMgr.queue.Add(func (){
 		reqMgr.onRequest(this.channel,context,request)
 	})
-
+*/
 	return nil
 }
 
