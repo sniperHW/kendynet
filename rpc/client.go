@@ -115,10 +115,14 @@ func (this *reqContextMgr) checkTimeout() {
 			r := v.minheap.Min()
 			if r != nil && now.After(r.(*reqContext).deadline) {
 				v.minheap.PopMin()
-				delete(v.pendingCalls,r.(*reqContext).seq)
-				kendynet.Infof("timeout context:%d\n",r.(*reqContext).seq)
-				fmt.Fprintf(os.Stderr,"timeout context:%d\n",r.(*reqContext).seq)				
-				r.(*reqContext).callResponseCB(nil,ErrCallTimeout)
+				if _,ok := v.pendingCalls[r.(*reqContext).seq];!ok {
+					kendynet.Infof("timeout context:%d not found\n",r.(*reqContext).seq)
+				}else{
+					delete(v.pendingCalls,r.(*reqContext).seq)
+					kendynet.Infof("timeout context:%d\n",r.(*reqContext).seq)
+					fmt.Fprintf(os.Stderr,"timeout context:%d\n",r.(*reqContext).seq)				
+					r.(*reqContext).callResponseCB(nil,ErrCallTimeout)
+				}
 			} else {
 				break
 			}
@@ -234,37 +238,6 @@ func (this *RPCClient) AsynCall(method string,arg interface{},timeout uint32,cb 
 		context.timestamp = time.Now().UnixNano()
 		reqMgr.onRequest(this.channel,context,request)
 	})
-
-
-
-/*
-	req := &RPCRequest{ 
-		Method : method,
-		Seq : atomic.AddUint64(&this.sequence,1), 
-		Arg : arg,
-		NeedResp : true,
-	}
-
-	request,err := this.encoder.Encode(req)
-	if err != nil {
-		return fmt.Errorf("encode error:%s\n",err.Error())
-	} 
-
-	if timeout <= 0 {
-		timeout = 5000
-	}
-
-	context := &reqContext{}
-	context.heapIdx = 0
-	context.seq = req.Seq
-	context.onResponse = cb
-	context.deadline = time.Now().Add(time.Duration(timeout) * time.Millisecond)
-	context.timestamp = time.Now().UnixNano()
-
-	reqMgr.queue.Add(func (){
-		reqMgr.onRequest(this.channel,context,request)
-	})
-*/
 	return nil
 }
 
@@ -319,8 +292,6 @@ func init() {
 		}
 	}()
 
-	go func() {
-		reqMgr.loop()
-	}()
-
+	go reqMgr.loop()
+	
 }
