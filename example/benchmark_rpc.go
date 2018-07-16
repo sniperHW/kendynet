@@ -60,11 +60,10 @@ func client(service string,count int) {
 				go func(){
 
 						for {
-							_,err := caller.SyncCall("hello",arg,10)
+							_,err := caller.SyncCall("hello",arg,1000)
 							atomic.AddInt32(&reqcount,1)
 							if nil != err {
 								fmt.Printf("err:%s\n",err.Error())
-								return
 							}
 						}
 
