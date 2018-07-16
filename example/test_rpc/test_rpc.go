@@ -37,6 +37,11 @@ func(this *TcpStreamChannel) Name() string {
 	return this.name
 }
 
+func(this *TcpStreamChannel)	GetSession() kendynet.StreamSession {
+	return this.session
+}
+
+
 type TestEncoder struct {
 }
 

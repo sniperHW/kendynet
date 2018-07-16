@@ -1,5 +1,9 @@
 package util
 
+import(
+	"fmt"
+)
+
 type HeapElement interface {
 	//if self less than other return true
 	Less(HeapElement)bool
@@ -106,7 +110,7 @@ func (this *MinHeap) Insert(e HeapElement) {
 	}
 }
 
-func (this *MinHeap) Remove(e HeapElement) {
+func (this *MinHeap) Remove(e HeapElement) error {
 	idx := e.GetIndex()
 	if idx <= this.size && this.data[idx] == e {
 		oldSize := this.size
@@ -120,6 +124,9 @@ func (this *MinHeap) Remove(e HeapElement) {
 		}
 		e.SetIndex(0)
 		this.data[oldSize] = nil
+		return nil
+	} else {
+		return fmt.Errorf("invaild element")
 	}
 }
 

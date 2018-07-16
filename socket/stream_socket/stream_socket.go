@@ -37,7 +37,7 @@ type StreamSocket struct {
 	onEvent           func (*kendynet.Event)
 	closeReason       string
 	sendCloseChan     chan int 
-	postQueue         [] kendynet.Message        
+	postQueue         [] kendynet.Message  
 }
 
 
@@ -327,6 +327,19 @@ func sendThreadFunc(session *StreamSocket) {
 		for i := 0; i < size; i++ {
 			msg := localList[i].(kendynet.Message)
 			data := msg.Bytes()
+			//session.sendSize = session.sendSize + uint64(len(data))
+			/*j := 0
+			for {
+				n,err := session.conn.(*net.TCPConn).Write(data[j:])
+				j += n
+				if err != io.ErrShortWrite {
+					break
+				}
+				if j >= len(data) {
+					break
+				}
+			}*/			
+
 			for data != nil || (i == (size - 1) && writer.Buffered() > 0) {
 				if data != nil {
 					var s int
@@ -343,7 +356,8 @@ func sendThreadFunc(session *StreamSocket) {
 						data = nil
 					}
 				}
-
+				
+				//如果writer没空间或localList已经遍历完执行flush
 				if writer.Available() == 0 || i == (size - 1) {
 					timeout := session.SendTimeout
 					if timeout > 0 {

@@ -56,14 +56,19 @@ func client(service string,count int) {
 				fmt.Println(err.Error())
 				return
 			}
-			for {
-				_,err := caller.SyncCall("hello",arg,10000)
-				atomic.AddInt32(&reqcount,1)
-				if nil != err {
-					fmt.Printf("err:%s\n",err.Error())
-					return
-					//atomic.AddInt32(&timeoutcount,1)
-				}
+			for j:=0;j < 10;j++{
+				go func(){
+
+						for {
+							_,err := caller.SyncCall("hello",arg,10)
+							atomic.AddInt32(&reqcount,1)
+							if nil != err {
+								fmt.Printf("err:%s\n",err.Error())
+								return
+							}
+						}
+
+				}()	
 			}
 		}()
 		/*var onResp func(ret interface{},err error)

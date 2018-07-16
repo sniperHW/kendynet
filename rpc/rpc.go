@@ -1,5 +1,9 @@
 package rpc
 
+import(
+	"github.com/sniperHW/kendynet"	
+)
+
 /*
 *  注意,传递给RPC模块的所有回调函数可能在底层信道的接收/发送goroutine上执行，
 *  为了避免接收/发送goroutine被阻塞，回调函数中不能调用阻塞函数。
@@ -62,4 +66,5 @@ type RPCChannel interface {
 	SendRequest(interface {})error               //发送RPC请求
 	SendResponse(interface {})error              //发送RPC回应
 	Name() string
+	GetSession() kendynet.StreamSession
 }

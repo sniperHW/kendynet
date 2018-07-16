@@ -7,6 +7,8 @@ import (
 	"runtime"
 	//"github.com/sniperHW/kendynet"	
 	"github.com/sniperHW/kendynet/util"
+	//"time"
+	//"os"
 )
 
 type RPCReplyer struct {
@@ -32,7 +34,8 @@ func (this *RPCReplyer) reply(response RPCMessage) {
 	err = this.channel.SendResponse(msg)
 	if nil != err {		
 		Errorf(util.FormatFileLine("send rpc response to (%s) error:%s\n",this.channel.Name() , err.Error()))
-	}	
+	}
+	//Errorf("reply %d\n",response.GetSeq())	
 }
 
 type RPCMethodHandler func (*RPCReplyer,interface{})
@@ -42,6 +45,7 @@ type RPCServer struct {
 	decoder   		 RPCMessageDecoder
 	methods   		 map[string]RPCMethodHandler
 	mutexMethods     sync.Mutex
+	lastSeq          uint64 
 }
 
 func (this *RPCServer) RegisterMethod(name string,method RPCMethodHandler) error {
