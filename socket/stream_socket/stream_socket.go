@@ -28,7 +28,6 @@ type StreamSocket struct {
 	sendQue          *util.BlockQueue
 	receiver          kendynet.Receiver
 	encoder           kendynet.EnCoder
-	sendBuffProcessor SendBuffProcessor
 	flag              int32
     SendTimeout 	  time.Duration
     RecvTimeout       time.Duration 
@@ -37,7 +36,6 @@ type StreamSocket struct {
 	onEvent           func (*kendynet.Event)
 	closeReason       string
 	sendCloseChan     chan int 
-	postQueue         [] kendynet.Message  
 }
 
 
@@ -102,9 +100,7 @@ func (this *StreamSocket) Close(reason string, delay time.Duration) {
 	if this.flag & wclosed > 0 {
 		delay = 0 //写端已经关闭，delay参数没有意义设置为0
 	}
-	if delay > 0 {
-		this.flush()
-	}
+
 	this.sendQue.Close()
 	this.mutex.Unlock()
 	if this.sendQue.Len() > 0 {
@@ -155,73 +151,13 @@ func (this *StreamSocket) SetReceiver(r kendynet.Receiver) {
 	this.receiver = r
 }
 
-func (this *StreamSocket) SetSendBuffProcessor(processor SendBuffProcessor) {
-	this.mutex.Lock()
-	defer this.mutex.Unlock()
-	this.sendBuffProcessor = processor
-}
-
-func (this *StreamSocket) flush() {
-	size := len(this.postQueue)
-	if size > 0 {
-		for i := 0; i < size; i++ {
-			this.sendQue.Add(this.postQueue[i])
-		}
-		this.postQueue = this.postQueue[0:0]
-	}
-}
-
-func (this *StreamSocket) Flush() {
-	this.mutex.Lock()	
-	defer this.mutex.Unlock()
-	this.flush()
-}
-
-func (this *StreamSocket) postSendMessage(msg kendynet.Message) error {
-	if msg == nil {
-		return kendynet.ErrInvaildBuff
-	} else if (this.flag & closed) > 0 || (this.flag & wclosed) > 0 {
-		return kendynet.ErrSocketClose
-	} else {
-		this.postQueue = append(this.postQueue,msg)
-	}
-	return nil
-}
-
-func (this *StreamSocket) PostSend(o interface{}) error {
-	if o == nil {
-		return kendynet.ErrInvaildObject
-	}
-
-	this.mutex.Lock()	
-	defer this.mutex.Unlock()	
-
-	if this.encoder == nil {
-		return kendynet.ErrInvaildEncoder
-	}
-
-	msg,err := this.encoder.EnCode(o)
-
-	if err != nil {
-		return err
-	}
-
-	return this.postSendMessage(msg)
-}
-	
-func (this *StreamSocket) PostSendMessage(msg kendynet.Message) error {
-	this.mutex.Lock()	
-	defer this.mutex.Unlock()
-	return this.postSendMessage(msg)
-}
-
 func (this *StreamSocket) sendMessage(msg kendynet.Message) error {
 	if msg == nil {
 		return kendynet.ErrInvaildBuff
 	} else if (this.flag & closed) > 0 || (this.flag & wclosed) > 0 {
 		return kendynet.ErrSocketClose
 	} else {
-		this.flush()
+		//this.flush()
 		if nil != this.sendQue.Add(msg) {
 			return kendynet.ErrSocketClose
 		}
@@ -317,11 +253,6 @@ func sendThreadFunc(session *StreamSocket) {
 		size := len(localList)
 		if closed && size == 0 {
 			break
-		}
-
-		if nil != session.sendBuffProcessor {
-			localList = session.sendBuffProcessor.Process(localList)
-			size = len(localList)
 		}
 
 		for i := 0; i < size; i++ {

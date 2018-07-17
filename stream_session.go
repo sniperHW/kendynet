@@ -33,23 +33,6 @@ type StreamSession interface {
 	SendMessage(msg Message) error
 
 	/*
-	   发送一个对象，使用encoder将对象编码成一个Message调用PostSendMessage
-	*/
-	PostSend(o interface{}) error
-
-	/*
-	 *   msg被投递发送，在调用Flush之前不会被实际发送
-	 */
-	PostSendMessage(msg Message) error
-
-	/*
-	 *   将所有post的消息发送出去
-	 *   SendXXX以及Close当timeout > 0时会在内部调用Flush
-	 *   例如Post(a),Send(b)对于这种情况无需再手动调用Flush。
-	 */
-	Flush()
-
-	/*
 		关闭会话,如果会话中还有待发送的数据且timeout > 0
 		将尝试将数据发送完毕后关闭，如果数据未能完成发送则等到timeout秒之后也会被关闭。
 
