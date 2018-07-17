@@ -3,16 +3,23 @@ package rpc
 import(
 	"github.com/sniperHW/kendynet/golog"
 	"sync/atomic"	
+	"fmt"
 )
 
 var logger *golog.Logger
 var is_init int32
 
-func InitLogger(out *golog.OutputLogger) {
-	if atomic.CompareAndSwapInt32(&is_init,0,1) {
-		logger = golog.New("rpc",out);
-		logger.Debugf("rpc logger init")
-	}
+func InitLogger(out *golog.OutputLogger,name ...string) {
+	if atomic.CompareAndSwapInt32(&is_init, 0, 1) {
+		var fullname string
+		if len(name) > 0 {
+			fullname = fmt.Sprintf("(%s|rpc)",name[0])
+		} else {
+			fullname = "(rpc)"
+		}
+		logger = golog.New(fullname,out)
+		logger.Debugf("%s logger init",fullname)
+	}	
 }
 
 func Debugf(format string, v ...interface{}) {

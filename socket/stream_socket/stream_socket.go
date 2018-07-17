@@ -12,7 +12,7 @@ import (
 	   "io"
 	   "github.com/sniperHW/kendynet"
 	   "github.com/sniperHW/kendynet/util"
-	   "fmt"
+	   //"fmt"
 )
 
 const (
@@ -444,8 +444,6 @@ func (this *StreamSocket) Start(eventCB func (*kendynet.Event)) error {
 	if this.receiver == nil {
 		return kendynet.ErrNoReceiver
 	}
-
-	fmt.Printf("-------------------%p start---------------------------\n",this)
 
 	this.onEvent = eventCB
 	this.flag |= started
