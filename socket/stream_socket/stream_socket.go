@@ -8,7 +8,7 @@ import (
 	   "net"
 	   "time"
 	   "sync"
-	   "bufio"
+	   //"bufio"
 	   "io"
 	   "github.com/sniperHW/kendynet"
 	   "github.com/sniperHW/kendynet/util"
@@ -239,6 +239,7 @@ func recvThreadFunc(session *StreamSocket) {
 	}
 }
 
+/*
 func sendThreadFunc(session *StreamSocket) {
 
 	var err error
@@ -258,19 +259,6 @@ func sendThreadFunc(session *StreamSocket) {
 		for i := 0; i < size; i++ {
 			msg := localList[i].(kendynet.Message)
 			data := msg.Bytes()
-			//session.sendSize = session.sendSize + uint64(len(data))
-			/*j := 0
-			for {
-				n,err := session.conn.(*net.TCPConn).Write(data[j:])
-				j += n
-				if err != io.ErrShortWrite {
-					break
-				}
-				if j >= len(data) {
-					break
-				}
-			}*/			
-
 			for data != nil || (i == (size - 1) && writer.Buffered() > 0) {
 				if data != nil {
 					var s int
@@ -287,8 +275,7 @@ func sendThreadFunc(session *StreamSocket) {
 						data = nil
 					}
 				}
-				
-				//如果writer没空间或localList已经遍历完执行flush
+
 				if writer.Available() == 0 || i == (size - 1) {
 					timeout := session.SendTimeout
 					if timeout > 0 {
@@ -311,9 +298,123 @@ func sendThreadFunc(session *StreamSocket) {
 							session.mutex.Unlock()							
 						}
 						event := &kendynet.Event{Session:session,EventType:kendynet.EventTypeError,Data:err}
-						session.onEvent(event)						
+						session.onEvent(event)
+						if session.sendQue.Closed() {
+							return
+						}						
 					}
 				}
+			}
+		}
+	}
+}
+*/
+
+type sendBuffer struct {
+	e        int
+	bytes    []byte
+	session *StreamSocket
+}
+
+func (this *sendBuffer) expand(need int,final bool) {
+	total := this.e + need
+	var newBuff []byte  
+	if final {
+		newBuff = make([]byte,total)
+	} else {
+		newBuff = make([]byte,total * 2)	
+	}
+
+	copy(newBuff,this.bytes[:this.e])
+	this.bytes = newBuff
+}
+
+func (this *sendBuffer) append(data []byte,final bool) {
+	capRemain := cap(this.bytes) - this.e
+
+	if capRemain < len(data) {
+		this.expand(len(data),final)
+	}
+	copy(this.bytes[this.e:],data)
+	this.e += len(data)
+}
+
+func (this *sendBuffer) flush() (error) {
+	if this.e > 0 {
+		n,err := this.session.conn.Write(this.bytes[:this.e])
+		if n > 0 {
+			if n == this.e {
+				this.e = 0
+				if cap(this.bytes) > 65535*2 {
+					this.bytes = make([]byte,65535)
+				}
+			} else {
+				copy(this.bytes,this.bytes[n:this.e])
+				this.e = this.e - n			
+			}
+		}
+		return err
+	} else {
+		return nil
+	}
+}
+
+func (this *sendBuffer) empty() bool {
+	return this.e == 0
+}
+
+func sendThreadFunc(session *StreamSocket) {
+
+	var err error
+
+	defer func(){
+		session.sendCloseChan <- 1
+	}()
+
+	buffer := &sendBuffer{
+		session:session,
+		bytes:make([]byte,65535),
+	}
+
+	for {
+		closed,localList := session.sendQue.Get()
+		size := len(localList)
+		if closed && size == 0 {
+			break
+		}
+
+		for i := 0; i < size; i++ {
+			msg := localList[i].(kendynet.Message)
+			buffer.append(msg.Bytes(),(i == size - 1))
+		}
+
+		for !buffer.empty() {
+			timeout := session.SendTimeout
+			if timeout > 0 {
+				session.conn.SetWriteDeadline(time.Now().Add(timeout))
+				err = buffer.flush()
+				session.conn.SetWriteDeadline(time.Time{})	
+			} else {
+				err = buffer.flush()
+			}
+
+			if err != nil && err != io.ErrShortWrite {
+				if session.sendQue.Closed() {
+					return
+				}
+				if kendynet.IsNetTimeout(err) {
+					err = kendynet.ErrSendTimeout
+				} else {
+					kendynet.Errorf("writer.Flush error:%s\n",err.Error())
+					session.mutex.Lock()
+					session.flag |= wclosed
+					session.mutex.Unlock()							
+				}
+				event := &kendynet.Event{Session:session,EventType:kendynet.EventTypeError,Data:err}
+				session.onEvent(event)
+				if session.sendQue.Closed(){
+					return
+				}						
 			}
 		}
 	}
