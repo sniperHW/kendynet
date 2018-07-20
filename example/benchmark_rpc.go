@@ -103,15 +103,15 @@ func client(service string,count int) {
 				arg := &testproto.Hello{Hello:proto.String("hello fasdfasdfasdfasdfjasjfjeiofjkaljfklasjfkljasdifjasijflkasdjl")}
 				caller.AsynCall("hello",arg,1000,callback2)
 			}
-			for j:=0;j < 50;j++{
+			for j:=0;j < 10;j++{
 				arg := &testproto.Hello{Hello:proto.String("hello")}
 				caller.AsynCall("hello",arg,1000,callback1)
 			}
 
-			for j:=0;j < 10;j++{
+			/*for j:=0;j < 10;j++{
 				arg := &testproto.Hello{Hello:proto.String("hello fasdfasdfasdfasdfjasjfjeiofjkaljfklasjfkljasdifjasijflkasdjl")}
 				caller.AsynCall("hello",arg,1000,callback2)				
-			}
+			}*/
 
 
 

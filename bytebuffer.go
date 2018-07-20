@@ -43,7 +43,6 @@ type ByteBuffer struct {
 	datasize uint64
 	capacity uint64
 	needcopy bool //标记是否执行写时拷贝
-	SeqNo    int64
 }
 
 func NewByteBuffer(arg ...interface{}) *ByteBuffer {
@@ -421,8 +420,4 @@ func (this *ByteBuffer) AppendUint64(value uint64) error {
 
 func (this *ByteBuffer) Bytes() []byte {
 	return this.buffer[:this.datasize]
-}
-
-func (this *ByteBuffer) GetSeqNO() int64 {
-	return this.SeqNo
 }

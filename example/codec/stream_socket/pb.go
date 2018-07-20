@@ -4,6 +4,8 @@ import (
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/socket/stream_socket"
 	"github.com/sniperHW/kendynet/example/pb"
+	"time"
+	"os"
 //	"fmt"
 )
 
@@ -54,6 +56,26 @@ func (this *PBReceiver) unPack() (interface{},error) {
 	return msg,err
 }
 
+
+func (this *PBReceiver) check(buff []byte) {
+	l := len(buff)
+	l = l / 4
+	for i:=0;i < l;i++{
+		var j int
+		for j=0;j<4;j++{
+			if buff[i*4+j] != 0xFF {
+				break
+			}
+		}
+		if j == 4 {
+			kendynet.Infoln(buff)
+			time.Sleep(time.Second)
+			os.Exit(0)
+		}
+	}
+}
+
+
 func (this *PBReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface{},error) {
 	var msg interface{}
 	var err error
@@ -79,6 +101,7 @@ func (this *PBReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface
 
 			n,err := sess.(*stream_socket.StreamSocket).Read(this.recvBuff)
 			if n >0 {
+				this.check(this.recvBuff[:n])
 				this.unpackSize += uint64(n) //增加待解包数据
 				this.recvBuff = this.recvBuff[n:]				
 			}
