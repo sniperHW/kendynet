@@ -69,6 +69,11 @@ func (this *PBReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface
 					copy(this.buffer,this.buffer[this.unpackIdx:this.unpackIdx+this.unpackSize])
 				}
 				this.recvBuff = this.buffer[this.unpackSize:]
+
+				for k,_ := range(this.recvBuff) {
+					this.recvBuff[k] = 0xFF
+				}
+
 				this.unpackIdx = 0				
 			}
 

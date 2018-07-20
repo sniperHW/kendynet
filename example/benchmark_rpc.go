@@ -48,7 +48,7 @@ func server(service string) {
 }
 
 func client(service string,count int) {
-	arg := &testproto.Hello{Hello:proto.String("hello")}
+
 	for i := 0; i < count ; i++ {
 		go func() {
 			caller := test_rpc.NewCaller()
@@ -56,9 +56,11 @@ func client(service string,count int) {
 				fmt.Println(err.Error())
 				return
 			}
-			for j:=0;j < 10;j++{
+
+			/*for j:=0;j < 10;j++{
 				go func(){
 					for {
+						arg := &testproto.Hello{Hello:proto.String("hello")}
 						_,err := caller.SyncCall("hello",arg,1000)
 						atomic.AddInt32(&reqcount,1)
 						if nil != err {
@@ -67,6 +69,52 @@ func client(service string,count int) {
 					}
 				}()	
 			}
+
+
+			for j:=0;j < 40;j++{
+				go func(){
+					for {
+						arg := &testproto.Hello{Hello:proto.String("hello fasdfasdfasdfasdfjasjfjeiofjkaljfklasjfkljasdifjasijflkasdjl")}
+						_,err := caller.SyncCall("hello",arg,1000)
+						atomic.AddInt32(&reqcount,1)
+						if nil != err {
+							fmt.Printf("err:%s\n",err.Error())
+						}
+					}
+				}()	
+			}*/
+
+			var callback1 func(interface{},error)
+			var callback2 func(interface{},error)
+
+
+			callback1 = func(msg interface{},err error) {
+				if nil != err {
+					fmt.Printf("err:%s\n",err.Error())
+				}
+				arg := &testproto.Hello{Hello:proto.String("hello")}
+				caller.AsynCall("hello",arg,1000,callback1)
+			}
+
+			callback2 = func(msg interface{},err error) {
+				if nil != err {
+					fmt.Printf("err:%s\n",err.Error())
+				}
+				arg := &testproto.Hello{Hello:proto.String("hello fasdfasdfasdfasdfjasjfjeiofjkaljfklasjfkljasdifjasijflkasdjl")}
+				caller.AsynCall("hello",arg,1000,callback2)
+			}
+			for j:=0;j < 50;j++{
+				arg := &testproto.Hello{Hello:proto.String("hello")}
+				caller.AsynCall("hello",arg,1000,callback1)
+			}
+
+			for j:=0;j < 10;j++{
+				arg := &testproto.Hello{Hello:proto.String("hello fasdfasdfasdfasdfjasjfjeiofjkaljfklasjfkljasdifjasijflkasdjl")}
+				caller.AsynCall("hello",arg,1000,callback2)				
+			}
+
+
+
 		}()
 		/*var onResp func(ret interface{},err error)
 		onResp = func(ret interface{},err error){
