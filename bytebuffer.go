@@ -421,3 +421,62 @@ func (this *ByteBuffer) AppendUint64(value uint64) error {
 func (this *ByteBuffer) Bytes() []byte {
 	return this.buffer[:this.datasize]
 }
+
+
+type BufferReader struct {
+	buffer *ByteBuffer
+	offset  uint64
+}
+
+func NewReader(buffer *ByteBuffer) *BufferReader {
+	return &BufferReader{buffer:buffer}
+}
+
+func (this *BufferReader) GetByte() (ret byte, err error) {
+	ret,err = this.buffer.GetByte(this.offset)
+	if nil == err {
+		this.offset += 1
+	}
+	return
+}
+
+func (this *BufferReader) GetUint16() (ret uint16, err error) {
+	ret,err = this.buffer.GetUint16(this.offset)
+	if nil == err {
+		this.offset += 2
+	}
+	return
+}
+
+func (this *BufferReader) GetUint32() (ret uint32, err error) {
+	ret,err = this.buffer.GetUint32(this.offset)
+	if nil == err {
+		this.offset += 4
+	}
+	return
+}
+
+func (this *BufferReader) GetUint64() (ret uint64, err error) {
+	ret,err = this.buffer.GetUint64(this.offset)
+	if nil == err {
+		this.offset += 8
+	}
+	return
+}
+
+func (this *BufferReader) GetString(size uint64) (ret string, err error) {
+	ret,err = this.buffer.GetString(this.offset,size)
+	if nil == err {
+		this.offset += size
+	}
+	return
+}
+
+func (this *BufferReader) GetBytes(size uint64) (ret []byte, err error) {
+	ret,err = this.buffer.GetBytes(this.offset,size)
+	if nil == err {
+		this.offset += size
+	}
+	return
+}
+
