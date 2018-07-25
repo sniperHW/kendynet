@@ -242,24 +242,19 @@ func (this *RPCClient) AsynCall(method string,arg interface{},timeout uint32,cb 
 }
 
 //同步调用
-func (this *RPCClient) SyncCall(method string,arg interface{},timeout uint32) (interface{},error) {
-	type resp struct {
-		ret interface{}
-		err error
+//同步调用
+func (this *RPCClient) SyncCall(method string,arg interface{},timeout uint32) (ret interface{},err error) {
+	respChan := make(chan interface{})
+	f := func (ret_ interface{},err_ error) {
+		ret = ret_
+		err = err_
+		respChan <- nil	
 	}
-
-	respChan := make(chan *resp)
-
-	f := func (ret interface{},err error) {
-		respChan <- &resp{ret:ret,err:err}
+	if err = this.AsynCall(method,arg,timeout,f); err != nil {
+		return
 	}
-	
-	if err := this.AsynCall(method,arg,timeout,f); err != nil {
-		return nil,err
-	}
-
-	result := <- respChan
-	return result.ret,result.err
+	_ = <- respChan
+	return
 }
 
 func NewClient(channel RPCChannel,decoder RPCMessageDecoder,encoder RPCMessageEncoder) (*RPCClient,error) {

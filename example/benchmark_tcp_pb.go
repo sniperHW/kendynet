@@ -13,6 +13,7 @@ import(
 	"github.com/sniperHW/kendynet/example/testproto"
 	"github.com/golang/protobuf/proto"
 	"github.com/sniperHW/kendynet/example/pb"
+	"github.com/sniperHW/kendynet/golog"
 )
 
 func server(service string) {
@@ -90,12 +91,20 @@ func client(service string,count int) {
 			o.A = proto.String("hello")
 			o.B = proto.Int32(17)
 			session.Send(o)
+			session.Send(o)
+			session.Send(o)
+			session.Send(o)
+			session.Send(o)
 		}
 	}
 }
 
 
 func main(){
+
+	outLogger := golog.NewOutputLogger("log","kendynet",1024*1024*1000)
+	kendynet.InitLogger(outLogger)
+
 	pb.Register(&testproto.Test{},1)
 	if len(os.Args) < 3 {
 		fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")

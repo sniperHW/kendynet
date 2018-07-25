@@ -57,7 +57,7 @@ func client(service string,count int) {
 				return
 			}
 
-			/*for j:=0;j < 10;j++{
+			for j:=0;j < 10;j++{
 				go func(){
 					for {
 						arg := &testproto.Hello{Hello:proto.String("hello")}
@@ -82,9 +82,9 @@ func client(service string,count int) {
 						}
 					}
 				}()	
-			}*/
+			}
 
-			var callback1 func(interface{},error)
+			/*var callback1 func(interface{},error)
 			var callback2 func(interface{},error)
 
 
@@ -106,7 +106,7 @@ func client(service string,count int) {
 			for j:=0;j < 10;j++{
 				arg := &testproto.Hello{Hello:proto.String("hello")}
 				caller.AsynCall("hello",arg,1000,callback1)
-			}
+			}*/
 
 			/*for j:=0;j < 10;j++{
 				arg := &testproto.Hello{Hello:proto.String("hello fasdfasdfasdfasdfjasjfjeiofjkaljfklasjfkljasdifjasijflkasdjl")}
