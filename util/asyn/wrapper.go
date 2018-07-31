@@ -36,9 +36,15 @@ func AsynWrap(queue *kendynet.EventQueue,oriFunc interface{}) *caller {
 		return nil
 	}
 
+	v := reflect.ValueOf(oriFunc)
+
+	if v.Kind() != reflect.Func {
+		return nil
+	}
+
 	return &caller{
 		queue : queue,
-		oriFunc : reflect.ValueOf(oriFunc),
+		oriFunc : v,
 	}
 }
 
