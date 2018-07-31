@@ -4,7 +4,6 @@ import(
 	"sync"
 	"runtime"
 	"github.com/sniperHW/kendynet"
-	"fmt"
 )
 
 const (
@@ -71,7 +70,6 @@ func pcall(t *task) {
 func (this *routinePool) newRoutine() {
 	//创建一个新的go程
 	go func() {
-		fmt.Println("new routine")
 		this.mtx.Lock()
 		this.freeCount++
 		this.mtx.Unlock()
