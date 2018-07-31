@@ -12,49 +12,40 @@ import(
 
 var routinePool_ * routinePool
 
-type caller struct {
-	queue     *kendynet.EventQueue
-	oriFunc	   reflect.Value
-}
+type wrapFunc func(callback func([]interface{}),args ...interface{})
 
-func (this *caller) Call(callback func([]interface{}),args ...interface{}) {
-
-	f := func () {
-		in := []reflect.Value{}
-		for _,v := range(args) {
-			in = append(in,reflect.ValueOf(v))
-		}
-		out := this.oriFunc.Call(in) 
-		ret := []interface{}{}
-		for _,v := range(out) {
-			ret = append(ret,v.Interface())
-		}
-		this.queue.Post(callback,ret...)
-	}
-
-	if nil == routinePool_ {
-		go f()
-	} else {
-		//设置了go程池，交给go程池执行
-		routinePool_.AddTask(f)
-	}
-}
-
-func AsynWrap(queue *kendynet.EventQueue,oriFunc interface{}) *caller {
+func AsynWrap(queue *kendynet.EventQueue,oriFunc interface{}) wrapFunc {
 
 	if nil == queue {
 		return nil
 	}
 
-	v := reflect.ValueOf(oriFunc)
+	oriF := reflect.ValueOf(oriFunc)
 
-	if v.Kind() != reflect.Func {
+	if oriF.Kind() != reflect.Func {
 		return nil
 	}
 
-	return &caller{
-		queue : queue,
-		oriFunc : v,
+	return func(callback func([]interface{}),args ...interface{}){
+		f := func () {
+			in := []reflect.Value{}
+			for _,v := range(args) {
+				in = append(in,reflect.ValueOf(v))
+			}
+			out := oriF.Call(in) 
+			ret := []interface{}{}
+			for _,v := range(out) {
+				ret = append(ret,v.Interface())
+			}
+			queue.Post(callback,ret...)
+		}
+
+		if nil == routinePool_ {
+			go f()
+		} else {
+			//设置了go程池，交给go程池执行
+			routinePool_.AddTask(f)
+		}		
 	}
 }
 

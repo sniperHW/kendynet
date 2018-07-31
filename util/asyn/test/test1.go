@@ -39,19 +39,19 @@ func main() {
 	queue := kendynet.NewEventQueue()
 	s := st{data:100}
 
-	caller1 := asyn.AsynWrap(queue,mySleep1)
-	caller2 := asyn.AsynWrap(queue,mySleep2)
-	caller3 := asyn.AsynWrap(queue,s.fun)
+	wrap1 := asyn.AsynWrap(queue,mySleep1)
+	wrap2 := asyn.AsynWrap(queue,mySleep2)
+	wrap3 := asyn.AsynWrap(queue,s.fun)
 
-	caller1.Call(func(ret []interface{}) {
+	wrap1(func(ret []interface{}) {
 		fmt.Println(ret[0].(int))
 	})
 
-	caller2.Call(func(ret []interface{}) {
+	wrap2(func(ret []interface{}) {
 		fmt.Println(ret[0].(int))
 	},2)
 
-	caller3.Call(func(ret []interface{}) {
+	wrap3(func(ret []interface{}) {
 		fmt.Println("st.fun callback")
 		queue.Close()
 	})
