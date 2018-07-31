@@ -2,7 +2,6 @@ package main
 
 import(
 	"time"
-	"sync/atomic"
 	"strconv"
 	"fmt"
 	"os"
@@ -15,20 +14,6 @@ import(
 	"github.com/sniperHW/kendynet/example/pb"
 	"sync/atomic"
 )
-
-const (
-	ev_newclient  = 1
-	ev_disconnect = 2
-	ev_error      = 3
-	ev_message    = 4
-)
-
-type event struct {
-	eventType byte
-	session   kendynet.StreamSession
-	data      interface{}
-}
-
 
 /*
 *  使用event_queue把多线程事件转换为单线程处理 
@@ -57,16 +42,27 @@ func server(service string) {
 				session.SetEncoder(codec.NewPbEncoder(4096))
 				session.SetReceiver(codec.NewPBReceiver(4096))
 				session.SetCloseCallBack(func (sess kendynet.StreamSession, reason string) {
-					evQueue.Post(&event{eventType:ev_error,session:sess,data:reason})
+					evQueue.Post(func () {
+						atomic.AddInt32(&clientcount,-1)
+						delete(clientMap,session)				
+					})
 				})
 				session.Start(func (ev *kendynet.Event) {
 					if ev.EventType == kendynet.EventTypeError {
-						evQueue.Post(&event{eventType:ev_disconnect,session:session,data:ev.Data})
+						session.Close(ev.Data.(error).Error(),0)
 					} else {
-						evQueue.Post(&event{eventType:ev_message,session:session,data:ev.Data})
+						evQueue.Post(func () {
+							for s,_ := range clientMap {
+								s.Send(ev.Data.(proto.Message))
+							}
+							atomic.AddInt32(&packetcount,int32(len(clientMap)))				
+						})
 					}
 				})
-				evQueue.Post(&event{eventType:ev_newclient,session:session})
+				evQueue.Post(func () {
+					atomic.AddInt32(&clientcount,1)
+					clientMap[session] = true					
+				})
 			})
 
 			if nil != err {
@@ -74,23 +70,7 @@ func server(service string) {
 			}
 		}()
 
-		evQueue.Start(func (ev interface{}) {
-			_ev := ev.(*event)
-			if _ev.eventType == ev_newclient {
-				atomic.AddInt32(&clientcount,1)
-				clientMap[_ev.session] = true
-			} else if _ev.eventType == ev_disconnect {
-				atomic.AddInt32(&clientcount,-1)
-				delete(clientMap,_ev.session)
-			} else if _ev.eventType == ev_error {
-				_ev.session.Close(_ev.data.(error).Error(),0)
-			} else {
-				for s,_ := range clientMap {
-					s.Send(_ev.data.(proto.Message))
-				}
-				atomic.AddInt32(&packetcount,int32(len(clientMap)))
-			}
-		})
+		evQueue.Run()
 
 	} else {
 		fmt.Printf("NewTcpServer failed %s\n",err)

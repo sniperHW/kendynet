@@ -6,9 +6,21 @@ import (
 	"sync/atomic"
 )
 
+
+const (
+	tt_noargs  = 1   //无参回调
+	tt_varargs = 2   //不定参数回调
+)
+
+type element struct {
+	tt            int
+	args          []interface{}
+	callback      interface{}
+}
+
 type EventQueue struct {
 	eventQueue *util.BlockQueue
-	started    int32
+	started    int32	
 }
 
 func NewEventQueue() *EventQueue {
@@ -17,19 +29,31 @@ func NewEventQueue() *EventQueue {
 	return r
 }
 
-func (this *EventQueue) Post(ev interface{}) error {
-	return this.eventQueue.Add(ev)
+func (this *EventQueue) Post(callback interface{},args ...interface{}) {
+	
+	e := element{}
+
+	switch callback.(type) {
+	case func():
+		e.tt = tt_noargs
+		e.callback = callback
+		break
+	case func([]interface{}):
+		e.tt = tt_varargs
+		e.callback = callback
+		e.args = args
+		break
+	default:
+		panic("invaild callback type")
+	}
+	this.eventQueue.Add(e)
 }
 
 func (this *EventQueue) Close() {
 	this.eventQueue.Close()
 }
 
-func (this *EventQueue) Start(onEvent func(interface{})) error {
-
-	if nil == onEvent {
-		return fmt.Errorf("onEvent == nil")
-	}
+func (this *EventQueue) Run() error {
 
 	if !atomic.CompareAndSwapInt32(&this.started, 0, 1) {
 		return fmt.Errorf("already started")
@@ -37,12 +61,16 @@ func (this *EventQueue) Start(onEvent func(interface{})) error {
 
 	for {
 		closed, localList := this.eventQueue.Get()
+		for _,v := range(localList) {
+			e := v.(element)
+			if e.tt == tt_noargs {
+				e.callback.(func())()
+			} else {
+				e.callback.(func([]interface{}))(e.args)
+			}
+		}
 		if closed {
 			return nil
-		}
-		size := len(localList)
-		for i := 0; i < size; i++ {
-			onEvent(localList[i])
 		}
 	}
 }
