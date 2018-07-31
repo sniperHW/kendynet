@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/sniperHW/kendynet/util"
 	"sync/atomic"
+	"runtime"
 )
 
 
@@ -46,11 +47,28 @@ func (this *EventQueue) Post(callback interface{},args ...interface{}) {
 	default:
 		panic("invaild callback type")
 	}
-	this.eventQueue.Add(e)
+	this.eventQueue.Add(&e)
 }
 
 func (this *EventQueue) Close() {
 	this.eventQueue.Close()
+}
+
+func pcall(e *element) {
+
+	defer func(){
+		if r := recover(); r != nil {
+			buf := make([]byte, 65535)
+			l := runtime.Stack(buf, false)
+			Errorf("%v: %s\n", r, buf[:l])
+		}			
+	}()	
+
+	if e.tt == tt_noargs {
+		e.callback.(func())()
+	} else {
+		e.callback.(func([]interface{}))(e.args)
+	}	
 }
 
 func (this *EventQueue) Run() error {
@@ -62,12 +80,7 @@ func (this *EventQueue) Run() error {
 	for {
 		closed, localList := this.eventQueue.Get()
 		for _,v := range(localList) {
-			e := v.(element)
-			if e.tt == tt_noargs {
-				e.callback.(func())()
-			} else {
-				e.callback.(func([]interface{}))(e.args)
-			}
+			pcall(v.(*element))
 		}
 		if closed {
 			return nil
