@@ -32,6 +32,10 @@ func (this *st) fun() {
 } 
 
 func main() {
+
+	//设置go程池,将同步任务交给go程池执行
+	asyn.SetRoutinePool(asyn.NewRoutinePool(1024))
+
 	queue := kendynet.NewEventQueue()
 	s := st{data:100}
 

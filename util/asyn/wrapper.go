@@ -10,13 +10,16 @@ import(
 	"reflect"
 )
 
+var routinePool_ * routinePool
+
 type caller struct {
 	queue     *kendynet.EventQueue
 	oriFunc	   reflect.Value
 }
 
 func (this *caller) Call(callback func([]interface{}),args ...interface{}) {
-	go func () {
+
+	f := func () {
 		in := []reflect.Value{}
 		for _,v := range(args) {
 			in = append(in,reflect.ValueOf(v))
@@ -27,7 +30,14 @@ func (this *caller) Call(callback func([]interface{}),args ...interface{}) {
 			ret = append(ret,v.Interface())
 		}
 		this.queue.Post(callback,ret...)
-	}()
+	}
+
+	if nil == routinePool_ {
+		go f()
+	} else {
+		//设置了go程池，交给go程池执行
+		routinePool_.AddTask(f)
+	}
 }
 
 func AsynWrap(queue *kendynet.EventQueue,oriFunc interface{}) *caller {
@@ -46,5 +56,9 @@ func AsynWrap(queue *kendynet.EventQueue,oriFunc interface{}) *caller {
 		queue : queue,
 		oriFunc : v,
 	}
+}
+
+func SetRoutinePool(pool *routinePool) {
+	routinePool_ = pool
 }
 
