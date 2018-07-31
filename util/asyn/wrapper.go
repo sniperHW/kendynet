@@ -31,6 +31,11 @@ func (this *caller) Call(callback func([]interface{}),args ...interface{}) {
 }
 
 func AsynWrap(queue *kendynet.EventQueue,oriFunc interface{}) *caller {
+
+	if nil == queue {
+		return nil
+	}
+
 	return &caller{
 		queue : queue,
 		oriFunc : reflect.ValueOf(oriFunc),

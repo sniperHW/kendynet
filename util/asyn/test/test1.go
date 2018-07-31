@@ -7,7 +7,6 @@ import(
 	"time"
 )
 
-
 func mySleep1() int {
 	fmt.Println("mySleep1 sleep")
 	time.Sleep(time.Second)
@@ -22,10 +21,23 @@ func mySleep2(s int) int {
 	return 2	
 }
 
+
+type st struct {
+	data int
+}
+
+func (this *st) fun() {
+	time.Sleep(time.Second * 3)
+	fmt.Println("fun",this.data)
+} 
+
 func main() {
 	queue := kendynet.NewEventQueue()
+	s := st{data:100}
+
 	caller1 := asyn.AsynWrap(queue,mySleep1)
 	caller2 := asyn.AsynWrap(queue,mySleep2)
+	caller3 := asyn.AsynWrap(queue,s.fun)
 
 	caller1.Call(func(ret []interface{}) {
 		fmt.Println(ret[0].(int))
@@ -33,8 +45,13 @@ func main() {
 
 	caller2.Call(func(ret []interface{}) {
 		fmt.Println(ret[0].(int))
-		queue.Close()
 	},2)
+
+	caller3.Call(func(ret []interface{}) {
+		fmt.Println("st.fun callback")
+		queue.Close()
+	})
+
 
 	queue.Run()
 }
