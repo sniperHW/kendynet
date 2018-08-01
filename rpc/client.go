@@ -7,9 +7,7 @@ import (
 	"runtime"	
 	"github.com/sniperHW/kendynet/util"
 	"github.com/sniperHW/kendynet"
-	//"github.com/sniperHW/kendynet/socket/stream_socket"
 	"os"
-	//"net"
 )
 
 var ErrCallTimeout error = fmt.Errorf("rpc call timeout")
@@ -21,7 +19,6 @@ type reqContext struct {
 	seq         uint64
 	onResponse  RPCResponseHandler
 	deadline    time.Time
-	eventQueue *kendynet.EventQueue
 	timestamp   int64 
 }
 
