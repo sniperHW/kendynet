@@ -6,7 +6,7 @@ package asyn
 */ 
 
 import(
-	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/event"
 	"reflect"
 )
 
@@ -14,7 +14,7 @@ var routinePool_ * routinePool
 
 type wrapFunc func(callback func([]interface{}),args ...interface{})
 
-func AsynWrap(queue *kendynet.EventQueue,oriFunc interface{}) wrapFunc {
+func AsynWrap(queue *event.EventQueue,oriFunc interface{}) wrapFunc {
 
 	if nil == queue {
 		return nil

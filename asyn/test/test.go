@@ -3,7 +3,7 @@ package main
 
 import(
 	"time"
-	"github.com/sniperHW/kendynet/util/asyn"
+	"github.com/sniperHW/kendynet/asyn"
 	"fmt"
 	"context"
 	"sync"

@@ -2,8 +2,8 @@ package main
 
 import(
 	"fmt"
-	"github.com/sniperHW/kendynet"
-	"github.com/sniperHW/kendynet/util/asyn"
+	"github.com/sniperHW/kendynet/event"
+	"github.com/sniperHW/kendynet/asyn"
 	"time"
 )
 
@@ -36,7 +36,7 @@ func main() {
 	//设置go程池,将同步任务交给go程池执行
 	asyn.SetRoutinePool(asyn.NewRoutinePool(1024))
 
-	queue := kendynet.NewEventQueue()
+	queue := event.NewEventQueue()
 	s := st{data:100}
 
 	wrap1 := asyn.AsynWrap(queue,mySleep1)

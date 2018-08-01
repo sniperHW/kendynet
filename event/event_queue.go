@@ -3,6 +3,7 @@ package event
 import (
 	"fmt"
 	"github.com/sniperHW/kendynet/util"
+	"github.com/sniperHW/kendynet"
 	"sync/atomic"
 	"runtime"
 )
@@ -55,7 +56,7 @@ func pcall(tt int,callback interface{},args []interface{}) {
 		if r := recover(); r != nil {
 			buf := make([]byte, 65535)
 			l := runtime.Stack(buf, false)
-			Errorf("%v: %s\n", r, buf[:l])
+			kendynet.Errorf("%v: %s\n", r, buf[:l])
 		}			
 	}()	
 
