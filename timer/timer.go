@@ -6,6 +6,7 @@ import(
 	"sync"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/util"
+	"github.com/sniperHW/kendynet/event"
 	"runtime"
 	"fmt"
 )
@@ -16,7 +17,7 @@ type timer struct {
 	heapIdx    uint32	
 	id         TimerID
 	expired    time.Time               //到期时间
-	eventQue  *kendynet.EventQueue     
+	eventQue  *event.EventQueue     
 	timeout    time.Duration
 	repeat     bool                    //是否重复定时器
 	callback   func(TimerID)
@@ -176,7 +177,7 @@ func loop() {
 *  返回定时器ID,后面要取消定时器时需要使用这个ID
 */
 
-func newTimer(timeout time.Duration,repeat bool,eventQue *kendynet.EventQueue,callback func(TimerID)) TimerID {
+func newTimer(timeout time.Duration,repeat bool,eventQue *event.EventQueue,callback func(TimerID)) TimerID {
 	if nil == callback {
 		return 0
 	}
@@ -201,12 +202,12 @@ func newTimer(timeout time.Duration,repeat bool,eventQue *kendynet.EventQueue,ca
 }
 
 //一次性定时器
-func Once(timeout time.Duration,eventQue *kendynet.EventQueue,callback func(TimerID)) TimerID {
+func Once(timeout time.Duration,eventQue *event.EventQueue,callback func(TimerID)) TimerID {
 	return newTimer(timeout,false,eventQue,callback)
 }
 
 //重复定时器
-func Repeat(timeout time.Duration,eventQue *kendynet.EventQueue,callback func(TimerID)) TimerID {
+func Repeat(timeout time.Duration,eventQue *event.EventQueue,callback func(TimerID)) TimerID {
 	return newTimer(timeout,true,eventQue,callback)
 }
 
