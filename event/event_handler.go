@@ -11,55 +11,51 @@ const (
 )
 
 const (
-	Mode_once        = 1 << 1   //一次性，handler触发之后被移除
-	Mode_queue   	 = 1 << 2   //队列模式，事件触发时按数组顺序依次执行handler
-	Mode_exclusive   = 1 << 3   //排它模式，只有队列尾部的handler被触发 
+	status_register  = 1
+	status_watting   = 2
+	status_emitting  = 3
+	status_remove    = 4
 )
 
-type HandlerID int64
-
-type handler struct {
-	id            HandlerID
+type Handle struct {
 	tt            int
-	args          []interface{}
 	callback      interface{}
-	mode          int
-	prev         *handler
-	next         *handler
+	once          bool
+	prev         *Handle
+	next         *Handle
+	mtx      	  sync.Mutex
+	status        int
+	event         interface{}
+	slot         *handlerSlot
 }
 
 type handlerSlot struct {
-	head     	handler
-	tail     	handler
-	nextID   	int64
-	mtx      	sync.Mutex
-	emitting  	bool
+	head     	Handle
+	tail     	Handle
 }
 
-func (this *handlerSlot) register(mode int,callback interface{}) (HandlerID,error) {
-	
-	once  	  := false
-	exclusive := false
-	queue     := false
+type EventHandler struct {
+	slots map[interface{}]*handlerSlot
+	processQueue *EventQueue
+}
 
-	if mode & Mode_once > 0 {
-		once = true
+
+func NewEventHandler(processQueue *EventQueue) *EventHandler {
+	if nil == processQueue {
+		return nil
+	} else {
+		return &EventHandler{
+			slots : map[interface{}]*handlerSlot{},
+			processQueue : processQueue,
+		}
 	}
+}
 
-	if mode & Mode_exclusive > 0 {
-		exclusive = true
-	}
 
-	if mode & Mode_queue > 0 {
-		queue = true
-	}
+func (this *EventHandler) Register(event interface{},once bool,callback interface{}) (*Handle,error) {
 
-	if !once && !exclusive && !queue {
-		return HandlerID(0),fmt.Errorf("invaild mode:%d",mode)
-	}
-
-	if exclusive && queue {
-		return HandlerID(0),fmt.Errorf("invaild mode:%d",mode)		
+	if nil == event {
+		return nil,fmt.Errorf("event == nil")
 	}
 
 	var tt int
@@ -72,166 +68,142 @@ func (this *handlerSlot) register(mode int,callback interface{}) (HandlerID,erro
 		tt = tt_varargs
 		break
 	default:
-		return HandlerID(0),fmt.Errorf("invaild callback")	
+		return nil,fmt.Errorf("invaild callback type")
 	}
-
-	defer this.mtx.Unlock()
-	this.mtx.Lock()
-
-	last := this.tail.prev
-
-	if last.mode & Mode_exclusive > 0 && !exclusive {
-		//尾部的handler处于mutex模式，禁止向尾部添加非mutex模式的handler
-		return HandlerID(0),fmt.Errorf("tail in exclusive mode")
-	}
-	this.nextID++
-	h := &handler{
-		id 		 : HandlerID(this.nextID),
-		tt 		 : tt,
+	
+	handle := &Handle{
+		tt       : tt,
 		callback : callback,
-		mode     : mode,	
+		once     : once,
+		status   : status_register,
+		event    : event,
 	}
 
-	h.next = &this.tail
-	h.prev = this.tail.prev
-
-	this.tail.prev.next = h
-	this.tail.prev = h
-
-	return h.id,nil
-
-}
-
-func (this *handlerSlot) emit(args ...interface{}) {
-
-	this.mtx.Lock()
-	if this.emitting {
-		this.mtx.Unlock()
-		//在handler中再次emit事件(死循环)
-		panic("emit recursive")
-	}
-	last := this.tail.prev
-	if last == &this.head {
-		//empty
-		this.mtx.Unlock()
-		return
-	}
-	this.emitting = true
-	handlers := make([]*handler,0)
-	if last != &this.head {
-		if last.mode & Mode_exclusive > 0 {
-			handlers = append(handlers,last)
-		} else {
-			cur := this.head.next
-			for cur != &this.tail {
-				handlers = append(handlers,cur)
-				cur = cur.next
+	this.processQueue.Post(func() {
+		slot,ok := this.slots[event]
+		if !ok {
+			slot = &handlerSlot{
 			}
+			slot.head.next = &slot.tail
+			slot.tail.prev = &slot.head
+			this.slots[event] = slot 
 		}
-	}
-	this.mtx.Unlock()	
+		slot.register(handle)		
+	})
+	return handle,nil
+}
 
-	//必须在不持有锁的状态下执行handler
-	for _,v := range(handlers) {
-		pcall(v.tt,v.callback,v.args)
-		if v.mode & Mode_once > 0 {
-			//一次性，执行完之后要删除
-			this.remove(v.id)
+func (this *EventHandler) Remove(handle *Handle) bool {
+	defer handle.mtx.Unlock()
+	handle.mtx.Lock()
+	if handle.status == status_emitting {
+		/* 正在触发，设置once标记
+		*  当回调执行完毕回来发现once标记后执行删除
+		*/
+		handle.once = true
+	} else {
+		if handle.status != status_watting {
+			return false
 		}
+		handle.status = status_remove
+		this.processQueue.Post(func() {
+			slot,ok := this.slots[handle.event]
+			if ok {
+				slot.remove(handle)
+			}
+		})
 	}
-
-	this.mtx.Lock()
-	this.emitting = false
-	this.mtx.Unlock()
-
-}
-
-func (this *handlerSlot) clear() {
-	defer this.mtx.Unlock()
-	this.mtx.Lock()
-	this.head.next = &this.tail
-	this.tail.prev = &this.head 
-}
-
-func (this *handlerSlot) remove(id HandlerID) {
-
-
-	defer this.mtx.Unlock()
-	this.mtx.Lock()
-
-	cur := this.head.next
-
-	for cur != &this.tail {
-		if cur.id == id {
-			break
-		} else {
-			cur = cur.next
-		}
-	}
-
-	if cur != &this.tail {
-		cur.prev.next = cur.next
-		cur.next.prev = cur.prev
-	}
-}
-
-type EventHandler struct {
-	mtx   sync.Mutex
-	slots map[interface{}]*handlerSlot
-}
-
-
-func (this *EventHandler) Register(mode int,event interface{},callback interface{}) (HandlerID,error) {
-
-	this.mtx.Lock()
-	slot,ok := this.slots[event]
-	if !ok {
-		slot = &handlerSlot{
-			nextID : 0,
-		}
-
-		slot.head.next = &slot.tail
-		slot.tail.prev = &slot.head
-
-		this.slots[event] = slot 
-
-	}
-	this.mtx.Unlock()
-	return slot.register(mode,callback)
-
-}
-
-func (this *EventHandler) Remove(event interface{},id HandlerID) {
-	this.mtx.Lock()
-	slot,ok := this.slots[event]
-	this.mtx.Unlock()
-	if ok {
-		slot.remove(id)
-	}	
+	return true
 }
 
 func (this *EventHandler) Clear(event interface{}) {
-	this.mtx.Lock()
-	slot,ok := this.slots[event]
-	this.mtx.Unlock()
-	if ok {
-		slot.clear()
-	}
+	this.processQueue.Post(func() {
+		slot,ok := this.slots[event]
+		if ok {
+			slot.clear()
+		}
+	})
 }
 
 //触发事件
 func (this *EventHandler) Emit(event interface{},args ...interface{}) {
-	this.mtx.Lock()
-	slot,ok := this.slots[event]
-	this.mtx.Unlock()
-	if ok {
-		slot.emit(args...)
-	}
+	this.processQueue.Post(func() {
+		slot,ok := this.slots[event]
+		if ok {
+			slot.emit(args...)
+		}
+	})
 }
 
 
-func NewEventHandler() *EventHandler {
-	return &EventHandler{
-		slots : map[interface{}]*handlerSlot{},
+func (this *handlerSlot) register(handle *Handle) {
+	
+	defer handle.mtx.Unlock()
+	handle.mtx.Lock()
+	if handle.status == status_remove {
+		return
 	}
+
+	handle.next = &this.tail
+	handle.prev = this.tail.prev
+
+	this.tail.prev.next = handle
+	this.tail.prev = handle
+
+	handle.status = status_watting
+	handle.slot   = this
+
+}
+
+func (this *handlerSlot) emit(args ...interface{}) {
+	cur := this.head.next
+	for cur != &this.tail {
+		cur.mtx.Lock()
+		if cur.status == status_watting {
+			cur.status = status_emitting
+			cur.mtx.Unlock()
+			pcall(cur.tt,cur.callback,args)
+			cur.mtx.Lock()
+			if cur.once {
+				cur.status = status_remove
+			} else {
+				cur.status = status_watting
+			}
+			cur.mtx.Unlock()
+			if cur.status == status_remove {
+				cur = this.remove(cur)
+			} else {
+				cur = cur.next
+			}
+		} else {
+			cur.status = status_remove
+			cur.mtx.Unlock()
+			cur = this.remove(cur)
+		}
+	}
+}
+
+func (this *handlerSlot) clear() { 
+	cur := this.head.next
+	for cur != &this.tail {
+		cur.mtx.Lock()
+
+		cur.status = status_remove
+		cur.mtx.Unlock()
+		cur = this.remove(cur)
+	}
+}
+
+func (this *handlerSlot) remove(handle *Handle) *Handle {
+	if handle.next == nil || handle.prev == nil || handle.slot != this {
+		return nil
+	}
+	next := handle.next
+
+	handle.prev.next = handle.next
+	handle.next.prev = handle.prev
+	handle.next = nil
+	handle.prev = nil
+	handle.slot = nil
+	return next
 }
