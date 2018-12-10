@@ -38,7 +38,7 @@ func AsynWrap(queue *event.EventQueue,oriFunc interface{}) wrapFunc {
 				ret = append(ret,v.Interface())
 			}
 			if nil != callback {
- 				queue.Post(callback,ret...)
+ 				queue.PostNoWait(callback,ret...)
  			}
 		}
 

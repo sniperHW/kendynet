@@ -364,7 +364,7 @@ func (this *WebSocket) Close(reason string, delay time.Duration) {
 	if delay > 0 {
 		this.shutdownRead()
 		message := gorilla.FormatCloseMessage(1000, reason)
-		this.sendQue.Add(NewMessage(WSCloseMessage,message))
+		this.sendQue.AddNoWait(NewMessage(WSCloseMessage,message))
 		this.sendQue.Close()
 		ticker := time.NewTicker(delay)
 		if (this.flag & started) == 0 {

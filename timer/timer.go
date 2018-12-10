@@ -119,7 +119,7 @@ func loop() {
 					if nil == t.eventQue {
 						pcall(t.callback,t.id)
 					} else {
-						t.eventQue.Post(func () {
+						t.eventQue.PostNoWait(func () {
 							pcall(t.callback,t.id)
 						})
 					}

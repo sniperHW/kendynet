@@ -141,7 +141,7 @@ type RPCClient struct {
 
 //通道关闭后调用
 func (this *RPCClient) OnChannelClose(err error) {
-	reqMgr.queue.Post(func(){
+	reqMgr.queue.PostNoWait(func(){
 		reqMgr.onClose(this.channel,err)
 	})
 }
@@ -153,7 +153,7 @@ func (this *RPCClient) OnRPCMessage(message interface{}) {
 		Errorf(util.FormatFileLine("RPCClient rpc message from(%s) decode err:%s\n",this.channel.Name,err.Error()))
 		return
 	}	
-	reqMgr.queue.Post(func(){
+	reqMgr.queue.PostNoWait(func(){
 		reqMgr.onResponse(this.channel,msg)
 	})
 }
@@ -201,7 +201,7 @@ func (this *RPCClient) AsynCall(method string,arg interface{},timeout uint32,cb 
 		return fmt.Errorf("cb == nil")
 	}
 
-	reqMgr.queue.Post(func (){
+	reqMgr.queue.PostNoWait(func (){
 		req := &RPCRequest{ 
 			Method : method,
 			Seq : atomic.AddUint64(&this.sequence,1), 
@@ -284,7 +284,7 @@ func InitClient(queue *event.EventQueue) {
 		go func() {
 			for {
 				time.Sleep(time.Duration(10)*time.Millisecond)
-				reqMgr.queue.Post(func (){
+				reqMgr.queue.PostNoWait(func (){
 					reqMgr.checkTimeout()				
 				})
 			}

@@ -42,7 +42,7 @@ func server(service string) {
 				session.SetEncoder(codec.NewPbEncoder(4096))
 				session.SetReceiver(codec.NewPBReceiver(4096))
 				session.SetCloseCallBack(func (sess kendynet.StreamSession, reason string) {
-					evQueue.Post(func () {
+					evQueue.PostNoWait(func () {
 						atomic.AddInt32(&clientcount,-1)
 						delete(clientMap,session)				
 					})
@@ -51,7 +51,7 @@ func server(service string) {
 					if ev.EventType == kendynet.EventTypeError {
 						session.Close(ev.Data.(error).Error(),0)
 					} else {
-						evQueue.Post(func () {
+						evQueue.PostNoWait(func () {
 							for s,_ := range clientMap {
 								s.Send(ev.Data.(proto.Message))
 							}
@@ -59,7 +59,7 @@ func server(service string) {
 						})
 					}
 				})
-				evQueue.Post(func () {
+				evQueue.PostNoWait(func () {
 					atomic.AddInt32(&clientcount,1)
 					clientMap[session] = true					
 				})
