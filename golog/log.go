@@ -83,7 +83,7 @@ type Logger struct {
 // The flag argument defines the logging properties.
 
 func New(name string,fileOutput *OutputLogger) *Logger {
-	l := &Logger{flag: LstdFlags, level: Level_Debug, name: name, panicLevel: Level_Fatal, fileOutput:fileOutput}
+	l := &Logger{flag: LstdFlags | Lshortfile, level: Level_Debug, name: name, panicLevel: Level_Fatal, fileOutput:fileOutput}
 	return l
 }
 
@@ -222,11 +222,11 @@ func (self *Logger) Log(c Color, level Level, format string, v ...interface{}) {
 	}
 
 	if enableStdOut {
-		self.Output(3, prefix, text, c, stdOutLogger)
+		self.Output(4, prefix, text, c, stdOutLogger)
 	}
 
 	if self.fileOutput != nil {
-		self.Output(3, prefix, text, NoColor, self.fileOutput)
+		self.Output(4, prefix, text, NoColor, self.fileOutput)
 	}
 
 	if int(level) >= int(self.panicLevel) {

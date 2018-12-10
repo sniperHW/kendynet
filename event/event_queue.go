@@ -20,10 +20,37 @@ type EventQueue struct {
 	started    int32	
 }
 
-func NewEventQueue() *EventQueue {
+func NewEventQueueWithName(name string,fullSize ...int) *EventQueue {
 	r := &EventQueue{}
-	r.eventQueue = util.NewBlockQueue()
+	r.eventQueue = util.NewBlockQueueWithName(name,fullSize...)
 	return r
+}
+
+func NewEventQueue(fullSize ...int) *EventQueue {
+	r := &EventQueue{}
+	r.eventQueue = util.NewBlockQueue(fullSize...)
+	return r
+}
+
+
+func (this *EventQueue) PostNoWait(callback interface{},args ...interface{}) {
+	
+	e := element{}
+
+	switch callback.(type) {
+	case func():
+		e.tt = tt_noargs
+		e.callback = callback
+		break
+	case func([]interface{}):
+		e.tt = tt_varargs
+		e.callback = callback
+		e.args = args
+		break
+	default:
+		panic("invaild callback type")
+	}
+	this.eventQueue.AddNoWait(&e)
 }
 
 func (this *EventQueue) Post(callback interface{},args ...interface{}) {

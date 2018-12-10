@@ -37,7 +37,9 @@ func AsynWrap(queue *event.EventQueue,oriFunc interface{}) wrapFunc {
 			for _,v := range(out) {
 				ret = append(ret,v.Interface())
 			}
-			queue.Post(callback,ret...)
+			if nil != callback {
+ 				queue.Post(callback,ret...)
+ 			}
 		}
 
 		if nil == routinePool_ {

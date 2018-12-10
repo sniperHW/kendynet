@@ -1,43 +1,44 @@
 /*
 *  tcp或unix域套接字会话
-*/
+ */
 
 package stream_socket
 
 import (
-	   "net"
-	   "time"
-	   "sync"
-	   //"bufio"
-	   "io"
-	   "github.com/sniperHW/kendynet"
-	   "github.com/sniperHW/kendynet/util"
-	   //"fmt"
+	"net"
+	"sync"
+	"time"
+	"bufio"
+	"io"
+	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/util"
 )
 
 const (
-	started      = (1 << 0)
-	closed       = (1 << 1)
-	wclosed      = (1 << 2)
-	rclosed      = (1 << 3)
+	started = (1 << 0)
+	closed  = (1 << 1)
+	wclosed = (1 << 2)
+	rclosed = (1 << 3)
 )
 
 type StreamSocket struct {
-	conn 			  net.Conn
-	ud   			  interface{}
-	sendQue          *util.BlockQueue
-	receiver          kendynet.Receiver
-	encoder           kendynet.EnCoder
-	flag              int32
-    SendTimeout 	  time.Duration
-    RecvTimeout       time.Duration 
-	mutex             sync.Mutex
-	onClose           func (kendynet.StreamSession,string)
-	onEvent           func (*kendynet.Event)
-	closeReason       string
-	sendCloseChan     chan int 
+	conn          net.Conn
+	ud            interface{}
+	sendQue       *util.BlockQueue
+	receiver      kendynet.Receiver
+	encoder       kendynet.EnCoder
+	flag          int32
+	SendTimeout   time.Duration
+	RecvTimeout   time.Duration
+	mutex         sync.Mutex
+	onClose       func(kendynet.StreamSession, string)
+	onEvent       func(*kendynet.Event)
+	closeReason   string
+	sendCloseChan chan int
+	WantSend      uint64
+	Sended        uint64
+	nextShow      int64
 }
-
 
 func (this *StreamSocket) SetUserData(ud interface{}) {
 	this.mutex.Lock()
@@ -73,9 +74,9 @@ func (this *StreamSocket) doClose() {
 	onClose := this.onClose
 	this.mutex.Unlock()
 	if nil != onClose {
-		onClose(this,this.closeReason)
+		onClose(this, this.closeReason)
 	}
-} 
+}
 
 func (this *StreamSocket) shutdownRead() {
 	switch this.conn.(type) {
@@ -86,7 +87,7 @@ func (this *StreamSocket) shutdownRead() {
 		this.conn.(*net.UnixConn).CloseRead()
 		break
 	}
-} 
+}
 
 func (this *StreamSocket) Close(reason string, delay time.Duration) {
 	this.mutex.Lock()
@@ -97,7 +98,7 @@ func (this *StreamSocket) Close(reason string, delay time.Duration) {
 
 	this.closeReason = reason
 	this.flag |= (closed | rclosed)
-	if this.flag & wclosed > 0 {
+	if this.flag&wclosed > 0 {
 		delay = 0 //写端已经关闭，delay参数没有意义设置为0
 	}
 
@@ -108,29 +109,29 @@ func (this *StreamSocket) Close(reason string, delay time.Duration) {
 		if delay <= 0 {
 			this.sendQue.Clear()
 		}
-	} 		
+	}
 	if delay > 0 {
 		this.shutdownRead()
 		ticker := time.NewTicker(delay)
 		go func() {
 			/*
-			 *	delay > 0,sendThread最多需要经过delay秒之后才会结束， 
+			 *	delay > 0,sendThread最多需要经过delay秒之后才会结束，
 			 *	为了避免阻塞调用Close的goroutine,启动一个新的goroutine在chan上等待事件
-			*/
+			 */
 			select {
-				case <- this.sendCloseChan:
-				case <- ticker.C:
+			case <-this.sendCloseChan:
+			case <-ticker.C:
 			}
 			ticker.Stop()
-			this.doClose()		
+			this.doClose()
 		}()
-	} else{
+	} else {
 		this.doClose()
 	}
-	
+
 }
-    
-func (this *StreamSocket) SetCloseCallBack(cb func (kendynet.StreamSession, string)) {
+
+func (this *StreamSocket) SetCloseCallBack(cb func(kendynet.StreamSession, string)) {
 	this.mutex.Lock()
 	defer this.mutex.Unlock()
 	this.onClose = cb
@@ -147,18 +148,17 @@ func (this *StreamSocket) SetReceiver(r kendynet.Receiver) {
 	defer this.mutex.Unlock()
 	if (this.flag & started) > 0 {
 		return
-	}	
+	}
 	this.receiver = r
 }
 
 func (this *StreamSocket) sendMessage(msg kendynet.Message) error {
 	if msg == nil {
 		return kendynet.ErrInvaildBuff
-	} else if (this.flag & closed) > 0 || (this.flag & wclosed) > 0 {
+	} else if (this.flag&closed) > 0 || (this.flag&wclosed) > 0 {
 		return kendynet.ErrSocketClose
 	} else {
-		//this.flush()
-		if nil != this.sendQue.Add(msg) {
+		if nil != this.sendQue.AddNoWait(msg) {
 			return kendynet.ErrSocketClose
 		}
 	}
@@ -170,14 +170,14 @@ func (this *StreamSocket) Send(o interface{}) error {
 		return kendynet.ErrInvaildObject
 	}
 
-	this.mutex.Lock()	
-	defer this.mutex.Unlock()	
+	this.mutex.Lock()
+	defer this.mutex.Unlock()
 
 	if this.encoder == nil {
 		return kendynet.ErrInvaildEncoder
 	}
 
-	msg,err := this.encoder.EnCode(o)
+	msg, err := this.encoder.EnCode(o)
 
 	if err != nil {
 		return err
@@ -185,9 +185,9 @@ func (this *StreamSocket) Send(o interface{}) error {
 
 	return this.sendMessage(msg)
 }
-	
+
 func (this *StreamSocket) SendMessage(msg kendynet.Message) error {
-	this.mutex.Lock()	
+	this.mutex.Lock()
 	defer this.mutex.Unlock()
 	return this.sendMessage(msg)
 }
@@ -202,13 +202,13 @@ func recvThreadFunc(session *StreamSocket) {
 		recvTimeout := session.RecvTimeout
 
 		if recvTimeout > 0 {
-			session.conn.SetReadDeadline(time.Now().Add(recvTimeout))		
-			p,err = session.receiver.ReceiveAndUnpack(session)
+			session.conn.SetReadDeadline(time.Now().Add(recvTimeout))
+			p, err = session.receiver.ReceiveAndUnpack(session)
 			session.conn.SetReadDeadline(time.Time{})
 		} else {
-			p,err = session.receiver.ReceiveAndUnpack(session)
+			p, err = session.receiver.ReceiveAndUnpack(session)
 		}
-		
+
 		if session.isClosed() {
 			//上层已经调用关闭，所有事件都不再传递上去
 			break
@@ -223,7 +223,7 @@ func recvThreadFunc(session *StreamSocket) {
 				if err == io.EOF {
 					session.flag |= rclosed
 				} else if !kendynet.IsNetTimeout(err) {
-					kendynet.Errorf("ReceiveAndUnpack error:%s\n",err.Error())
+					kendynet.Errorf("ReceiveAndUnpack error:%s\n", err.Error())
 					session.flag |= (rclosed | wclosed)
 				}
 				session.mutex.Unlock()
@@ -231,9 +231,9 @@ func recvThreadFunc(session *StreamSocket) {
 				event.EventType = kendynet.EventTypeMessage
 				event.Data = p
 			}
-			/*出现错误不主动退出循环，除非用户调用了session.Close()		
-	        * 避免用户遗漏调用Close(不调用Close会持续通告错误)
-	        */	
+			/*出现错误不主动退出循环，除非用户调用了session.Close()
+			 * 避免用户遗漏调用Close(不调用Close会持续通告错误)
+			 */
 			session.onEvent(&event)
 			if session.isClosed() {
 				break
@@ -242,7 +242,7 @@ func recvThreadFunc(session *StreamSocket) {
 	}
 }
 
-/*
+
 func sendThreadFunc(session *StreamSocket) {
 
 	var err error
@@ -251,7 +251,8 @@ func sendThreadFunc(session *StreamSocket) {
 		session.sendCloseChan <- 1
 	}()
 
-	writer := bufio.NewWriter(session.conn)
+	writer := bufio.NewWriterSize(session.conn,65535*2)
+
 	for {
 		closed,localList := session.sendQue.Get()
 		size := len(localList)
@@ -261,6 +262,9 @@ func sendThreadFunc(session *StreamSocket) {
 
 		for i := 0; i < size; i++ {
 			msg := localList[i].(kendynet.Message)
+
+
+
 			data := msg.Bytes()
 			for data != nil || (i == (size - 1) && writer.Buffered() > 0) {
 				if data != nil {
@@ -271,20 +275,22 @@ func sendThreadFunc(session *StreamSocket) {
 						s = len(data)
 					}
 					writer.Write(data[:s])
-					
+
 					if s != len(data) {
 						data = data[s:]
+						//kendynet.Errorln("s != len(data)")
 					} else {
 						data = nil
 					}
 				}
 
 				if writer.Available() == 0 || i == (size - 1) {
+
 					timeout := session.SendTimeout
 					if timeout > 0 {
 						session.conn.SetWriteDeadline(time.Now().Add(timeout))
 						err = writer.Flush()
-						session.conn.SetWriteDeadline(time.Time{})	
+						session.conn.SetWriteDeadline(time.Time{})
 					} else {
 						err = writer.Flush()
 					}
@@ -298,62 +304,62 @@ func sendThreadFunc(session *StreamSocket) {
 							kendynet.Errorf("writer.Flush error:%s\n",err.Error())
 							session.mutex.Lock()
 							session.flag |= wclosed
-							session.mutex.Unlock()							
+							session.mutex.Unlock()
 						}
 						event := &kendynet.Event{Session:session,EventType:kendynet.EventTypeError,Data:err}
 						session.onEvent(event)
 						if session.sendQue.Closed() {
 							return
-						}						
+						}
 					}
 				}
 			}
 		}
 	}
 }
-*/
+/*
 
 type sendBuffer struct {
-	e        int
-	bytes    []byte
+	b       int
+	e       int
+	bytes   []byte
 	session *StreamSocket
 }
 
-func (this *sendBuffer) expand(need int,final bool) {
+func (this *sendBuffer) expand(need int, final bool) {
 	total := this.e + need
-	var newBuff []byte  
+	var newBuff []byte
 	if final {
-		newBuff = make([]byte,total)
+		newBuff = make([]byte, total)
 	} else {
-		newBuff = make([]byte,total * 2)	
+		newBuff = make([]byte, total*2)
 	}
 
-	copy(newBuff,this.bytes[:this.e])
+	copy(newBuff, this.bytes[:this.e])
 	this.bytes = newBuff
 }
 
-func (this *sendBuffer) append(data []byte,final bool) {
+func (this *sendBuffer) append(data []byte, final bool) {
 	capRemain := cap(this.bytes) - this.e
 
 	if capRemain < len(data) {
-		this.expand(len(data),final)
+		this.expand(len(data), final)
 	}
-	copy(this.bytes[this.e:],data)
+	copy(this.bytes[this.e:], data)
 	this.e += len(data)
 }
 
-func (this *sendBuffer) flush() (error) {
+func (this *sendBuffer) flush() error {
 	if this.e > 0 {
-		n,err := this.session.conn.Write(this.bytes[:this.e])
+		n, err := this.session.conn.Write(this.bytes[this.b:this.e])
 		if n > 0 {
-			if n == this.e {
+			this.b += n
+			if this.b >= this.e {
 				this.e = 0
+				this.b = 0
 				if cap(this.bytes) > 65535*2 {
-					this.bytes = make([]byte,65535)
+					this.bytes = make([]byte, 65535)
 				}
-			} else {
-				copy(this.bytes,this.bytes[n:this.e])
-				this.e = this.e - n			
 			}
 		}
 		return err
@@ -370,17 +376,17 @@ func sendThreadFunc(session *StreamSocket) {
 
 	var err error
 
-	defer func(){
+	defer func() {
 		session.sendCloseChan <- 1
 	}()
 
 	buffer := &sendBuffer{
-		session:session,
-		bytes:make([]byte,65535),
+		session: session,
+		bytes:   make([]byte, 65535),
 	}
 
 	for {
-		closed,localList := session.sendQue.Get()
+		closed, localList := session.sendQue.Get()
 		size := len(localList)
 		if closed && size == 0 {
 			break
@@ -388,7 +394,8 @@ func sendThreadFunc(session *StreamSocket) {
 
 		for i := 0; i < size; i++ {
 			msg := localList[i].(kendynet.Message)
-			buffer.append(msg.Bytes(),(i == size - 1))
+			//session.WantSend += uint64(len(msg.Bytes()))
+			buffer.append(msg.Bytes(), (i == size-1))
 		}
 
 		for !buffer.empty() {
@@ -396,7 +403,7 @@ func sendThreadFunc(session *StreamSocket) {
 			if timeout > 0 {
 				session.conn.SetWriteDeadline(time.Now().Add(timeout))
 				err = buffer.flush()
-				session.conn.SetWriteDeadline(time.Time{})	
+				session.conn.SetWriteDeadline(time.Time{})
 			} else {
 				err = buffer.flush()
 			}
@@ -408,23 +415,23 @@ func sendThreadFunc(session *StreamSocket) {
 				if kendynet.IsNetTimeout(err) {
 					err = kendynet.ErrSendTimeout
 				} else {
-					kendynet.Errorf("writer.Flush error:%s\n",err.Error())
+					kendynet.Errorf("writer.Flush error:%s\n", err.Error())
 					session.mutex.Lock()
 					session.flag |= wclosed
-					session.mutex.Unlock()							
+					session.mutex.Unlock()
 				}
-				event := &kendynet.Event{Session:session,EventType:kendynet.EventTypeError,Data:err}
+				event := &kendynet.Event{Session: session, EventType: kendynet.EventTypeError, Data: err}
 				session.onEvent(event)
-				if session.sendQue.Closed(){
+				if session.sendQue.Closed() {
 					return
-				}						
+				}
 			}
 		}
 	}
 }
+*/
 
-
-func (this *StreamSocket) Start(eventCB func (*kendynet.Event)) error {
+func (this *StreamSocket) Start(eventCB func(*kendynet.Event)) error {
 
 	this.mutex.Lock()
 	defer this.mutex.Unlock()
@@ -452,24 +459,24 @@ func (this *StreamSocket) Start(eventCB func (*kendynet.Event)) error {
 	return nil
 }
 
-func NewStreamSocket(conn net.Conn)(kendynet.StreamSession){
+func NewStreamSocket(conn net.Conn) kendynet.StreamSession {
 	if nil == conn {
 		return nil
 	} else {
 		switch conn.(type) {
-			case *net.TCPConn:
-				break
-			case *net.UnixConn:
-				break
-			default:
-				kendynet.Errorf("NewStreamSocket() invaild conn type\n")
-				return nil
+		case *net.TCPConn:
+			break
+		case *net.UnixConn:
+			break
+		default:
+			kendynet.Errorf("NewStreamSocket() invaild conn type\n")
+			return nil
 		}
 
 		return &StreamSocket{
-			conn : conn,
-			sendQue : util.NewBlockQueue(),
-			sendCloseChan : make(chan int,1),
+			conn:          conn,
+			sendQue:       util.NewBlockQueue(),
+			sendCloseChan: make(chan int, 1),
 		}
 	}
 }
@@ -483,12 +490,9 @@ func (this *StreamSocket) Read(b []byte) (int, error) {
 }
 
 func (this *StreamSocket) SetRecvTimeout(timeout time.Duration) {
-	this.RecvTimeout = timeout * time.Millisecond
+	this.RecvTimeout = timeout
 }
 
 func (this *StreamSocket) SetSendTimeout(timeout time.Duration) {
-	this.SendTimeout = timeout * time.Millisecond
+	this.SendTimeout = timeout
 }
-
-
-

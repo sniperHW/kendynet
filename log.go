@@ -2,15 +2,15 @@ package kendynet
 
 import (
 	"github.com/sniperHW/kendynet/golog"
-	"sync/atomic"
+	"sync"
 	"fmt"
 )
 
 var logger *golog.Logger
-var is_init int32
+var logger_once sync.Once
 
 func InitLogger(out *golog.OutputLogger,name ...string) {
-	if atomic.CompareAndSwapInt32(&is_init, 0, 1) {
+	logger_once.Do(func() {
 		var fullname string
 		if len(name) > 0 {
 			fullname = fmt.Sprintf("%s",name[0])
@@ -19,7 +19,7 @@ func InitLogger(out *golog.OutputLogger,name ...string) {
 		}
 		logger = golog.New(fullname,out)
 		logger.Debugf("%s logger init",fullname)
-	}
+	})
 }
 
 func Debugf(format string, v ...interface{}) {

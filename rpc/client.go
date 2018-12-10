@@ -3,9 +3,11 @@ package rpc
 import (
 	"fmt"
 	"sync/atomic"
+	"sync"
 	"time"
 	"runtime"	
-	"github.com/sniperHW/kendynet/util"
+	"github.com/sniperHW/kendynet/event"
+	"github.com/sniperHW/kendynet/util"	
 	"github.com/sniperHW/kendynet"
 	"os"
 )
@@ -56,7 +58,7 @@ type channelContext struct {
 }
 
 type reqContextMgr struct {
-	queue            *util.BlockQueue   
+	queue           *event.EventQueue //*util.BlockQueue   
 	channels         map[RPCChannel]*channelContext
 }
 
@@ -128,16 +130,6 @@ func (this *reqContextMgr) checkTimeout() {
 }
 
 
-func (this *reqContextMgr) loop() {
-	for {
-		_,localList := this.queue.Get()
-		for _ , v := range localList {
-			v.(func())()
-		}
-	}
-}
-
-
 var reqMgr *reqContextMgr
 
 type RPCClient struct {
@@ -149,7 +141,7 @@ type RPCClient struct {
 
 //通道关闭后调用
 func (this *RPCClient) OnChannelClose(err error) {
-	reqMgr.queue.Add(func(){
+	reqMgr.queue.Post(func(){
 		reqMgr.onClose(this.channel,err)
 	})
 }
@@ -161,7 +153,7 @@ func (this *RPCClient) OnRPCMessage(message interface{}) {
 		Errorf(util.FormatFileLine("RPCClient rpc message from(%s) decode err:%s\n",this.channel.Name,err.Error()))
 		return
 	}	
-	reqMgr.queue.Add(func(){
+	reqMgr.queue.Post(func(){
 		reqMgr.onResponse(this.channel,msg)
 	})
 }
@@ -209,7 +201,7 @@ func (this *RPCClient) AsynCall(method string,arg interface{},timeout uint32,cb 
 		return fmt.Errorf("cb == nil")
 	}
 
-	reqMgr.queue.Add(func (){
+	reqMgr.queue.Post(func (){
 		req := &RPCRequest{ 
 			Method : method,
 			Seq : atomic.AddUint64(&this.sequence,1), 
@@ -270,20 +262,32 @@ func NewClient(channel RPCChannel,decoder RPCMessageDecoder,encoder RPCMessageEn
 	return &RPCClient{encoder:encoder,decoder:decoder,channel:channel},nil
 }
 
-func init() {
+var client_once sync.Once
 
-	reqMgr = &reqContextMgr{queue:util.NewBlockQueue(),channels:map[RPCChannel]*channelContext{}}
+func InitClient(queue *event.EventQueue) {
 
-	//启动一个go程，每10毫秒向queue投递一个定时器消息
-	go func() {
-		for {
-			time.Sleep(time.Duration(10)*time.Millisecond)
-			reqMgr.queue.Add(func (){
-				reqMgr.checkTimeout()				
-			})
+	client_once.Do(func(){
+		reqMgr = &reqContextMgr{
+			channels:map[RPCChannel]*channelContext{},
 		}
-	}()
 
-	go reqMgr.loop()
-	
+		if nil != queue {
+			reqMgr.queue = queue
+		} else {
+			reqMgr.queue = event.NewEventQueue()
+			go func(){
+				reqMgr.queue.Run()
+			}()
+		}
+
+		//启动一个go程，每10毫秒向queue投递一个定时器消息
+		go func() {
+			for {
+				time.Sleep(time.Duration(10)*time.Millisecond)
+				reqMgr.queue.Post(func (){
+					reqMgr.checkTimeout()				
+				})
+			}
+		}()
+	})
 }

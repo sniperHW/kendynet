@@ -156,7 +156,7 @@ func (this *WebSocket) sendMessage(msg kendynet.Message) error {
 				if nil == msg.(*WSMessage) {
 					return ErrInvaildWSMessage
 				}
-				if nil != this.sendQue.Add(msg) {
+				if nil != this.sendQue.AddNoWait(msg) {
 					return kendynet.ErrSocketClose
 				}
 				break
@@ -421,10 +421,10 @@ func (this *WebSocket) Read() (messageType int, p []byte, err error) {
 }
 
 func (this *WebSocket) SetRecvTimeout(timeout time.Duration) {
-	this.RecvTimeout = timeout * time.Millisecond
+	this.RecvTimeout = timeout
 }
 
 func (this *WebSocket) SetSendTimeout(timeout time.Duration) {
-	this.SendTimeout = timeout * time.Millisecond
+	this.SendTimeout = timeout
 }
 
