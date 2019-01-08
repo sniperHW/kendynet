@@ -5,13 +5,13 @@
 package stream_socket
 
 import (
+	"bufio"
+	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/util"
+	"io"
 	"net"
 	"sync"
 	"time"
-	"bufio"
-	"io"
-	"github.com/sniperHW/kendynet"
-	"github.com/sniperHW/kendynet/util"
 )
 
 const (
@@ -158,8 +158,13 @@ func (this *StreamSocket) sendMessage(msg kendynet.Message) error {
 	} else if (this.flag&closed) > 0 || (this.flag&wclosed) > 0 {
 		return kendynet.ErrSocketClose
 	} else {
-		if nil != this.sendQue.AddNoWait(msg) {
-			return kendynet.ErrSocketClose
+		fullReturn := true
+		err := this.sendQue.AddNoWait(msg, fullReturn)
+		if nil != err {
+			if err == util.ErrQueueClosed {
+				err = kendynet.ErrSocketClose
+			}
+			return err
 		}
 	}
 	return nil
@@ -242,19 +247,18 @@ func recvThreadFunc(session *StreamSocket) {
 	}
 }
 
-
 func sendThreadFunc(session *StreamSocket) {
 
 	var err error
 
-	defer func(){
+	defer func() {
 		session.sendCloseChan <- 1
 	}()
 
-	writer := bufio.NewWriterSize(session.conn,65535*2)
+	writer := bufio.NewWriterSize(session.conn, 65535*2)
 
 	for {
-		closed,localList := session.sendQue.Get()
+		closed, localList := session.sendQue.Get()
 		size := len(localList)
 		if closed && size == 0 {
 			break
@@ -263,10 +267,8 @@ func sendThreadFunc(session *StreamSocket) {
 		for i := 0; i < size; i++ {
 			msg := localList[i].(kendynet.Message)
 
-
-
 			data := msg.Bytes()
-			for data != nil || (i == (size - 1) && writer.Buffered() > 0) {
+			for data != nil || (i == (size-1) && writer.Buffered() > 0) {
 				if data != nil {
 					var s int
 					if len(data) > writer.Available() {
@@ -284,7 +286,7 @@ func sendThreadFunc(session *StreamSocket) {
 					}
 				}
 
-				if writer.Available() == 0 || i == (size - 1) {
+				if writer.Available() == 0 || i == (size-1) {
 
 					timeout := session.SendTimeout
 					if timeout > 0 {
@@ -301,12 +303,12 @@ func sendThreadFunc(session *StreamSocket) {
 						if kendynet.IsNetTimeout(err) {
 							err = kendynet.ErrSendTimeout
 						} else {
-							kendynet.Errorf("writer.Flush error:%s\n",err.Error())
+							kendynet.Errorf("writer.Flush error:%s\n", err.Error())
 							session.mutex.Lock()
 							session.flag |= wclosed
 							session.mutex.Unlock()
 						}
-						event := &kendynet.Event{Session:session,EventType:kendynet.EventTypeError,Data:err}
+						event := &kendynet.Event{Session: session, EventType: kendynet.EventTypeError, Data: err}
 						session.onEvent(event)
 						if session.sendQue.Closed() {
 							return
@@ -317,6 +319,7 @@ func sendThreadFunc(session *StreamSocket) {
 		}
 	}
 }
+
 /*
 
 type sendBuffer struct {
@@ -459,7 +462,7 @@ func (this *StreamSocket) Start(eventCB func(*kendynet.Event)) error {
 	return nil
 }
 
-func NewStreamSocket(conn net.Conn) kendynet.StreamSession {
+func NewStreamSocket(conn net.Conn, sendQueueSize ...int) kendynet.StreamSession {
 	if nil == conn {
 		return nil
 	} else {
@@ -475,7 +478,7 @@ func NewStreamSocket(conn net.Conn) kendynet.StreamSession {
 
 		return &StreamSocket{
 			conn:          conn,
-			sendQue:       util.NewBlockQueue(),
+			sendQue:       util.NewBlockQueue(sendQueueSize...),
 			sendCloseChan: make(chan int, 1),
 		}
 	}
