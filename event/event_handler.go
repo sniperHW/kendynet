@@ -86,7 +86,7 @@ func (this *EventHandler) Register(event interface{}, once bool, callback interf
 			this.slots[event] = slot
 		}
 		slot.register(handle)
-	}, false)
+	})
 	return handle, nil
 }
 
@@ -108,7 +108,7 @@ func (this *EventHandler) Remove(handle *Handle) bool {
 			if ok {
 				slot.remove(handle)
 			}
-		}, false)
+		})
 	}
 	return true
 }
@@ -119,7 +119,7 @@ func (this *EventHandler) Clear(event interface{}) {
 		if ok {
 			slot.clear()
 		}
-	}, false)
+	})
 }
 
 //触发事件
@@ -129,7 +129,7 @@ func (this *EventHandler) Emit(event interface{}, args ...interface{}) {
 		if ok {
 			slot.emit(args...)
 		}
-	}, false)
+	})
 }
 
 func (this *handlerSlot) register(handle *Handle) {

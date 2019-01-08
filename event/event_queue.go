@@ -31,7 +31,7 @@ func NewEventQueue(fullSize ...int) *EventQueue {
 	return r
 }
 
-func (this *EventQueue) PostNoWait(callback interface{}, fullReturn bool, args ...interface{}) error {
+func (this *EventQueue) PostNoWait(callback interface{}, args ...interface{}) {
 
 	e := element{}
 
@@ -48,10 +48,10 @@ func (this *EventQueue) PostNoWait(callback interface{}, fullReturn bool, args .
 	default:
 		panic("invaild callback type")
 	}
-	return this.eventQueue.AddNoWait(&e, fullReturn)
+	this.eventQueue.AddNoWait(&e)
 }
 
-func (this *EventQueue) Post(callback interface{}, args ...interface{}) error {
+func (this *EventQueue) Post(callback interface{}, args ...interface{}) {
 
 	e := element{}
 
@@ -68,7 +68,7 @@ func (this *EventQueue) Post(callback interface{}, args ...interface{}) error {
 	default:
 		panic("invaild callback type")
 	}
-	return this.eventQueue.Add(&e)
+	this.eventQueue.Add(&e)
 }
 
 func (this *EventQueue) Close() {
