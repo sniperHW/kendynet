@@ -1,11 +1,12 @@
 package rpc
 
-import(
+import (
+	//"fmt"
 	"github.com/sniperHW/kendynet/golog"
-	"sync/atomic"	
-	"fmt"
+	//"sync/atomic"
 )
 
+/*
 var logger *golog.Logger
 var is_init int32
 
@@ -19,12 +20,19 @@ func InitLogger(out *golog.OutputLogger,name ...string) {
 		}
 		logger = golog.New(fullname,out)
 		logger.Debugf("%s logger init",fullname)
-	}	
+	}
+}
+*/
+
+var logger golog.LoggerI
+
+func InitLogger(l golog.LoggerI) {
+	logger = l
 }
 
 func Debugf(format string, v ...interface{}) {
 	if nil != logger {
-		logger.Debugf(format,v...)
+		logger.Debugf(format, v...)
 	}
 }
 
@@ -36,7 +44,7 @@ func Debugln(v ...interface{}) {
 
 func Infof(format string, v ...interface{}) {
 	if nil != logger {
-		logger.Infof(format,v...)
+		logger.Infof(format, v...)
 	}
 }
 
@@ -48,7 +56,7 @@ func Infoln(v ...interface{}) {
 
 func Warnf(format string, v ...interface{}) {
 	if nil != logger {
-		logger.Warnf(format,v...)
+		logger.Warnf(format, v...)
 	}
 }
 
@@ -60,7 +68,7 @@ func Warnln(v ...interface{}) {
 
 func Errorf(format string, v ...interface{}) {
 	if nil != logger {
-		logger.Errorf(format,v...)
+		logger.Errorf(format, v...)
 	}
 }
 
@@ -72,7 +80,7 @@ func Errorln(v ...interface{}) {
 
 func Fatalf(format string, v ...interface{}) {
 	if nil != logger {
-		logger.Fatalf(format,v...)
+		logger.Fatalf(format, v...)
 	}
 }
 
