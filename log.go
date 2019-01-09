@@ -1,25 +1,14 @@
 package kendynet
 
 import (
+	//"fmt"
 	"github.com/sniperHW/kendynet/golog"
-	"sync"
-	"fmt"
 )
 
-var logger *golog.Logger
-var logger_once sync.Once
+var logger golog.LoggerI
 
-func InitLogger(out *golog.OutputLogger,name ...string) {
-	logger_once.Do(func() {
-		var fullname string
-		if len(name) > 0 {
-			fullname = fmt.Sprintf("%s",name[0])
-		} else {
-			fullname = "kendynet"
-		}
-		logger = golog.New(fullname,out)
-		logger.Debugf("%s logger init",fullname)
-	})
+func InitLogger(l golog.LoggerI) {
+	logger = l
 }
 
 func Debugf(format string, v ...interface{}) {
