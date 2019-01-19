@@ -1,18 +1,18 @@
 package main
 
-import(
-	"time"
-	"sync/atomic"
-	"strconv"
+import (
 	"fmt"
-	"os"
-	"github.com/sniperHW/kendynet/example/testproto"
-	"github.com/sniperHW/kendynet/example/test_rpc"
-	"github.com/sniperHW/kendynet/timer"
 	"github.com/golang/protobuf/proto"
+	//"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/example/test_rpc"
+	"github.com/sniperHW/kendynet/example/testproto"
+	//"github.com/sniperHW/kendynet/golog"
 	"github.com/sniperHW/kendynet/rpc"
-	"github.com/sniperHW/kendynet"
-	"github.com/sniperHW/kendynet/golog"
+	"github.com/sniperHW/kendynet/timer"
+	"os"
+	"strconv"
+	"sync/atomic"
+	"time"
 	//"math/rand"
 )
 
@@ -22,67 +22,66 @@ var reqcount int32
 func server(service string) {
 	count := int32(0)
 	total := 0
-	timer.Repeat(time.Second,nil,func (_ timer.TimerID) {
+	timer.Repeat(time.Second, nil, func(_ timer.TimerID) {
 		tmp := atomic.LoadInt32(&count)
-		atomic.StoreInt32(&count,0)
+		atomic.StoreInt32(&count, 0)
 		tmp1 := atomic.LoadInt32(&timeoutcount)
-		atomic.StoreInt32(&timeoutcount,0)
+		atomic.StoreInt32(&timeoutcount, 0)
 		tmp2 := atomic.LoadInt32(&reqcount)
-		atomic.StoreInt32(&reqcount,0)
-		fmt.Printf("count:%d,timeoutcount:%d,reqcount:%d,total:%d\n",tmp,tmp1,tmp2,total)	
+		atomic.StoreInt32(&reqcount, 0)
+		fmt.Printf("count:%d,timeoutcount:%d,reqcount:%d,total:%d\n", tmp, tmp1, tmp2, total)
 	})
 
 	server := test_rpc.NewRPCServer()
 	//注册服务
-	server.RegisterMethod("hello",func (replyer *rpc.RPCReplyer,arg interface{}){
-		atomic.AddInt32(&count,1)
+	server.RegisterMethod("hello", func(replyer *rpc.RPCReplyer, arg interface{}) {
+		atomic.AddInt32(&count, 1)
 		total = total + 1
 		//if rand.Int() % 1000 == 0 {
-			//不返回消息让客户端超时
+		//不返回消息让客户端超时
 		//} else {
-			world := &testproto.World{World:proto.String("world")}
-			replyer.Reply(world,nil)
+		world := &testproto.World{World: proto.String("world")}
+		replyer.Reply(world, nil)
 		//}
 	})
 	server.Serve(service)
 }
 
-func client(service string,count int) {
+func client(service string, count int) {
 
-	for i := 0; i < count ; i++ {
+	for i := 0; i < count; i++ {
 		go func() {
 			caller := test_rpc.NewCaller()
-			if err := caller.Dial(service,10 * time.Second);nil != err {
+			if err := caller.Dial(service, 10*time.Second); nil != err {
 				fmt.Println(err.Error())
 				return
 			}
 
-			for j:=0;j < 10;j++{
-				go func(){
+			for j := 0; j < 50; j++ {
+				go func() {
 					for {
-						arg := &testproto.Hello{Hello:proto.String("hello")}
-						_,err := caller.SyncCall("hello",arg,1000)
-						atomic.AddInt32(&reqcount,1)
+						arg := &testproto.Hello{Hello: proto.String("hello")}
+						_, err := caller.SyncCall("hello", arg, 1000)
+						atomic.AddInt32(&reqcount, 1)
 						if nil != err {
-							fmt.Printf("err:%s\n",err.Error())
+							fmt.Printf("err:%s\n", err.Error())
 						}
 					}
-				}()	
+				}()
 			}
 
-
-			for j:=0;j < 40;j++{
-				go func(){
+			/*for j := 0; j < 40; j++ {
+				go func() {
 					for {
-						arg := &testproto.Hello{Hello:proto.String("hello fasdfasdfasdfasdfjasjfjeiofjkaljfklasjfkljasdifjasijflkasdjl")}
-						_,err := caller.SyncCall("hello",arg,1000)
-						atomic.AddInt32(&reqcount,1)
+						arg := &testproto.Hello{Hello: proto.String("hello fasdfasdfasdfasdfjasjfjeiofjkaljfklasjfkljasdifjasijflkasdjl")}
+						_, err := caller.SyncCall("hello", arg, 1000)
+						atomic.AddInt32(&reqcount, 1)
 						if nil != err {
-							fmt.Printf("err:%s\n",err.Error())
+							fmt.Printf("err:%s\n", err.Error())
 						}
 					}
-				}()	
-			}
+				}()
+			}*/
 
 			/*var callback1 func(interface{},error)
 			var callback2 func(interface{},error)
@@ -110,10 +109,8 @@ func client(service string,count int) {
 
 			/*for j:=0;j < 10;j++{
 				arg := &testproto.Hello{Hello:proto.String("hello fasdfasdfasdfasdfjasjfjeiofjkaljfklasjfkljasdifjasijflkasdjl")}
-				caller.AsynCall("hello",arg,1000,callback2)				
+				caller.AsynCall("hello",arg,1000,callback2)
 			}*/
-
-
 
 		}()
 		/*var onResp func(ret interface{},err error)
@@ -140,17 +137,18 @@ func client(service string,count int) {
 	}
 }
 
-func main(){
+func main() {
 
-	outLogger := golog.NewOutputLogger("log","kendynet",1024*1024*1000)
+	/*outLogger := golog.NewOutputLogger("log","kendynet",1024*1024*1000)
 	kendynet.InitLogger(outLogger)
-	rpc.InitLogger(outLogger)
+	rpc.InitLogger(outLogger)*/
+
+	rpc.InitClient(nil)
 
 	if len(os.Args) < 3 {
 		fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")
 		return
 	}
-
 
 	mode := os.Args[1]
 
@@ -172,21 +170,19 @@ func main(){
 			fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")
 			return
 		}
-		connectioncount,err := strconv.Atoi(os.Args[3])
+		connectioncount, err := strconv.Atoi(os.Args[3])
 		if err != nil {
 			fmt.Printf(err.Error())
 			return
 		}
 		//让服务器先运行
 		time.Sleep(time.Second)
-		go client(service,connectioncount)
+		go client(service, connectioncount)
 
 	}
 
-	_,_ = <- sigStop
+	_, _ = <-sigStop
 
 	return
 
 }
-
-
