@@ -269,7 +269,7 @@ func NewClient(channel RPCChannel, decoder RPCMessageDecoder, encoder RPCMessage
 		decoder:      decoder,
 		channel:      channel,
 		cbEventQueue: q,
-		minheap:      util.NewMinHeap(65535),
+		minheap:      util.NewMinHeap(1024),
 		waitResp:     map[uint64]*reqContext{},
 	}, nil
 }

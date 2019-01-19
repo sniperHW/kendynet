@@ -57,18 +57,18 @@ func client(service string, count int) {
 				return
 			}
 
-			for j := 0; j < 50; j++ {
-				go func() {
-					for {
-						arg := &testproto.Hello{Hello: proto.String("hello")}
-						_, err := caller.SyncCall("hello", arg, 1000)
-						atomic.AddInt32(&reqcount, 1)
-						if nil != err {
-							fmt.Printf("err:%s\n", err.Error())
-						}
+			//for j := 0; j < 50; j++ {
+			go func() {
+				for {
+					arg := &testproto.Hello{Hello: proto.String("hello")}
+					_, err := caller.SyncCall("hello", arg, 1000)
+					atomic.AddInt32(&reqcount, 1)
+					if nil != err {
+						fmt.Printf("err:%s\n", err.Error())
 					}
-				}()
-			}
+				}
+			}()
+			//}
 
 			/*for j := 0; j < 40; j++ {
 				go func() {
