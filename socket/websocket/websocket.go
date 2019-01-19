@@ -348,6 +348,16 @@ func (this *WebSocket) shutdownRead() {
 	}
 }
 
+func (this *WebSocket) ShutdownRead() {
+	this.mutex.Lock()
+	defer this.mutex.Unlock()
+	if (this.flag & closed) > 0 {
+		return
+	}
+	this.flag |= rclosed
+	this.shutdownRead()
+}
+
 func (this *WebSocket) Close(reason string, delay time.Duration) {
 	this.mutex.Lock()
 	if (this.flag & closed) > 0 {
