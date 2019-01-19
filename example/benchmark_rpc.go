@@ -57,7 +57,7 @@ func client(service string, count int) {
 				return
 			}
 
-			for j := 0; j < 50; j++ {
+			for j := 0; j < 10; j++ {
 				go func() {
 					for {
 						arg := &testproto.Hello{Hello: proto.String("hello")}
@@ -65,6 +65,9 @@ func client(service string, count int) {
 						atomic.AddInt32(&reqcount, 1)
 						if nil != err {
 							fmt.Printf("err:%s\n", err.Error())
+							if err == rpc.ErrSocketClose {
+								break
+							}
 						}
 					}
 				}()
