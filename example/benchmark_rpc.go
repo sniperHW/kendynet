@@ -57,7 +57,7 @@ func client(service string, count int) {
 				return
 			}
 
-			for j := 0; j < 10; j++ {
+			for j := 0; j < 50; j++ {
 				go func() {
 					for {
 						arg := &testproto.Hello{Hello: proto.String("hello")}
