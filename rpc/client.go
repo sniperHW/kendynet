@@ -26,7 +26,6 @@ type reqContext struct {
 	seq        uint64
 	onResponse RPCResponseHandler
 	deadline   time.Time
-	timestamp  int64
 }
 
 func (this *reqContext) Less(o util.HeapElement) bool {
@@ -174,7 +173,7 @@ func (this *RPCClient) Post(method string, arg interface{}) error {
  *  异步调用
  */
 
-func (this *RPCClient) AsynCall(method string, arg interface{}, timeout uint32, cb RPCResponseHandler) error {
+func (this *RPCClient) AsynCall(method string, arg interface{}, timeout time.Duration, cb RPCResponseHandler) error {
 
 	if cb == nil {
 		panic("cb == nil")
@@ -187,10 +186,6 @@ func (this *RPCClient) AsynCall(method string, arg interface{}, timeout uint32, 
 		NeedResp: true,
 	}
 
-	if timeout <= 0 {
-		timeout = 5000
-	}
-
 	context := &reqContext{
 		onResponse: cb,
 		seq:        req.Seq,
@@ -200,10 +195,7 @@ func (this *RPCClient) AsynCall(method string, arg interface{}, timeout uint32, 
 	if err != nil {
 		return err
 	} else {
-
-		context.deadline = time.Now().Add(time.Duration(timeout) * time.Millisecond)
-		context.timestamp = time.Now().UnixNano()
-
+		context.deadline = time.Now().Add(timeout)
 		this.mtx.Lock()
 		defer this.mtx.Unlock()
 		err := this.channel.SendRequest(request)
@@ -224,7 +216,7 @@ func (this *RPCClient) AsynCall(method string, arg interface{}, timeout uint32, 
 }
 
 //同步调用
-func (this *RPCClient) SyncCall(method string, arg interface{}, timeout uint32) (ret interface{}, err error) {
+func (this *RPCClient) Call(method string, arg interface{}, timeout time.Duration) (ret interface{}, err error) {
 	respChan := make(chan interface{})
 	f := func(ret_ interface{}, err_ error) {
 		ret = ret_

@@ -61,7 +61,7 @@ func client(service string, count int) {
 				go func() {
 					for {
 						arg := &testproto.Hello{Hello: proto.String("hello")}
-						_, err := caller.SyncCall("hello", arg, 1000)
+						_, err := caller.Call("hello", arg, time.Second)
 						atomic.AddInt32(&reqcount, 1)
 						if nil != err {
 							fmt.Printf("err:%s\n", err.Error())
@@ -74,7 +74,7 @@ func client(service string, count int) {
 				go func() {
 					for {
 						arg := &testproto.Hello{Hello: proto.String("hello fasdfasdfasdfasdfjasjfjeiofjkaljfklasjfkljasdifjasijflkasdjl")}
-						_, err := caller.SyncCall("hello", arg, 1000)
+						_, err := caller.SyncCall("hello", arg, time.Second)
 						atomic.AddInt32(&reqcount, 1)
 						if nil != err {
 							fmt.Printf("err:%s\n", err.Error())
@@ -92,7 +92,7 @@ func client(service string, count int) {
 					fmt.Printf("err:%s\n",err.Error())
 				}
 				arg := &testproto.Hello{Hello:proto.String("hello")}
-				caller.AsynCall("hello",arg,1000,callback1)
+				caller.AsynCall("hello",arg,time.Second,callback1)
 			}
 
 			callback2 = func(msg interface{},err error) {
@@ -100,16 +100,16 @@ func client(service string, count int) {
 					fmt.Printf("err:%s\n",err.Error())
 				}
 				arg := &testproto.Hello{Hello:proto.String("hello fasdfasdfasdfasdfjasjfjeiofjkaljfklasjfkljasdifjasijflkasdjl")}
-				caller.AsynCall("hello",arg,1000,callback2)
+				caller.AsynCall("hello",arg,time.Second,callback2)
 			}
 			for j:=0;j < 10;j++{
 				arg := &testproto.Hello{Hello:proto.String("hello")}
-				caller.AsynCall("hello",arg,1000,callback1)
+				caller.AsynCall("hello",arg,time.Second,callback1)
 			}*/
 
 			/*for j:=0;j < 10;j++{
 				arg := &testproto.Hello{Hello:proto.String("hello fasdfasdfasdfasdfjasjfjeiofjkaljfklasjfkljasdifjasijflkasdjl")}
-				caller.AsynCall("hello",arg,1000,callback2)
+				caller.AsynCall("hello",arg,time.Second,callback2)
 			}*/
 
 		}()
