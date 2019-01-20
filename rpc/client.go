@@ -12,7 +12,6 @@ import (
 )
 
 var ErrCallTimeout error = fmt.Errorf("rpc call timeout")
-var ErrSocketClose error = fmt.Errorf("socket close")
 
 type RPCResponseHandler func(interface{}, error)
 
@@ -130,11 +129,7 @@ func (this *RPCClient) Post(method string, arg interface{}) error {
 		return fmt.Errorf("encode error:%s\n", err.Error())
 	}
 
-	err = this.channel.SendRequest(request)
-	if nil != err {
-		return ErrSocketClose
-	}
-	return nil
+	return this.channel.SendRequest(request)
 }
 
 /*
@@ -173,7 +168,7 @@ func (this *RPCClient) AsynCall(method string, arg interface{}, timeout uint32, 
 
 		err = this.channel.SendRequest(request)
 		if nil != err {
-			context.callResponseCB(nil, ErrSocketClose)
+			context.callResponseCB(nil, err)
 		} else {
 			this.waitResp[context.seq] = context
 			this.minheap.Insert(context)

@@ -65,7 +65,7 @@ func client(service string, count int) {
 						atomic.AddInt32(&reqcount, 1)
 						if nil != err {
 							fmt.Printf("err:%s\n", err.Error())
-							if err == rpc.ErrSocketClose {
+							if err != rpc.ErrCallTimeout {
 								break
 							}
 						}
