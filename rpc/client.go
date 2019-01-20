@@ -61,6 +61,7 @@ type RPCClient struct {
 	minheap      *util.MinHeap
 	waitResp     map[uint64]*reqContext //待响应的请求
 	cbEventQueue *event.EventQueue
+	bindCheck    bool
 }
 
 func (this *RPCClient) callResponseCB(ctx *reqContext, ret interface{}, err error) {
@@ -204,19 +205,19 @@ func (this *RPCClient) AsynCall(method string, arg interface{}, timeout uint32, 
 		context.timestamp = time.Now().UnixNano()
 
 		this.mtx.Lock()
-		this.waitResp[context.seq] = context
-		this.minheap.Insert(context)
-		this.mtx.Unlock()
-
+		defer this.mtx.Unlock()
 		err := this.channel.SendRequest(request)
-
-		if nil != err {
-			this.mtx.Lock()
-			delete(this.waitResp, context.seq)
-			this.minheap.Remove(context)
-			this.mtx.Unlock()
+		if err != nil {
 			return err
 		} else {
+			if this.bindCheck == false {
+				this.bindCheck = true
+				mtx.Lock()
+				clients[this] = true
+				mtx.Unlock()
+			}
+			this.waitResp[context.seq] = context
+			this.minheap.Insert(context)
 			return nil
 		}
 	}
@@ -237,7 +238,7 @@ func (this *RPCClient) SyncCall(method string, arg interface{}, timeout uint32) 
 	return
 }
 
-func onceRoutine(r *RPCClient) {
+func onceRoutine() {
 
 	client_once.Do(func() {
 		clients = map[*RPCClient]bool{}
@@ -258,10 +259,6 @@ func onceRoutine(r *RPCClient) {
 			}
 		}()
 	})
-
-	mtx.Lock()
-	clients[r] = true
-	mtx.Unlock()
 }
 
 func NewClient(channel RPCChannel, decoder RPCMessageDecoder, encoder RPCMessageEncoder, cbEventQueue ...*event.EventQueue) *RPCClient {
@@ -283,7 +280,9 @@ func NewClient(channel RPCChannel, decoder RPCMessageDecoder, encoder RPCMessage
 		q = cbEventQueue[0]
 	}
 
-	r := &RPCClient{
+	onceRoutine()
+
+	return &RPCClient{
 		encoder:      encoder,
 		decoder:      decoder,
 		channel:      channel,
@@ -291,8 +290,4 @@ func NewClient(channel RPCChannel, decoder RPCMessageDecoder, encoder RPCMessage
 		minheap:      util.NewMinHeap(1024),
 		waitResp:     map[uint64]*reqContext{},
 	}
-
-	onceRoutine(r)
-
-	return r
 }
