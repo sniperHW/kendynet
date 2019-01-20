@@ -173,7 +173,7 @@ func (this *RPCClient) Post(method string, arg interface{}) error {
  *  异步调用
  */
 
-func (this *RPCClient) AsynCall(method string, arg interface{}, timeout uint32, cb RPCResponseHandler) {
+func (this *RPCClient) AsynCall(method string, arg interface{}, timeout uint32, cb RPCResponseHandler) error {
 
 	if cb == nil {
 		panic("cb == nil")
@@ -197,7 +197,7 @@ func (this *RPCClient) AsynCall(method string, arg interface{}, timeout uint32, 
 
 	request, err := this.encoder.Encode(req)
 	if err != nil {
-		this.callResponseCB(context, nil, fmt.Errorf("encode error:%s\n", err.Error()))
+		return err
 	} else {
 
 		context.deadline = time.Now().Add(time.Duration(timeout) * time.Millisecond)
@@ -215,13 +215,9 @@ func (this *RPCClient) AsynCall(method string, arg interface{}, timeout uint32, 
 			delete(this.waitResp, context.seq)
 			this.minheap.Remove(context)
 			this.mtx.Unlock()
-			if this.cbEventQueue != nil {
-				this.cbEventQueue.PostNoWait(func() {
-					context.callResponseCB(nil, err)
-				})
-			} else {
-				context.callResponseCB(nil, err)
-			}
+			return err
+		} else {
+			return nil
 		}
 	}
 }
@@ -234,8 +230,10 @@ func (this *RPCClient) SyncCall(method string, arg interface{}, timeout uint32) 
 		err = err_
 		respChan <- nil
 	}
-	this.AsynCall(method, arg, timeout, f)
-	_ = <-respChan
+	err = this.AsynCall(method, arg, timeout, f)
+	if nil == err {
+		_ = <-respChan
+	}
 	return
 }
 
