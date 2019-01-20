@@ -171,7 +171,7 @@ func (this *Caller) Dial(service string, timeout time.Duration) error {
 		return err
 	}
 	channel := NewTcpStreamChannel(session)
-	this.client, _ = rpc.NewClient(channel, &TestDecoder{}, &TestEncoder{})
+	this.client = rpc.NewClient(channel, &TestDecoder{}, &TestEncoder{})
 	session.SetEncoder(codec.NewPbEncoder(65535))
 	session.SetReceiver(codec.NewPBReceiver(65535))
 	session.SetRecvTimeout(5 * time.Second)

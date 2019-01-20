@@ -264,17 +264,17 @@ func onceRoutine(r *RPCClient) {
 	mtx.Unlock()
 }
 
-func NewClient(channel RPCChannel, decoder RPCMessageDecoder, encoder RPCMessageEncoder, cbEventQueue ...*event.EventQueue) (*RPCClient, error) {
+func NewClient(channel RPCChannel, decoder RPCMessageDecoder, encoder RPCMessageEncoder, cbEventQueue ...*event.EventQueue) *RPCClient {
 	if nil == decoder {
-		return nil, fmt.Errorf("decoder == nil")
+		panic("decoder == nil")
 	}
 
 	if nil == encoder {
-		return nil, fmt.Errorf("encoder == nil")
+		panic("encoder == nil")
 	}
 
 	if nil == channel {
-		return nil, fmt.Errorf("channel == nil")
+		panic("channel == nil")
 	}
 
 	var q *event.EventQueue
@@ -294,5 +294,5 @@ func NewClient(channel RPCChannel, decoder RPCMessageDecoder, encoder RPCMessage
 
 	onceRoutine(r)
 
-	return r, nil
+	return r
 }
