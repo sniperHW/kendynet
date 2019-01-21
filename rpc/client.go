@@ -120,6 +120,13 @@ func (this *RPCClient) OnRPCMessage(message interface{}) {
 		return
 	}
 
+	switch msg.(type) {
+	case *RPCResponse:
+		break
+	default:
+		panic("RPCClient.OnRPCMessage() invaild msg type")
+	}
+
 	var (
 		ctx *reqContext
 		ok  bool

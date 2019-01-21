@@ -1,17 +1,14 @@
 package event
 
 import (
-	"fmt"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/util"
-	//"runtime"
 	"sync/atomic"
 )
 
 type element struct {
-	tt       int
-	args     []interface{}
-	callback interface{}
+	args []interface{}
+	fn   interface{}
 }
 
 type EventQueue struct {
@@ -31,75 +28,60 @@ func NewEventQueue(fullSize ...int) *EventQueue {
 	return r
 }
 
-func (this *EventQueue) PostNoWait(callback interface{}, args ...interface{}) {
-
-	e := element{}
-
-	switch callback.(type) {
+func (this *EventQueue) preparePost(fn interface{}, args ...interface{}) *element {
+	e := &element{}
+	switch fn.(type) {
 	case func():
-		e.tt = tt_noargs
-		e.callback = callback
+		e.fn = fn
 		break
 	case func([]interface{}):
-		e.tt = tt_varargs
-		e.callback = callback
+		e.fn = fn
 		e.args = args
 		break
 	default:
 		panic("invaild callback type")
 	}
-	this.eventQueue.AddNoWait(&e)
+	return e
 }
 
-func (this *EventQueue) Post(callback interface{}, args ...interface{}) {
+func (this *EventQueue) PostNoWait(fn interface{}, args ...interface{}) {
+	this.eventQueue.AddNoWait(this.preparePost(fn, args...))
+}
 
-	e := element{}
-
-	switch callback.(type) {
-	case func():
-		e.tt = tt_noargs
-		e.callback = callback
-		break
-	case func([]interface{}):
-		e.tt = tt_varargs
-		e.callback = callback
-		e.args = args
-		break
-	default:
-		panic("invaild callback type")
-	}
-	this.eventQueue.Add(&e)
+func (this *EventQueue) Post(fn interface{}, args ...interface{}) {
+	this.eventQueue.Add(this.preparePost(fn, args...))
 }
 
 func (this *EventQueue) Close() {
 	this.eventQueue.Close()
 }
 
-func pcall(tt int, callback interface{}, args []interface{}) {
-
+func pcall(fn interface{}, args []interface{}) {
 	defer util.Recover(kendynet.GetLogger())
-
-	if tt == tt_noargs {
-		callback.(func())()
-	} else {
-		callback.(func([]interface{}))(args)
+	switch fn.(type) {
+	case func():
+		fn.(func())()
+		break
+	case func([]interface{}):
+		fn.(func([]interface{}))(args)
+		break
 	}
 }
 
-func (this *EventQueue) Run() error {
+func (this *EventQueue) Run() {
 
 	if !atomic.CompareAndSwapInt32(&this.started, 0, 1) {
-		return fmt.Errorf("already started")
+		return
 	}
 
 	for {
 		closed, localList := this.eventQueue.Get()
 		for _, v := range localList {
 			e := v.(*element)
-			pcall(e.tt, e.callback, e.args)
+			pcall(e.fn, e.args)
 		}
 		if closed {
-			return nil
+			return
 		}
 	}
 }

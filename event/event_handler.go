@@ -1,13 +1,7 @@
 package event
 
 import (
-	"fmt"
 	"sync"
-)
-
-const (
-	tt_noargs  = 1 //无参回调
-	tt_varargs = 2 //不定参数回调
 )
 
 const (
@@ -18,15 +12,14 @@ const (
 )
 
 type Handle struct {
-	tt       int
-	callback interface{}
-	once     bool
-	prev     *Handle
-	next     *Handle
-	mtx      sync.Mutex
-	status   int
-	event    interface{}
-	slot     *handlerSlot
+	fn     interface{}
+	once   bool
+	prev   *Handle
+	next   *Handle
+	mtx    sync.Mutex
+	status int
+	event  interface{}
+	slot   *handlerSlot
 }
 
 type handlerSlot struct {
@@ -50,31 +43,27 @@ func NewEventHandler(processQueue *EventQueue) *EventHandler {
 	}
 }
 
-func (this *EventHandler) Register(event interface{}, once bool, callback interface{}) (*Handle, error) {
+func (this *EventHandler) Register(event interface{}, once bool, fn interface{}) *Handle {
 
 	if nil == event {
-		return nil, fmt.Errorf("event == nil")
+		panic("event == nil")
 	}
 
-	var tt int
-
-	switch callback.(type) {
+	switch fn.(type) {
 	case func():
-		tt = tt_noargs
 		break
 	case func([]interface{}):
-		tt = tt_varargs
 		break
 	default:
-		return nil, fmt.Errorf("invaild callback type")
+		panic("invaild fn type")
+		break
 	}
 
 	handle := &Handle{
-		tt:       tt,
-		callback: callback,
-		once:     once,
-		status:   status_register,
-		event:    event,
+		fn:     fn,
+		once:   once,
+		status: status_register,
+		event:  event,
 	}
 
 	this.processQueue.PostNoWait(func() {
@@ -87,7 +76,7 @@ func (this *EventHandler) Register(event interface{}, once bool, callback interf
 		}
 		slot.register(handle)
 	})
-	return handle, nil
+	return handle
 }
 
 func (this *EventHandler) Remove(handle *Handle) bool {
@@ -158,7 +147,7 @@ func (this *handlerSlot) emit(args ...interface{}) {
 		if cur.status == status_watting {
 			cur.status = status_emitting
 			cur.mtx.Unlock()
-			pcall(cur.tt, cur.callback, args)
+			pcall(cur.fn, args)
 			cur.mtx.Lock()
 			if cur.once {
 				cur.status = status_remove

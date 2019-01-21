@@ -3,6 +3,7 @@ package util
 import (
 	"fmt"
 	"github.com/sniperHW/kendynet/golog"
+	"reflect"
 	"runtime"
 	"strings"
 )
@@ -43,4 +44,36 @@ func Recover(logger ...golog.LoggerI) {
 			logger_.Errorf(FormatFileLine("%s\n", fmt.Sprintf("%v: %s", r, buf[:l])))
 		}
 	}
+}
+
+func PCall(fn interface{}, args ...interface{}) (err error, ret []interface{}) {
+	defer func() {
+		if r := recover(); r != nil {
+			buf := make([]byte, 65535)
+			l := runtime.Stack(buf, false)
+			err = fmt.Errorf(fmt.Sprintf("%v: %s", r, buf[:l]))
+
+		}
+	}()
+
+	oriF := reflect.ValueOf(fn)
+
+	if oriF.Kind() != reflect.Func {
+		err = fmt.Errorf("fn is not Func")
+		return
+	}
+
+	in := []reflect.Value{}
+	for _, v := range args {
+		in = append(in, reflect.ValueOf(v))
+	}
+
+	out := oriF.Call(in)
+	if len(out) > 0 {
+		ret = make([]interface{}, len(out))[0:0]
+		for _, v := range out {
+			ret = append(ret, v.Interface())
+		}
+	}
+	return
 }
