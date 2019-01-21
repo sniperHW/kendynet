@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/util"
-	"runtime"
+	//"runtime"
 	"sync/atomic"
 )
 
@@ -76,13 +76,8 @@ func (this *EventQueue) Close() {
 }
 
 func pcall(tt int, callback interface{}, args []interface{}) {
-	defer func() {
-		if r := recover(); r != nil {
-			buf := make([]byte, 65535)
-			l := runtime.Stack(buf, false)
-			kendynet.Errorf("%v: %s\n", r, buf[:l])
-		}
-	}()
+
+	defer util.Recover(kendynet.GetLogger())
 
 	if tt == tt_noargs {
 		callback.(func())()

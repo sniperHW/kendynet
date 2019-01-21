@@ -5,7 +5,6 @@ import (
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/event"
 	"github.com/sniperHW/kendynet/util"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -41,13 +40,7 @@ func (this *reqContext) SetIndex(idx uint32) {
 }
 
 func (this *reqContext) callResponseCB(ret interface{}, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			buf := make([]byte, 65535)
-			l := runtime.Stack(buf, false)
-			kendynet.Errorf(util.FormatFileLine("%s\n", fmt.Sprintf("%v: %s", r, buf[:l])))
-		}
-	}()
+	defer util.Recover(kendynet.GetLogger())
 	this.onResponse(ret, err)
 }
 

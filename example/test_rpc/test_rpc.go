@@ -124,9 +124,9 @@ type RPCServer struct {
 }
 
 func NewRPCServer() *RPCServer {
-	r := &RPCServer{}
-	r.server, _ = rpc.NewRPCServer(&TestDecoder{}, &TestEncoder{})
-	return r
+	return &RPCServer{
+		server: rpc.NewRPCServer(&TestDecoder{}, &TestEncoder{}),
+	}
 }
 
 func (this *RPCServer) RegisterMethod(name string, method rpc.RPCMethodHandler) {
