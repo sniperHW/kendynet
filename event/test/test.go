@@ -1,22 +1,21 @@
-package main 
+package main
 
-import(
+import (
 	"fmt"
 	"github.com/sniperHW/kendynet/event"
 )
-
 
 var eventQueue *event.EventQueue
 
 func testQueueMode() {
 
 	fmt.Println("-------------------testQueueMode-----------------")
-	
+
 	var err error
 
 	handler := event.NewEventHandler(eventQueue)
-	
-	_,err = handler.Register("queue",false,func () {
+
+	_, err = handler.Register("queue", false, func() {
 		fmt.Println("handler1")
 	})
 
@@ -26,7 +25,7 @@ func testQueueMode() {
 
 	var h *event.Handle
 
-	h,err = handler.Register("queue",false,func () {
+	h, err = handler.Register("queue", false, func() {
 		fmt.Println("handler2")
 		handler.Remove(h)
 	})
@@ -35,18 +34,17 @@ func testQueueMode() {
 		fmt.Println(err)
 	}
 
-	_,err = handler.Register("queue",false,func () {
+	_, err = handler.Register("queue", false, func() {
 		fmt.Println("handler3")
-	})	
+	})
 
 	if err != nil {
 		fmt.Println(err)
 	}
 
-
 	/*
 	* 所有注册的处理器将按注册顺序依次执行
-	*/
+	 */
 
 	handler.Emit("queue")
 
@@ -60,16 +58,15 @@ func testQueueMode() {
 
 }
 
-
 func testQueueOnceMode() {
 
 	fmt.Println("-------------------testQueueOnceMode-----------------")
-	
+
 	var err error
 
 	handler := event.NewEventHandler(eventQueue)
-	
-	_,err = handler.Register("queue",false,func () {
+
+	_, err = handler.Register("queue", false, func() {
 		fmt.Println("handler1")
 	})
 
@@ -77,8 +74,7 @@ func testQueueOnceMode() {
 		fmt.Println(err)
 	}
 
-
-	_,err = handler.Register("queue",true,func () {
+	_, err = handler.Register("queue", true, func() {
 		fmt.Println("handler2")
 	})
 
@@ -86,18 +82,17 @@ func testQueueOnceMode() {
 		fmt.Println(err)
 	}
 
-	_,err = handler.Register("queue",false,func () {
+	_, err = handler.Register("queue", false, func() {
 		fmt.Println("handler3")
-	})	
+	})
 
 	if err != nil {
 		fmt.Println(err)
 	}
 
-
 	/*
 	* 所有注册的处理器将按注册顺序依次执行
-	*/
+	 */
 
 	handler.Emit("queue")
 
@@ -106,7 +101,6 @@ func testQueueOnceMode() {
 	handler.Emit("queue")
 
 }
-
 
 func main() {
 
@@ -119,5 +113,5 @@ func main() {
 	eventQueue.Close()
 
 	eventQueue.Run()
-	
+
 }

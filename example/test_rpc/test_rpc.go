@@ -124,9 +124,9 @@ type RPCServer struct {
 }
 
 func NewRPCServer() *RPCServer {
-	r := &RPCServer{}
-	r.server, _ = rpc.NewRPCServer(&TestDecoder{}, &TestEncoder{})
-	return r
+	return &RPCServer{
+		server: rpc.NewRPCServer(&TestDecoder{}, &TestEncoder{}),
+	}
 }
 
 func (this *RPCServer) RegisterMethod(name string, method rpc.RPCMethodHandler) {
@@ -189,12 +189,12 @@ func (this *Caller) Dial(service string, timeout time.Duration) error {
 	return nil
 }
 
-func (this *Caller) AsynCall(method string, arg interface{}, timeout uint32, cb rpc.RPCResponseHandler) {
+func (this *Caller) AsynCall(method string, arg interface{}, timeout time.Duration, cb rpc.RPCResponseHandler) {
 	this.client.AsynCall(method, arg, timeout, cb)
 }
 
-func (this *Caller) SyncCall(method string, arg interface{}, timeout uint32) (interface{}, error) {
-	return this.client.SyncCall(method, arg, timeout)
+func (this *Caller) Call(method string, arg interface{}, timeout time.Duration) (interface{}, error) {
+	return this.client.Call(method, arg, timeout)
 }
 
 func init() {

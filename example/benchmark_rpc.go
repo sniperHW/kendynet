@@ -3,12 +3,13 @@ package main
 import (
 	"fmt"
 	"github.com/golang/protobuf/proto"
-	//"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/example/test_rpc"
 	"github.com/sniperHW/kendynet/example/testproto"
-	//"github.com/sniperHW/kendynet/golog"
+	"github.com/sniperHW/kendynet/golog"
 	"github.com/sniperHW/kendynet/rpc"
 	"github.com/sniperHW/kendynet/timer"
+	"github.com/sniperHW/kendynet/util"
 	"os"
 	"strconv"
 	"sync/atomic"
@@ -19,7 +20,12 @@ import (
 var timeoutcount int32
 var reqcount int32
 
+func ff() {
+	fmt.Printf(util.CallStack(5))
+}
+
 func server(service string) {
+	ff()
 	count := int32(0)
 	total := 0
 	timer.Repeat(time.Second, nil, func(_ timer.TimerID) {
@@ -47,6 +53,64 @@ func server(service string) {
 	server.Serve(service)
 }
 
+func testSyncCall(caller *test_rpc.Caller) {
+	for j := 0; j < 10; j++ {
+		go func() {
+			for {
+				arg := &testproto.Hello{Hello: proto.String("hello")}
+				_, err := caller.Call("hello", arg, time.Second)
+				atomic.AddInt32(&reqcount, 1)
+				if nil != err {
+					fmt.Printf("err:%s\n", err.Error())
+				}
+			}
+		}()
+
+		/*for j := 0; j < 40; j++ {
+			go func() {
+				for {
+					arg := &testproto.Hello{Hello: proto.String("hello fasdfasdfasdfasdfjasjfjeiofjkaljfklasjfkljasdifjasijflkasdjl")}
+					_, err := caller.SyncCall("hello", arg, time.Second)
+					atomic.AddInt32(&reqcount, 1)
+					if nil != err {
+						fmt.Printf("err:%s\n", err.Error())
+					}
+				}
+			}()
+		}*/
+	}
+}
+
+func testAsynCall(caller *test_rpc.Caller) {
+	var callback1 func(interface{}, error)
+	var callback2 func(interface{}, error)
+
+	callback1 = func(msg interface{}, err error) {
+		if nil != err {
+			fmt.Printf("err:%s\n", err.Error())
+		}
+		arg := &testproto.Hello{Hello: proto.String("hello")}
+		caller.AsynCall("hello", arg, time.Second, callback1)
+	}
+
+	callback2 = func(msg interface{}, err error) {
+		if nil != err {
+			fmt.Printf("err:%s\n", err.Error())
+		}
+		arg := &testproto.Hello{Hello: proto.String("hello fasdfasdfasdfasdfjasjfjeiofjkaljfklasjfkljasdifjasijflkasdjl")}
+		caller.AsynCall("hello", arg, time.Second, callback2)
+	}
+	for j := 0; j < 10; j++ {
+		arg := &testproto.Hello{Hello: proto.String("hello")}
+		caller.AsynCall("hello", arg, time.Second, callback1)
+	}
+
+	for j := 0; j < 10; j++ {
+		arg := &testproto.Hello{Hello: proto.String("hello fasdfasdfasdfasdfjasjfjeiofjkaljfklasjfkljasdifjasijflkasdjl")}
+		caller.AsynCall("hello", arg, time.Second, callback2)
+	}
+}
+
 func client(service string, count int) {
 
 	for i := 0; i < count; i++ {
@@ -57,96 +121,18 @@ func client(service string, count int) {
 				return
 			}
 
-			for j := 0; j < 10; j++ {
-				go func() {
-					for {
-						arg := &testproto.Hello{Hello: proto.String("hello")}
-						_, err := caller.SyncCall("hello", arg, 1000)
-						atomic.AddInt32(&reqcount, 1)
-						if nil != err {
-							fmt.Printf("err:%s\n", err.Error())
-							if err != rpc.ErrCallTimeout {
-								break
-							}
-						}
-					}
-				}()
-			}
-
-			/*for j := 0; j < 40; j++ {
-				go func() {
-					for {
-						arg := &testproto.Hello{Hello: proto.String("hello fasdfasdfasdfasdfjasjfjeiofjkaljfklasjfkljasdifjasijflkasdjl")}
-						_, err := caller.SyncCall("hello", arg, 1000)
-						atomic.AddInt32(&reqcount, 1)
-						if nil != err {
-							fmt.Printf("err:%s\n", err.Error())
-						}
-					}
-				}()
-			}*/
-
-			/*var callback1 func(interface{},error)
-			var callback2 func(interface{},error)
-
-
-			callback1 = func(msg interface{},err error) {
-				if nil != err {
-					fmt.Printf("err:%s\n",err.Error())
-				}
-				arg := &testproto.Hello{Hello:proto.String("hello")}
-				caller.AsynCall("hello",arg,1000,callback1)
-			}
-
-			callback2 = func(msg interface{},err error) {
-				if nil != err {
-					fmt.Printf("err:%s\n",err.Error())
-				}
-				arg := &testproto.Hello{Hello:proto.String("hello fasdfasdfasdfasdfjasjfjeiofjkaljfklasjfkljasdifjasijflkasdjl")}
-				caller.AsynCall("hello",arg,1000,callback2)
-			}
-			for j:=0;j < 10;j++{
-				arg := &testproto.Hello{Hello:proto.String("hello")}
-				caller.AsynCall("hello",arg,1000,callback1)
-			}*/
-
-			/*for j:=0;j < 10;j++{
-				arg := &testproto.Hello{Hello:proto.String("hello fasdfasdfasdfasdfjasjfjeiofjkaljfklasjfkljasdifjasijflkasdjl")}
-				caller.AsynCall("hello",arg,1000,callback2)
-			}*/
+			//testSyncCall(caller)
+			testAsynCall(caller)
 
 		}()
-		/*var onResp func(ret interface{},err error)
-		onResp = func(ret interface{},err error){
-			if nil != ret {
-				err := caller.Call("hello",hello,10,onResp)
-				if err != nil {
-					fmt.Printf("%s\n",err.Error())
-					return
-				}
-			} else if nil != err {
-				fmt.Printf("%s\n",err.Error())
-			}
-		}
-
-		err := caller.Dial(service,10 * time.Second)
-		if err != nil {
-			fmt.Printf("%s\n",err.Error())
-		} else {
-			for j := 0 ; j < 10; j++ {
-				caller.Call("hello",hello,onResp)
-			}
-		}*/
 	}
 }
 
 func main() {
 
-	/*outLogger := golog.NewOutputLogger("log","kendynet",1024*1024*1000)
-	kendynet.InitLogger(outLogger)
-	rpc.InitLogger(outLogger)*/
-
-	rpc.InitClient(nil)
+	outLogger := golog.NewOutputLogger("log", "kendynet", 1024*1024*1000)
+	kendynet.InitLogger(golog.New("rpc", outLogger))
+	kendynet.Debugln("start")
 
 	if len(os.Args) < 3 {
 		fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")

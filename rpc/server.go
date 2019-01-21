@@ -33,7 +33,6 @@ func (this *RPCReplyer) reply(response RPCMessage) {
 	if nil != err {
 		kendynet.Errorf(util.FormatFileLine("send rpc response to (%s) error:%s\n", this.channel.Name(), err.Error()))
 	}
-	//Errorf("reply %d\n",response.GetSeq())
 }
 
 type RPCMethodHandler func(*RPCReplyer, interface{})
@@ -48,16 +47,14 @@ type RPCServer struct {
 
 func (this *RPCServer) RegisterMethod(name string, method RPCMethodHandler) error {
 	if name == "" {
-		return fmt.Errorf("name == ''")
+		panic("name == ''")
 	}
 
 	if nil == method {
-		return fmt.Errorf("method == nil")
+		panic("method == nil")
 	}
 
-	defer func() {
-		this.mutexMethods.Unlock()
-	}()
+	defer this.mutexMethods.Unlock()
 	this.mutexMethods.Lock()
 
 	_, ok := this.methods[name]
@@ -69,9 +66,7 @@ func (this *RPCServer) RegisterMethod(name string, method RPCMethodHandler) erro
 }
 
 func (this *RPCServer) UnRegisterMethod(name string) {
-	defer func() {
-		this.mutexMethods.Unlock()
-	}()
+	defer this.mutexMethods.Unlock()
 	this.mutexMethods.Lock()
 	delete(this.methods, name)
 }
@@ -119,20 +114,27 @@ func (this *RPCServer) OnRPCMessage(channel RPCChannel, message interface{}) {
 				this.callMethod(method, replyer, req.Arg)
 			}
 		}
+		break
+	default:
+		panic("RPCServer.OnRPCMessage() invaild msg type")
+		break
 	}
 
 }
 
-func NewRPCServer(decoder RPCMessageDecoder, encoder RPCMessageEncoder) (*RPCServer, error) {
+func NewRPCServer(decoder RPCMessageDecoder, encoder RPCMessageEncoder) *RPCServer {
 	if nil == decoder {
-		return nil, fmt.Errorf("decoder == nil")
+		panic("decoder == nil")
 	}
 
 	if nil == encoder {
-		return nil, fmt.Errorf("encoder == nil")
+		panic("encoder == nil")
 	}
 
-	mgr := &RPCServer{decoder: decoder, encoder: encoder}
-	mgr.methods = make(map[string]RPCMethodHandler)
-	return mgr, nil
+	return &RPCServer{
+		decoder: decoder,
+		encoder: encoder,
+		methods: map[string]RPCMethodHandler{},
+	}
+
 }

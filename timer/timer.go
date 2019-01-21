@@ -1,11 +1,9 @@
 package timer
 
 import (
-	"fmt"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/event"
 	"github.com/sniperHW/kendynet/util"
-	"runtime"
 	"sync"
 	"time"
 )
@@ -84,14 +82,7 @@ func op_put(o *op) {
 }
 
 func pcall(callback func(TimerID), id TimerID) {
-	defer func() {
-		if r := recover(); r != nil {
-			buf := make([]byte, 65535)
-			l := runtime.Stack(buf, false)
-			err := fmt.Errorf("%v: %s", r, buf[:l])
-			kendynet.Errorf(util.FormatFileLine("%s\n", err.Error()))
-		}
-	}()
+	defer util.Recover(kendynet.GetLogger())
 	callback(id)
 }
 

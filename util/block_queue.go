@@ -10,6 +10,10 @@ var (
 	ErrQueueFull   = fmt.Errorf("queue full")
 )
 
+const (
+	initCap = 64
+)
+
 type BlockQueue struct {
 	list        []interface{}
 	listGuard   sync.Mutex
@@ -38,7 +42,7 @@ func (self *BlockQueue) AddNoWait(item interface{}, fullReturn ...bool) error {
 
 	self.list = append(self.list, item)
 
-	needSignal := self.emptyWaited > 0 && n == 0 /*BlockQueue目前主要用于单消费者队列，这里n == 0的处理是为了这种情况的优化,减少Signal的调用次数*/
+	needSignal := self.emptyWaited > 0 && n == 0
 	self.listGuard.Unlock()
 	if needSignal {
 		self.emptyCond.Signal()
@@ -69,7 +73,7 @@ func (self *BlockQueue) Add(item interface{}) error {
 	n := len(self.list)
 	self.list = append(self.list, item)
 
-	needSignal := self.emptyWaited > 0 && n == 0 /*BlockQueue目前主要用于单消费者队列，这里n == 0的处理是为了这种情况的优化,减少Signal的调用次数*/
+	needSignal := self.emptyWaited > 0 && n == 0
 	self.listGuard.Unlock()
 	if needSignal {
 		self.emptyCond.Signal()
@@ -95,7 +99,7 @@ func (self *BlockQueue) Get() (closed bool, datas []interface{}) {
 	}
 	if len(self.list) > 0 {
 		datas = self.list
-		self.list = make([]interface{}, 0)
+		self.list = make([]interface{}, initCap)[0:0]
 	}
 	needSignal := self.fullWaited > 0
 	closed = self.closed
@@ -140,18 +144,16 @@ func (self *BlockQueue) Close() {
 	self.fullCond.Broadcast()
 }
 
-func (self *BlockQueue) Len() (length int) {
+func (self *BlockQueue) Len() int {
 	self.listGuard.Lock()
-	length = len(self.list)
-	self.listGuard.Unlock()
-	return
+	defer self.listGuard.Unlock()
+	return len(self.list)
 }
 
 func (self *BlockQueue) Clear() {
 	self.listGuard.Lock()
+	defer self.listGuard.Unlock()
 	self.list = self.list[0:0]
-	self.listGuard.Unlock()
-	return
 }
 
 func NewBlockQueueWithName(name string, fullSize ...int) *BlockQueue {
@@ -160,6 +162,7 @@ func NewBlockQueueWithName(name string, fullSize ...int) *BlockQueue {
 	self.closed = false
 	self.emptyCond = sync.NewCond(&self.listGuard)
 	self.fullCond = sync.NewCond(&self.listGuard)
+	self.list = make([]interface{}, initCap)[0:0]
 
 	if len(fullSize) > 0 {
 		if fullSize[0] <= 0 {
@@ -178,6 +181,7 @@ func NewBlockQueue(fullSize ...int) *BlockQueue {
 	self.closed = false
 	self.emptyCond = sync.NewCond(&self.listGuard)
 	self.fullCond = sync.NewCond(&self.listGuard)
+	self.list = make([]interface{}, initCap)[0:0]
 
 	if len(fullSize) > 0 {
 		if fullSize[0] <= 0 {
