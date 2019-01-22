@@ -334,6 +334,10 @@ func sendThreadFunc(session *StreamSocket) {
 
 func (this *StreamSocket) Start(eventCB func(*kendynet.Event)) error {
 
+	if eventCB == nil {
+		panic("eventCB == nil")
+	}
+
 	this.mutex.Lock()
 	defer this.mutex.Unlock()
 
@@ -343,10 +347,6 @@ func (this *StreamSocket) Start(eventCB func(*kendynet.Event)) error {
 
 	if (this.flag & started) > 0 {
 		return kendynet.ErrStarted
-	}
-
-	if eventCB == nil {
-		return kendynet.ErrNoOnEvent
 	}
 
 	if this.receiver == nil {
