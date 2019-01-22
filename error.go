@@ -11,6 +11,7 @@ var (
 	ErrBuffMaxSizeExceeded = fmt.Errorf("bytebuffer: Max Buffer Size Exceeded")
 	ErrBuffInvaildAgr      = fmt.Errorf("bytebuffer: Invaild Idx or size")
 	ErrSocketClose         = fmt.Errorf("socket close")
+	ErrSendQueFull         = fmt.Errorf("send queue full")
 	ErrSendTimeout         = fmt.Errorf("send timeout")
 	ErrStarted             = fmt.Errorf("already started")
 	ErrInvaildBuff         = fmt.Errorf("buff is nil")

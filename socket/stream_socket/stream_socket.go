@@ -173,6 +173,8 @@ func (this *StreamSocket) sendMessage(msg kendynet.Message) error {
 		if nil != err {
 			if err == util.ErrQueueClosed {
 				err = kendynet.ErrSocketClose
+			} else if err == util.ErrQueueFull {
+				err = kendynet.ErrSendQueFull
 			}
 			return err
 		}

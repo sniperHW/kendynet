@@ -199,9 +199,7 @@ func (this *RPCClient) AsynCall(method string, arg interface{}, timeout time.Dur
 		this.mtx.Lock()
 		defer this.mtx.Unlock()
 		err := this.channel.SendRequest(request)
-		if err != nil {
-			return err
-		} else {
+		if err == nil {
 			if this.bindCheck == false {
 				this.bindCheck = true
 				mtx.Lock()
@@ -211,6 +209,8 @@ func (this *RPCClient) AsynCall(method string, arg interface{}, timeout time.Dur
 			this.waitResp[context.seq] = context
 			this.minheap.Insert(context)
 			return nil
+		} else {
+			return err
 		}
 	}
 }
