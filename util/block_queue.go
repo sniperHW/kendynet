@@ -45,7 +45,7 @@ func (self *BlockQueue) AddNoWait(item interface{}, fullReturn ...bool) error {
 	needSignal := self.emptyWaited > 0 && n == 0
 	self.listGuard.Unlock()
 	if needSignal {
-		self.emptyCond.Signal()
+		self.emptyCond.Broadcast()
 	}
 	return nil
 }
@@ -76,7 +76,7 @@ func (self *BlockQueue) Add(item interface{}) error {
 	needSignal := self.emptyWaited > 0 && n == 0
 	self.listGuard.Unlock()
 	if needSignal {
-		self.emptyCond.Signal()
+		self.emptyCond.Broadcast()
 	}
 	return nil
 }
