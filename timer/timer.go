@@ -1,6 +1,7 @@
 package timer
 
 import (
+	//"fmt"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/event"
 	"github.com/sniperHW/kendynet/util"
@@ -19,8 +20,6 @@ type timer struct {
 	eventQue *event.EventQueue
 	timeout  time.Duration
 	repeat   bool //是否重复定时器
-	droped   bool
-	mtx      sync.Mutex
 	callback func(*Timer)
 	t        *Timer
 	id       int64
@@ -38,102 +37,47 @@ func (this *timer) SetIndex(idx uint32) {
 	this.heapIdx = idx
 }
 
-func (this *timer) setDroped() {
-	this.mtx.Lock()
-	defer this.mtx.Unlock()
-	this.droped = true
-}
-
 var (
 	idcounter  int64
-	opChan     chan *op
+	notiChan   *util.Notifyer
 	minheap    *util.MinHeap
-	timer_pool sync.Pool
-	op_pool    sync.Pool
 	mtx        sync.Mutex
 	idTimerMap map[int64]*timer
 )
-
-const (
-	op_register = 1 //注册定时器
-	op_drop     = 2 //丢弃定时器
-	op_wakeup   = 3 //唤醒
-)
-
-type op struct {
-	tt   int32 //操作类型
-	data interface{}
-}
-
-func timer_get() *timer {
-	t := timer_pool.Get().(*timer)
-	t.id = atomic.AddInt64(&idcounter, 1)
-	t.droped = false
-	return t
-}
-
-func timer_put(t *timer) {
-	t.t = nil
-	timer_pool.Put(t)
-}
-
-func op_get() *op {
-	return op_pool.Get().(*op)
-}
-
-func op_put(o *op) {
-	op_pool.Put(o)
-}
 
 func pcall(callback func(*Timer), t *Timer) {
 	defer util.Recover(kendynet.GetLogger())
 	callback(t)
 }
 
-func aferCall(t *timer) {
-	if !t.repeat {
-		mtx.Lock()
-		if _, ok := idTimerMap[t.id]; ok {
-			delete(idTimerMap, t.id)
-			timer_put(t)
-		}
-		mtx.Unlock()
-	}
-}
-
 func loop() {
-
 	defaultSleepTime := 10 * time.Second
-	var t *time.Timer
+	var tt *time.Timer
 	var min util.HeapElement
 	for {
 		now := time.Now()
 		for {
+			mtx.Lock()
 			min = minheap.Min()
 			if nil != min && now.After(min.(*timer).expired) {
 				t := min.(*timer)
 				minheap.PopMin()
-				t.mtx.Lock()
-				if !t.droped {
-					if t.repeat {
-						//再次注册
-						t.expired = time.Now().Add(t.timeout)
-						minheap.Insert(t)
-					}
-					t.mtx.Unlock()
-					if nil == t.eventQue {
-						pcall(t.callback, t.t)
-						aferCall(t)
-					} else {
-						t.eventQue.PostNoWait(func() {
-							pcall(t.callback, t.t)
-							aferCall(t)
-						})
-					}
+				if !t.repeat {
+					delete(idTimerMap, t.id)
 				} else {
-					t.mtx.Unlock()
+					t.expired = now.Add(t.timeout)
+					minheap.Insert(t)
+				}
+				mtx.Unlock()
+				if nil == t.eventQue {
+					pcall(t.callback, t.t)
+				} else {
+					t.eventQue.PostNoWait(func() {
+						pcall(t.callback, t.t)
+					})
 				}
 			} else {
+				mtx.Unlock()
 				break
 			}
 		}
@@ -142,38 +86,16 @@ func loop() {
 		if nil != min {
 			sleepTime = min.(*timer).expired.Sub(now)
 		}
-
-		if nil != t {
-			t.Stop()
-			t.Reset(sleepTime)
+		if nil != tt {
+			tt.Stop()
+			tt.Reset(sleepTime)
 		} else {
-			t = time.AfterFunc(sleepTime, func() {
-				o := op_get()
-				o.tt = op_wakeup
-				opChan <- o
+			tt = time.AfterFunc(sleepTime, func() {
+				notiChan.Notify()
 			})
 		}
 
-		o := <-opChan
-		switch o.tt {
-		case op_register:
-			t := o.data.(*timer)
-			t.mtx.Lock()
-			if !t.droped {
-				//确保timer没有被Drop
-				minheap.Insert(t)
-			}
-			t.mtx.Unlock()
-			break
-		case op_drop:
-			t := o.data.(*timer)
-			minheap.Remove(t)
-			timer_put(t)
-			break
-		default:
-			break
-		}
-		op_put(o)
+		notiChan.Wait()
 	}
 }
 
@@ -188,25 +110,34 @@ func newTimer(timeout time.Duration, repeat bool, eventQue *event.EventQueue, fn
 	if nil == fn {
 		panic("fn == nil")
 	}
-	t := timer_get()
-	t.timeout = timeout
-	t.expired = time.Now().Add(timeout)
-	t.repeat = repeat
-	t.callback = fn
-	t.eventQue = eventQue
-	t.t = &Timer{
-		id: t.id,
+
+	id := atomic.AddInt64(&idcounter, 1)
+
+	t := &timer{
+		id:       id,
+		timeout:  timeout,
+		expired:  time.Now().Add(timeout),
+		repeat:   repeat,
+		callback: fn,
+		eventQue: eventQue,
+		t: &Timer{
+			id: id,
+		},
 	}
 
-	//先插入到idTimerMap中，以允许后面执行DropTimer
+	needNotify := false
+
 	mtx.Lock()
 	idTimerMap[t.id] = t
+	minheap.Insert(t)
+	min := minheap.Min().(*timer)
+	if min == t || min.expired.After(t.expired) {
+		needNotify = true
+	}
 	mtx.Unlock()
-
-	o := op_get()
-	o.tt = op_register
-	o.data = t
-	opChan <- o
+	if needNotify {
+		notiChan.Notify()
+	}
 	return t.t
 }
 
@@ -221,47 +152,27 @@ func Repeat(timeout time.Duration, eventQue *event.EventQueue, callback func(*Ti
 }
 
 /*
-*  终止定时器
-*  注意：因为定时器在单独go程序中调度，Cancel不保证能终止定时器的下次执行（例如定时器马上将要被调度执行，此时在另外
-*        一个go程中调用Cancel），对于重复定时器，可以保证定时器最多在执行一次之后终止。
+ *  终止定时器
+ *  注意：因为定时器在单独go程序中调度，Cancel不保证能终止定时器的下次执行（例如定时器马上将要被调度执行，此时在另外
+ *        一个go程中调用Cancel），对于重复定时器，可以保证定时器最多在执行一次之后终止。
  */
 func (this *Timer) Cancel() {
 	mtx.Lock()
-
 	id := this.id
-
 	t, ok := idTimerMap[id]
 	if ok {
 		delete(idTimerMap, id)
+		minheap.Remove(t)
 	} else {
 		mtx.Unlock()
 		return
 	}
 	mtx.Unlock()
-
-	t.setDroped()
-
-	if ok {
-		o := op_get()
-		o.tt = op_drop
-		o.data = t
-		opChan <- o
-	}
 }
 
 func init() {
-	opChan = make(chan *op, 65536)
+	notiChan = util.NewNotifyer()
 	minheap = util.NewMinHeap(65536)
 	idTimerMap = map[int64]*timer{}
-	timer_pool = sync.Pool{
-		New: func() interface{} {
-			return &timer{mtx: sync.Mutex{}}
-		},
-	}
-	op_pool = sync.Pool{
-		New: func() interface{} {
-			return &op{}
-		},
-	}
 	go loop()
 }

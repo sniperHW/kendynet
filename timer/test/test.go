@@ -21,7 +21,7 @@ func main() {
 		}
 	})
 
-	timer.Once(1*time.Second, nil, func(_ *timer.Timer) {
+	timer.Once(12*time.Second, nil, func(_ *timer.Timer) {
 		fmt.Println("Once timer")
 	})
 
