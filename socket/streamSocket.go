@@ -94,56 +94,6 @@ func (this *StreamSocket) sendMessage(msg kendynet.Message) error {
 	return nil
 }
 
-func (this *StreamSocket) recvThreadFunc() {
-
-	for !this.isClosed() {
-
-		var p interface{}
-		var err error
-
-		recvTimeout := this.recvTimeout
-
-		if recvTimeout > 0 {
-			this.conn.SetReadDeadline(time.Now().Add(recvTimeout))
-			p, err = this.receiver.ReceiveAndUnpack(this)
-			this.conn.SetReadDeadline(time.Time{})
-		} else {
-			p, err = this.receiver.ReceiveAndUnpack(this)
-		}
-
-		if this.isClosed() {
-			//上层已经调用关闭，所有事件都不再传递上去
-			break
-		}
-		if err != nil || p != nil {
-			var event kendynet.Event
-			event.Session = this
-			if err != nil {
-				event.EventType = kendynet.EventTypeError
-				event.Data = err
-				this.mutex.Lock()
-				if err == io.EOF {
-					this.flag |= rclosed
-				} else if !kendynet.IsNetTimeout(err) {
-					kendynet.Errorf("ReceiveAndUnpack error:%s\n", err.Error())
-					this.flag |= (rclosed | wclosed)
-				}
-				this.mutex.Unlock()
-			} else {
-				event.EventType = kendynet.EventTypeMessage
-				event.Data = p
-			}
-			/*出现错误不主动退出循环，除非用户调用了session.Close()
-			 * 避免用户遗漏调用Close(不调用Close会持续通告错误)
-			 */
-			this.onEvent(&event)
-			if this.isClosed() {
-				break
-			}
-		}
-	}
-}
-
 func (this *StreamSocket) sendThreadFunc() {
 
 	var err error
@@ -232,12 +182,13 @@ func NewStreamSocket(conn net.Conn, sendQueueSize ...int) kendynet.StreamSession
 		}
 
 		s := &StreamSocket{
-			conn:       conn,
-			SocketBase: &SocketBase{},
+			conn: conn,
 		}
-		s.sendQue = util.NewBlockQueue(sendQueueSize...)
-		s.sendCloseChan = make(chan int, 1)
-		s.imp = s
+		s.SocketBase = &SocketBase{
+			sendQue:       util.NewBlockQueue(sendQueueSize...),
+			sendCloseChan: make(chan int, 1),
+			imp:           s,
+		}
 		return s
 	}
 
@@ -248,12 +199,12 @@ func (this *StreamSocket) Read(b []byte) (int, error) {
 	return this.conn.Read(b)
 }
 
-func (this *StreamSocket) getSocketConn() net.Conn {
+func (this *StreamSocket) getNetConn() net.Conn {
 	return this.conn
 }
 
 func (this *StreamSocket) GetUnderConn() interface{} {
-	return this.conn
+	return this.getNetConn()
 }
 
 func (this *StreamSocket) defaultReceiver() kendynet.Receiver {

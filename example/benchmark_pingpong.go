@@ -3,7 +3,8 @@ package main
 import (
 	"fmt"
 	"github.com/sniperHW/kendynet"
-	"github.com/sniperHW/kendynet/socket/tcp"
+	connector "github.com/sniperHW/kendynet/socket/connector/tcp"
+	listener "github.com/sniperHW/kendynet/socket/listener/tcp"
 	"github.com/sniperHW/kendynet/timer"
 	"os"
 	"os/signal"
@@ -28,7 +29,7 @@ func server(service string) {
 		fmt.Printf("clientcount:%d,transrfer:%d KB/s,packetcount:%d\n", clientcount, tmp1/1024, tmp2)
 	})
 
-	server, err := tcp.NewListener("tcp4", service)
+	server, err := listener.New("tcp4", service)
 	if server != nil {
 		fmt.Printf("server running on:%s\n", service)
 		err = server.Start(func(session kendynet.StreamSession) {
@@ -60,7 +61,7 @@ func server(service string) {
 
 func client(service string, count int) {
 
-	client, err := tcp.NewConnector("tcp4", service)
+	client, err := connector.New("tcp4", service)
 
 	if err != nil {
 		fmt.Printf("NewTcpClient failed:%s\n", err.Error())

@@ -13,7 +13,7 @@ type Listener struct {
     closed   int32
 }
 
-func NewListener(nettype, service string) (*Listener, error) {
+func New(nettype, service string) (*Listener, error) {
     tcpAddr, err := net.ResolveTCPAddr(nettype, service)
     if err != nil {
         return nil, err

@@ -16,7 +16,7 @@ type Listener struct {
 	started  int32
 }
 
-func NewListener(nettype string, service string, origin string, upgrader ...*gorilla.Upgrader) (*Listener, error) {
+func New(nettype string, service string, origin string, upgrader ...*gorilla.Upgrader) (*Listener, error) {
 	tcpAddr, err := net.ResolveTCPAddr(nettype, service)
 	if err != nil {
 		return nil, err

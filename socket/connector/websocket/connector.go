@@ -15,7 +15,7 @@ type Connector struct {
 	requestHeader http.Header
 }
 
-func NewConnector(url url.URL, requestHeader http.Header, dialer ...*gorilla.Dialer) (*Connector, error) {
+func New(url url.URL, requestHeader http.Header, dialer ...*gorilla.Dialer) (*Connector, error) {
 
 	client := &Connector{
 		u:             url,

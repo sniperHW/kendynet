@@ -3,6 +3,7 @@ package socket
 import (
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/util"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -16,9 +17,10 @@ const (
 )
 
 type SocketImpl interface {
+	kendynet.StreamSession
 	recvThreadFunc()
 	sendThreadFunc()
-	getSocketConn() net.Conn
+	getNetConn() net.Conn
 	sendMessage(kendynet.Message) error
 	defaultReceiver() kendynet.Receiver
 }
@@ -40,11 +42,11 @@ type SocketBase struct {
 }
 
 func (this *SocketBase) LocalAddr() net.Addr {
-	return this.imp.getSocketConn().LocalAddr()
+	return this.imp.getNetConn().LocalAddr()
 }
 
 func (this *SocketBase) RemoteAddr() net.Addr {
-	return this.imp.getSocketConn().RemoteAddr()
+	return this.imp.getNetConn().RemoteAddr()
 }
 
 func (this *SocketBase) SetUserData(ud interface{}) {
@@ -67,7 +69,7 @@ func (this *SocketBase) isClosed() (ret bool) {
 }
 
 func (this *SocketBase) doClose() {
-	this.imp.getSocketConn().Close()
+	this.imp.getNetConn().Close()
 	this.mutex.Lock()
 	onClose := this.onClose
 	this.mutex.Unlock()
@@ -77,7 +79,7 @@ func (this *SocketBase) doClose() {
 }
 
 func (this *SocketBase) shutdownRead() {
-	underConn := this.imp.getSocketConn()
+	underConn := this.imp.getNetConn()
 	switch underConn.(type) {
 	case *net.TCPConn:
 		underConn.(*net.TCPConn).CloseRead()
@@ -180,4 +182,53 @@ func (this *SocketBase) SendMessage(msg kendynet.Message) error {
 	this.mutex.Lock()
 	defer this.mutex.Unlock()
 	return this.imp.sendMessage(msg)
+}
+
+func (this *SocketBase) recvThreadFunc() {
+
+	conn := this.imp.getNetConn()
+
+	for !this.isClosed() {
+
+		var p interface{}
+		var err error
+
+		recvTimeout := this.recvTimeout
+
+		if recvTimeout > 0 {
+			conn.SetReadDeadline(time.Now().Add(recvTimeout))
+			p, err = this.receiver.ReceiveAndUnpack(this.imp)
+			conn.SetReadDeadline(time.Time{})
+		} else {
+			p, err = this.receiver.ReceiveAndUnpack(this.imp)
+		}
+
+		if this.isClosed() {
+			//上层已经调用关闭，所有事件都不再传递上去
+			break
+		}
+		if err != nil || p != nil {
+			var event kendynet.Event
+			event.Session = this.imp
+			if err != nil {
+				event.EventType = kendynet.EventTypeError
+				event.Data = err
+				this.mutex.Lock()
+				if err == io.EOF {
+					this.flag |= rclosed
+				} else if !kendynet.IsNetTimeout(err) {
+					kendynet.Errorf("ReceiveAndUnpack error:%s\n", err.Error())
+					this.flag |= (rclosed | wclosed)
+				}
+				this.mutex.Unlock()
+			} else {
+				event.EventType = kendynet.EventTypeMessage
+				event.Data = p
+			}
+			/*出现错误不主动退出循环，除非用户调用了session.Close()
+			 * 避免用户遗漏调用Close(不调用Close会持续通告错误)
+			 */
+			this.onEvent(&event)
+		}
+	}
 }

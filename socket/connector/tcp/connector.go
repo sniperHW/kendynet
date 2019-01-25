@@ -12,7 +12,7 @@ type Connector struct {
 	addr    string
 }
 
-func NewConnector(nettype string, addr string) (*Connector, error) {
+func New(nettype string, addr string) (*Connector, error) {
 	return &Connector{nettype: nettype, addr: addr}, nil
 }
 

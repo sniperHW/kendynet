@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/message"
-	"github.com/sniperHW/kendynet/socket/websocket"
+	connector "github.com/sniperHW/kendynet/socket/connector/websocket"
+	listener "github.com/sniperHW/kendynet/socket/listener/websocket"
 	"github.com/sniperHW/kendynet/timer"
 	"net/url"
 	"os"
@@ -25,7 +26,7 @@ func server(service string) {
 		fmt.Printf("clientcount:%d,transrfer:%d KB/s,packetcount:%d\n", clientcount, tmp1/1024, tmp2)
 	})
 
-	server, err := websocket.NewListener("tcp4", service, "/echo")
+	server, err := listener.New("tcp4", service, "/echo")
 	if server != nil {
 		fmt.Printf("server running on:%s\n", service)
 		err = server.Start(func(session kendynet.StreamSession) {
@@ -59,7 +60,7 @@ func client(service string, count int) {
 
 	u := url.URL{Scheme: "ws", Host: service, Path: "/echo"}
 
-	client, err := websocket.NewConnector(u, nil)
+	client, err := connector.New(u, nil)
 
 	if err != nil {
 		fmt.Printf("NewWSClient failed:%s\n", err.Error())

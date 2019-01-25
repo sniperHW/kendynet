@@ -1,23 +1,24 @@
 package main
 
-import(
-	"time"
-	"strconv"
+import (
 	"fmt"
-	"os"
-	"github.com/sniperHW/kendynet"
-	"github.com/sniperHW/kendynet/timer"
-	"github.com/sniperHW/kendynet/socket/stream_socket/tcp"
-	codec "github.com/sniperHW/kendynet/example/codec/stream_socket"		
-	"github.com/sniperHW/kendynet/example/testproto"
 	"github.com/golang/protobuf/proto"
+	"github.com/sniperHW/kendynet"
+	codec "github.com/sniperHW/kendynet/example/codec"
 	"github.com/sniperHW/kendynet/example/pb"
+	"github.com/sniperHW/kendynet/example/testproto"
+	connector "github.com/sniperHW/kendynet/socket/connector/tcp"
+	listener "github.com/sniperHW/kendynet/socket/listener/tcp"
+	"github.com/sniperHW/kendynet/timer"
+	"os"
+	"strconv"
 	"sync/atomic"
+	"time"
 )
 
 /*
-*  使用event_queue把多线程事件转换为单线程处理 
-*/
+*  使用event_queue把多线程事件转换为单线程处理
+ */
 
 func server(service string) {
 	clientcount := int32(0)
@@ -26,80 +27,80 @@ func server(service string) {
 	//clientMap只被单个goroutine访问，不需要任何保护
 	clientMap := make(map[kendynet.StreamSession]bool)
 
-	timer.Repeat(time.Second,nil,func (_ timer.TimerID) {
+	timer.Repeat(time.Second, nil, func(_ *timer.Timer) {
 		tmp := atomic.LoadInt32(&packetcount)
-		atomic.StoreInt32(&packetcount,0)
-		fmt.Printf("clientcount:%d,packetcount:%d\n",clientcount,tmp)		
+		atomic.StoreInt32(&packetcount, 0)
+		fmt.Printf("clientcount:%d,packetcount:%d\n", clientcount, tmp)
 	})
 
 	evQueue := kendynet.NewEventQueue()
 
-	server,err := tcp.NewListener("tcp4",service)
+	server, err := listener.New("tcp4", service)
 	if server != nil {
 		go func() {
-			fmt.Printf("server running on:%s\n",service)
+			fmt.Printf("server running on:%s\n", service)
 			err = server.Start(func(session kendynet.StreamSession) {
 				session.SetEncoder(codec.NewPbEncoder(4096))
 				session.SetReceiver(codec.NewPBReceiver(4096))
-				session.SetCloseCallBack(func (sess kendynet.StreamSession, reason string) {
-					evQueue.PostNoWait(func () {
-						atomic.AddInt32(&clientcount,-1)
-						delete(clientMap,session)				
+				session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
+					evQueue.PostNoWait(func() {
+						atomic.AddInt32(&clientcount, -1)
+						delete(clientMap, session)
 					})
 				})
-				session.Start(func (ev *kendynet.Event) {
+				session.Start(func(ev *kendynet.Event) {
 					if ev.EventType == kendynet.EventTypeError {
-						session.Close(ev.Data.(error).Error(),0)
+						session.Close(ev.Data.(error).Error(), 0)
 					} else {
-						evQueue.PostNoWait(func () {
-							for s,_ := range clientMap {
+						evQueue.PostNoWait(func() {
+							for s, _ := range clientMap {
 								s.Send(ev.Data.(proto.Message))
 							}
-							atomic.AddInt32(&packetcount,int32(len(clientMap)))				
+							atomic.AddInt32(&packetcount, int32(len(clientMap)))
 						})
 					}
 				})
-				evQueue.PostNoWait(func () {
-					atomic.AddInt32(&clientcount,1)
-					clientMap[session] = true					
+				evQueue.PostNoWait(func() {
+					atomic.AddInt32(&clientcount, 1)
+					clientMap[session] = true
 				})
 			})
 
 			if nil != err {
-				fmt.Printf("TcpServer start failed %s\n",err)			
+				fmt.Printf("TcpServer start failed %s\n", err)
 			}
 		}()
 
 		evQueue.Run()
 
 	} else {
-		fmt.Printf("NewTcpServer failed %s\n",err)
+		fmt.Printf("NewTcpServer failed %s\n", err)
 	}
 }
 
-func client(service string,count int) {
-	
-	client,err := tcp.NewConnector("tcp4",service)
+func client(service string, count int) {
+
+	client, err := connector.New("tcp4", service)
 
 	if err != nil {
-		fmt.Printf("NewTcpClient failed:%s\n",err.Error())
+		fmt.Printf("NewTcpClient failed:%s\n", err.Error())
 		return
 	}
 
-	for i := 0; i < count ; i++ {
-		session,err := client.Dial(10 * time.Second)
+	for i := 0; i < count; i++ {
+		session, err := client.Dial(10 * time.Second)
 		if err != nil {
-			fmt.Printf("Dial error:%s\n",err.Error())
+			fmt.Printf("Dial error:%s\n", err.Error())
 		} else {
 			selfID := i + 1
 			session.SetEncoder(codec.NewPbEncoder(4096))
 			session.SetReceiver(codec.NewPBReceiver(4096))
-			session.SetCloseCallBack(func (sess kendynet.StreamSession, reason string) {
-				fmt.Printf("client client close:%s\n",reason)
+			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
+				fmt.Printf("client client close:%s\n", reason)
 			})
-			session.Start(func (event *kendynet.Event) {
+			session.Start(func(event *kendynet.Event) {
 				if event.EventType == kendynet.EventTypeError {
-					event.Session.Close(event.Data.(error).Error(),0)
+					event.Session.Close(event.Data.(error).Error(), 0)
 				} else {
 					msg := event.Data.(*testproto.BrocastPingpong)
 					if msg.GetId() == int64(selfID) {
@@ -116,14 +117,12 @@ func client(service string,count int) {
 	}
 }
 
-
-func main(){
-	pb.Register(&testproto.BrocastPingpong{},1)
+func main() {
+	pb.Register(&testproto.BrocastPingpong{}, 1)
 	if len(os.Args) < 3 {
 		fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")
 		return
 	}
-
 
 	mode := os.Args[1]
 
@@ -145,21 +144,19 @@ func main(){
 			fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")
 			return
 		}
-		connectioncount,err := strconv.Atoi(os.Args[3])
+		connectioncount, err := strconv.Atoi(os.Args[3])
 		if err != nil {
 			fmt.Printf(err.Error())
 			return
 		}
 		//让服务器先运行
 		time.Sleep(10000000)
-		go client(service,connectioncount)
+		go client(service, connectioncount)
 
 	}
 
-	_,_ = <- sigStop
+	_, _ = <-sigStop
 
 	return
 
 }
-
-

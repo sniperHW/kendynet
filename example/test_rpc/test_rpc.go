@@ -8,7 +8,8 @@ import (
 	"github.com/sniperHW/kendynet/example/pb"
 	"github.com/sniperHW/kendynet/example/testproto"
 	"github.com/sniperHW/kendynet/rpc"
-	"github.com/sniperHW/kendynet/socket/tcp"
+	connector "github.com/sniperHW/kendynet/socket/connector/tcp"
+	listener "github.com/sniperHW/kendynet/socket/listener/tcp"
 	"reflect"
 	"time"
 )
@@ -120,7 +121,7 @@ func (this *TestDecoder) Decode(o interface{}) (rpc.RPCMessage, error) {
 
 type RPCServer struct {
 	server   *rpc.RPCServer
-	listener *tcp.Listener
+	listener *listener.Listener
 }
 
 func NewRPCServer() *RPCServer {
@@ -135,7 +136,7 @@ func (this *RPCServer) RegisterMethod(name string, method rpc.RPCMethodHandler) 
 
 func (this *RPCServer) Serve(service string) error {
 	var err error
-	this.listener, err = tcp.NewListener("tcp", service)
+	this.listener, err = listener.New("tcp", service)
 	if err != nil {
 		return err
 	}
@@ -165,7 +166,7 @@ func NewCaller() *Caller {
 }
 
 func (this *Caller) Dial(service string, timeout time.Duration) error {
-	connector, err := tcp.NewConnector("tcp", service)
+	connector, err := connector.New("tcp", service)
 	session, err := connector.Dial(timeout)
 	if err != nil {
 		return err

@@ -66,49 +66,6 @@ func (this *WebSocket) sendMessage(msg kendynet.Message) error {
 	return nil
 }
 
-func (this *WebSocket) recvThreadFunc() {
-
-	var p interface{}
-	var err error
-
-	for !this.isClosed() {
-		recvTimeout := this.recvTimeout
-		if recvTimeout > 0 {
-			this.conn.SetReadDeadline(time.Now().Add(recvTimeout))
-			p, err = this.receiver.ReceiveAndUnpack(this)
-			this.conn.SetReadDeadline(time.Time{})
-		} else {
-			p, err = this.receiver.ReceiveAndUnpack(this)
-		}
-
-		if this.isClosed() {
-			break
-		}
-
-		if err != nil || p != nil {
-			var event kendynet.Event
-			event.Session = this
-			if err != nil {
-				event.EventType = kendynet.EventTypeError
-				event.Data = err
-				if !kendynet.IsNetTimeout(err) {
-					kendynet.Errorf("ReceiveAndUnpack error:%s\n", err.Error())
-					this.mutex.Lock()
-					this.flag |= (rclosed | wclosed)
-					this.mutex.Unlock()
-				}
-			} else {
-				event.EventType = kendynet.EventTypeMessage
-				event.Data = p
-			}
-			/*出现错误不主动退出循环，除非用户调用了session.Close()
-			 * 避免用户遗漏调用Close(不调用Close会持续通告错误)
-			 */
-			this.onEvent(&event)
-		}
-	}
-}
-
 func (this *WebSocket) sendThreadFunc() {
 	for {
 		closed, localList := this.sendQue.Get()
@@ -209,14 +166,14 @@ func NewWSSocket(conn *gorilla.Conn, sendQueueSize ...int) kendynet.StreamSessio
 		conn.SetCloseHandler(func(code int, text string) error {
 			return fmt.Errorf("peer close reason[%s]", text)
 		})
-
 		s := &WebSocket{
-			conn:       conn,
-			SocketBase: &SocketBase{},
+			conn: conn,
 		}
-		s.sendQue = util.NewBlockQueue(sendQueueSize...)
-		s.sendCloseChan = make(chan int, 1)
-		s.imp = s
+		s.SocketBase = &SocketBase{
+			sendQue:       util.NewBlockQueue(sendQueueSize...),
+			sendCloseChan: make(chan int, 1),
+			imp:           s,
+		}
 		return s
 	}
 }
@@ -233,7 +190,7 @@ func (this *WebSocket) GetUnderConn() interface{} {
 	return this.conn
 }
 
-func (this *WebSocket) getSocketConn() net.Conn {
+func (this *WebSocket) getNetConn() net.Conn {
 	return this.conn.UnderlyingConn()
 }
 
