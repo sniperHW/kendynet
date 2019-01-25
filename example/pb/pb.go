@@ -1,56 +1,55 @@
 package pb
 
 import (
+	"fmt"
 	"github.com/golang/protobuf/proto"
 	"github.com/sniperHW/kendynet"
-	"fmt"
 	"reflect"
 )
 
 const (
 	PBHeaderSize uint64 = 4
-	pbIdSize uint64 = 4
+	pbIdSize     uint64 = 4
 )
 
 var (
- 	nameToTypeID = map[string]uint32{}
- 	idToMeta = map[uint32]reflect.Type{}
- )
+	nameToTypeID = map[string]uint32{}
+	idToMeta     = map[uint32]reflect.Type{}
+)
 
-func newMessage(id uint32) (msg proto.Message,err error){
-   if mt,ok := idToMeta[id];ok{
-          msg = reflect.New(mt.Elem()).Interface().(proto.Message)
-   } else{
-          err = fmt.Errorf("not found %d",id)
-   }
-   return
+func newMessage(id uint32) (msg proto.Message, err error) {
+	if mt, ok := idToMeta[id]; ok {
+		msg = reflect.New(mt.Elem()).Interface().(proto.Message)
+	} else {
+		err = fmt.Errorf("not found %d", id)
+	}
+	return
 }
 
 //根据名字注册实例
-func Register(msg proto.Message,id uint32) (err error) {
-    if _,ok := idToMeta[id];ok {
-    	err = fmt.Errorf("duplicate id:%u",id)
-    	return
-    }
+func Register(msg proto.Message, id uint32) (err error) {
+	if _, ok := idToMeta[id]; ok {
+		err = fmt.Errorf("duplicate id:%u", id)
+		return
+	}
 
 	tt := reflect.TypeOf(msg)
 	name := tt.String()
 
-	if _,ok := nameToTypeID[name];ok {
-		err = fmt.Errorf("%s already register",name)
+	if _, ok := nameToTypeID[name]; ok {
+		err = fmt.Errorf("%s already register", name)
 		return
 	}
 
-    nameToTypeID[name] = id
-    idToMeta[id] = tt
-    return nil
+	nameToTypeID[name] = id
+	idToMeta[id] = tt
+	return nil
 }
 
-
-func Encode(o interface{},maxMsgSize uint64) (r *kendynet.ByteBuffer,e error) {
-	typeID,ok := nameToTypeID[reflect.TypeOf(o).String()]
+func Encode(o interface{}, maxMsgSize uint64) (r *kendynet.ByteBuffer, e error) {
+	typeID, ok := nameToTypeID[reflect.TypeOf(o).String()]
 	if !ok {
-		e = fmt.Errorf("unregister type:%s",reflect.TypeOf(o).String())
+		e = fmt.Errorf("unregister type:%s", reflect.TypeOf(o).String())
 	}
 
 	msg := o.(proto.Message)
@@ -62,8 +61,8 @@ func Encode(o interface{},maxMsgSize uint64) (r *kendynet.ByteBuffer,e error) {
 	}
 
 	dataLen := uint64(len(data))
-	if dataLen  > maxMsgSize {
-		e = fmt.Errorf("message size limite maxMsgSize[%d],msg payload[%d]",maxMsgSize,dataLen)
+	if dataLen > maxMsgSize {
+		e = fmt.Errorf("message size limite maxMsgSize[%d],msg payload[%d]", maxMsgSize, dataLen)
 		return
 	}
 
@@ -80,59 +79,58 @@ func Encode(o interface{},maxMsgSize uint64) (r *kendynet.ByteBuffer,e error) {
 	return
 }
 
-func Decode(buff []byte,start uint64,end uint64,maxMsgSize uint64) (proto.Message,uint64,error) {
+func Decode(buff []byte, start uint64, end uint64, maxMsgSize uint64) (proto.Message, uint64, error) {
 
 	dataLen := end - start
 
 	if dataLen < PBHeaderSize {
-		return nil,0,nil
+		return nil, 0, nil
 	}
 
-	reader := kendynet.NewByteBuffer(buff[start:end],dataLen)
+	reader := kendynet.NewByteBuffer(buff[start:end], dataLen)
 
 	s := uint64(0)
 
-
-	payload,err := reader.GetUint32(0)
+	payload, err := reader.GetUint32(0)
 
 	if err != nil {
-		return nil,0,err
+		return nil, 0, err
 	}
 
 	if uint64(payload) > maxMsgSize {
-		return nil,0,fmt.Errorf("Decode size limited maxMsgSize[%d],msg payload[%d]",maxMsgSize,payload)
-	}else if uint64(payload) == 0 {
-		return nil,0,fmt.Errorf("Decode header payload == 0")
+		return nil, 0, fmt.Errorf("Decode size limited maxMsgSize[%d],msg payload[%d]", maxMsgSize, payload)
+	} else if uint64(payload) == 0 {
+		return nil, 0, fmt.Errorf("Decode header payload == 0")
 	}
 
 	totalPacketSize := uint64(payload) + PBHeaderSize
 
 	if totalPacketSize > dataLen {
-		return nil,0,nil
+		return nil, 0, nil
 	}
 
-	s += PBHeaderSize	
+	s += PBHeaderSize
 
-	typeID,_ := reader.GetUint32(s)
+	typeID, _ := reader.GetUint32(s)
 
-	msg,err := newMessage(typeID) 
+	msg, err := newMessage(typeID)
 
 	if err != nil {
-		return nil,0,fmt.Errorf("unregister type:%d",typeID)
+		return nil, 0, fmt.Errorf("unregister type:%d", typeID)
 	}
 
 	s += pbIdSize
 
 	pbDataLen := totalPacketSize - PBHeaderSize - pbIdSize
 
-	pbData,_ := reader.GetBytes(s,pbDataLen)
+	pbData, _ := reader.GetBytes(s, pbDataLen)
 
 	err = proto.Unmarshal(pbData, msg)
 
 	if err != nil {
-		return nil,0,err
+		return nil, 0, err
 	}
 
-	return msg,totalPacketSize,nil
+	return msg, totalPacketSize, nil
 
-} 
+}

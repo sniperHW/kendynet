@@ -15,18 +15,12 @@ const (
 	rclosed = (1 << 3)
 )
 
-/*type SocketConn interface {
-	UnderlyingConn() net.Conn
-	Close() error
-	RemoteAddr() net.Addr
-	LocalAddr() net.Addr
-}*/
-
 type SocketImpl interface {
 	recvThreadFunc()
 	sendThreadFunc()
 	getSocketConn() net.Conn
 	sendMessage(kendynet.Message) error
+	defaultReceiver() kendynet.Receiver
 }
 
 type SocketBase struct {
@@ -122,7 +116,7 @@ func (this *SocketBase) Start(eventCB func(*kendynet.Event)) error {
 	}
 
 	if this.receiver == nil {
-		return kendynet.ErrNoReceiver
+		this.receiver = this.imp.defaultReceiver()
 	}
 
 	this.onEvent = eventCB

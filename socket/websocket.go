@@ -8,76 +8,28 @@ import (
 	"fmt"
 	gorilla "github.com/gorilla/websocket"
 	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/message"
 	"github.com/sniperHW/kendynet/util"
 	"net"
-	//"sync"
 	"time"
-)
-
-// The message types are defined in RFC 6455, section 11.8.
-const (
-	// TextMessage denotes a text data message. The text message payload is
-	// interpreted as UTF-8 encoded text data.
-	WSTextMessage = 1
-
-	// BinaryMessage denotes a binary data message.
-	WSBinaryMessage = 2
-
-	// CloseMessage denotes a close control message. The optional message
-	// payload contains a numeric code and text. Use the FormatCloseMessage
-	// function to format a close message payload.
-	WSCloseMessage = 8
-
-	// PingMessage denotes a ping control message. The optional message payload
-	// is UTF-8 encoded text.
-	WSPingMessage = 9
-
-	// PongMessage denotes a ping control message. The optional message payload
-	// is UTF-8 encoded text.
-	WSPongMessage = 10
 )
 
 var ErrInvaildWSMessage = fmt.Errorf("invaild websocket message")
 
 /*
- *  WSMessage与普通的ByteBuffer Msg的区别在于多了一个messageType字段
+*   无封包结构，直接将收到的所有数据返回
  */
-type WSMessage struct {
-	messageType int
-	buff        *kendynet.ByteBuffer
+
+type defaultWSReceiver struct {
 }
 
-func (this *WSMessage) Bytes() []byte {
-	return this.buff.Bytes()
-}
-
-func (this *WSMessage) PutBytes(idx uint64, value []byte) error {
-	return this.buff.PutBytes(idx, value)
-}
-
-func (this *WSMessage) GetBytes(idx uint64, size uint64) ([]byte, error) {
-	return this.buff.GetBytes(idx, size)
-}
-
-func (this *WSMessage) PutString(idx uint64, value string) error {
-	return this.buff.PutString(idx, value)
-}
-
-func (this *WSMessage) GetString(idx uint64, size uint64) (string, error) {
-	return this.buff.GetString(idx, size)
-}
-
-func (this *WSMessage) Type() int {
-	return this.messageType
-}
-
-func NewMessage(messageType int, optional ...interface{}) *WSMessage {
-	buff := kendynet.NewByteBuffer(optional...)
-	if nil == buff {
-		fmt.Printf("nil == buff\n")
-		return nil
+func (this *defaultWSReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface{}, error) {
+	mt, msg, err := sess.(*WebSocket).Read()
+	if err != nil {
+		return nil, err
+	} else {
+		return message.NewWSMessage(mt, msg), nil
 	}
-	return &WSMessage{messageType: messageType, buff: buff}
 }
 
 type WebSocket struct {
@@ -92,8 +44,8 @@ func (this *WebSocket) sendMessage(msg kendynet.Message) error {
 		return kendynet.ErrSocketClose
 	} else {
 		switch msg.(type) {
-		case *WSMessage:
-			if nil == msg.(*WSMessage) {
+		case *message.WSMessage:
+			if nil == msg.(*message.WSMessage) {
 				return ErrInvaildWSMessage
 			}
 			fullReturn := true
@@ -167,26 +119,26 @@ func (this *WebSocket) sendThreadFunc() {
 
 		for i := 0; i < size; i++ {
 			var err error
-			msg := localList[i].(*WSMessage)
+			msg := localList[i].(*message.WSMessage)
 			timeout := this.sendTimeout
-			if msg.messageType == WSBinaryMessage || msg.messageType == WSTextMessage {
+			if msg.Type() == message.WSBinaryMessage || msg.Type() == message.WSTextMessage {
 				if timeout > 0 {
 					this.conn.SetWriteDeadline(time.Now().Add(timeout))
-					err = this.conn.WriteMessage(msg.messageType, msg.Bytes())
+					err = this.conn.WriteMessage(msg.Type(), msg.Bytes())
 					this.conn.SetWriteDeadline(time.Time{})
 				} else {
-					err = this.conn.WriteMessage(msg.messageType, msg.Bytes())
+					err = this.conn.WriteMessage(msg.Type(), msg.Bytes())
 				}
 
-			} else if msg.messageType == WSCloseMessage || msg.messageType == WSPingMessage || msg.messageType == WSPingMessage {
+			} else if msg.Type() == message.WSCloseMessage || msg.Type() == message.WSPingMessage || msg.Type() == message.WSPingMessage {
 				var deadline time.Time
 				if timeout > 0 {
 					deadline = time.Now().Add(timeout)
 				}
-				err = this.conn.WriteControl(msg.messageType, msg.Bytes(), deadline)
+				err = this.conn.WriteControl(msg.Type(), msg.Bytes(), deadline)
 			}
 
-			if err != nil && msg.messageType != WSCloseMessage {
+			if err != nil && msg.Type() != message.WSCloseMessage {
 				if this.sendQue.Closed() {
 					return
 				}
@@ -225,8 +177,8 @@ func (this *WebSocket) Close(reason string, delay time.Duration) {
 
 	if delay > 0 {
 		this.shutdownRead()
-		message := gorilla.FormatCloseMessage(1000, reason)
-		this.sendQue.AddNoWait(NewMessage(WSCloseMessage, message))
+		msg := gorilla.FormatCloseMessage(1000, reason)
+		this.sendQue.AddNoWait(message.NewWSMessage(message.WSCloseMessage, msg))
 		this.sendQue.Close()
 		ticker := time.NewTicker(delay)
 		if (this.flag & started) == 0 {
@@ -287,4 +239,8 @@ func (this *WebSocket) getSocketConn() net.Conn {
 
 func (this *WebSocket) Read() (messageType int, p []byte, err error) {
 	return this.conn.ReadMessage()
+}
+
+func (this *WebSocket) defaultReceiver() kendynet.Receiver {
+	return &defaultWSReceiver{}
 }

@@ -1,4 +1,4 @@
-package stream_socket
+package codec
 
 import (
 	"github.com/sniperHW/kendynet"
@@ -6,8 +6,9 @@ import (
 	"github.com/sniperHW/kendynet/socket"
 	"os"
 	"time"
-	//	"fmt"
 )
+
+const minBuffSize = 4096
 
 type PbEncoder struct {
 	maxMsgSize uint64

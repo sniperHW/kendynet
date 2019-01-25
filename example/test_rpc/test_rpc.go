@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"github.com/golang/protobuf/proto"
 	"github.com/sniperHW/kendynet"
-	codec "github.com/sniperHW/kendynet/example/codec/stream_socket"
+	codec "github.com/sniperHW/kendynet/example/codec"
 	"github.com/sniperHW/kendynet/example/pb"
 	"github.com/sniperHW/kendynet/example/testproto"
 	"github.com/sniperHW/kendynet/rpc"
-	"github.com/sniperHW/kendynet/socket/stream_socket/tcp"
+	"github.com/sniperHW/kendynet/socket/tcp"
 	"reflect"
 	"time"
 )

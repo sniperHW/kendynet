@@ -10,9 +10,22 @@ import (
 	"github.com/sniperHW/kendynet/util"
 	"io"
 	"net"
-	//"sync"
 	"time"
 )
+
+type defaultSSReceiver struct {
+	buffer []byte
+}
+
+func (this *defaultSSReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface{}, error) {
+	n, err := sess.(*StreamSocket).Read(this.buffer[:])
+	if err != nil {
+		return nil, err
+	}
+	msg := kendynet.NewByteBuffer(n)
+	msg.AppendBytes(this.buffer[:n])
+	return msg, err
+}
 
 type StreamSocket struct {
 	*SocketBase
@@ -241,4 +254,8 @@ func (this *StreamSocket) getSocketConn() net.Conn {
 
 func (this *StreamSocket) GetUnderConn() interface{} {
 	return this.conn
+}
+
+func (this *StreamSocket) defaultReceiver() kendynet.Receiver {
+	return &defaultSSReceiver{buffer: make([]byte, 4096)}
 }

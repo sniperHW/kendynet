@@ -28,7 +28,7 @@ func server(service string) {
 	ff()
 	count := int32(0)
 	total := 0
-	timer.Repeat(time.Second, nil, func(_ timer.TimerID) {
+	timer.Repeat(time.Second, nil, func(_ *timer.Timer) {
 		tmp := atomic.LoadInt32(&count)
 		atomic.StoreInt32(&count, 0)
 		tmp1 := atomic.LoadInt32(&timeoutcount)
