@@ -186,12 +186,15 @@ func (this *SocketBase) SendMessage(msg kendynet.Message) error {
 
 func (this *SocketBase) recvThreadFunc() {
 
+	var (
+		p     interface{}
+		err   error
+		event kendynet.Event
+	)
+
 	conn := this.imp.getNetConn()
 
 	for !this.isClosed() {
-
-		var p interface{}
-		var err error
 
 		recvTimeout := this.recvTimeout
 
@@ -208,7 +211,6 @@ func (this *SocketBase) recvThreadFunc() {
 			break
 		}
 		if err != nil || p != nil {
-			var event kendynet.Event
 			event.Session = this.imp
 			if err != nil {
 				event.EventType = kendynet.EventTypeError

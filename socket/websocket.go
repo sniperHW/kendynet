@@ -45,9 +45,6 @@ func (this *WebSocket) sendMessage(msg kendynet.Message) error {
 	} else {
 		switch msg.(type) {
 		case *message.WSMessage:
-			if nil == msg.(*message.WSMessage) {
-				return ErrInvaildWSMessage
-			}
 			fullReturn := true
 			err := this.sendQue.AddNoWait(msg, fullReturn)
 			if nil != err {
