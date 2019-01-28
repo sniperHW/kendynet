@@ -11,7 +11,8 @@ var (
 )
 
 const (
-	initCap = 64
+	initCap         = 64
+	defaultFullSize = 10000
 )
 
 type BlockQueue struct {
@@ -99,7 +100,7 @@ func (self *BlockQueue) Get() (closed bool, datas []interface{}) {
 	}
 	if len(self.list) > 0 {
 		datas = self.list
-		self.list = make([]interface{}, initCap)[0:0]
+		self.list = make([]interface{}, 0, initCap)
 	}
 	needSignal := self.fullWaited > 0
 	closed = self.closed
@@ -162,7 +163,7 @@ func NewBlockQueueWithName(name string, fullSize ...int) *BlockQueue {
 	self.closed = false
 	self.emptyCond = sync.NewCond(&self.listGuard)
 	self.fullCond = sync.NewCond(&self.listGuard)
-	self.list = make([]interface{}, initCap)[0:0]
+	self.list = make([]interface{}, 0, initCap)
 
 	if len(fullSize) > 0 {
 		if fullSize[0] <= 0 {
@@ -170,7 +171,7 @@ func NewBlockQueueWithName(name string, fullSize ...int) *BlockQueue {
 		}
 		self.fullSize = fullSize[0]
 	} else {
-		self.fullSize = 10000
+		self.fullSize = defaultFullSize
 	}
 
 	return self
@@ -181,7 +182,7 @@ func NewBlockQueue(fullSize ...int) *BlockQueue {
 	self.closed = false
 	self.emptyCond = sync.NewCond(&self.listGuard)
 	self.fullCond = sync.NewCond(&self.listGuard)
-	self.list = make([]interface{}, initCap)[0:0]
+	self.list = make([]interface{}, 0, initCap)
 
 	if len(fullSize) > 0 {
 		if fullSize[0] <= 0 {
@@ -189,7 +190,7 @@ func NewBlockQueue(fullSize ...int) *BlockQueue {
 		}
 		self.fullSize = fullSize[0]
 	} else {
-		self.fullSize = 10000
+		self.fullSize = defaultFullSize
 	}
 
 	return self
