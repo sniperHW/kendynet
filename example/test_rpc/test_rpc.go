@@ -141,7 +141,7 @@ func (this *RPCServer) Serve(service string) error {
 		return err
 	}
 
-	err = this.listener.Start(func(session kendynet.StreamSession) {
+	err = this.listener.Serve(func(session kendynet.StreamSession) {
 		channel := NewTcpStreamChannel(session)
 		session.SetEncoder(codec.NewPbEncoder(65535))
 		session.SetReceiver(codec.NewPBReceiver(65535))

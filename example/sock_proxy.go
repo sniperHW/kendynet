@@ -1,48 +1,48 @@
 //简易sock代理服务,暂不支持UDP和认证
 package main
 
-import(
-	"net"
-	"sync/atomic"
+import (
 	"encoding/binary"
 	"fmt"
-	"os"
 	"github.com/sniperHW/kendynet"
+	connector "github.com/sniperHW/kendynet/socket/connector/tcp"
+	listener "github.com/sniperHW/kendynet/socket/listener/tcp"
+	"net"
+	"os"
+	"sync/atomic"
 	"time"
-	codec "github.com/sniperHW/kendynet/example/codec/stream_socket"		
-	"github.com/sniperHW/kendynet/socket/stream_socket/tcp"
 )
 
-const(
-	CHECK_VERSION = 1
+const (
+	CHECK_VERSION   = 1
 	PROCESS_REQUEST = 2
-	ESTABLISHED = 3
+	ESTABLISHED     = 3
 )
 
-const(
+const (
 	SOCKS_VERSION_4 = 4
 	SOCKS_VERSION_5 = 5
 )
 
-const(
-	SOCKS5_AUTH_NONE = 0x00
-	SOCKS5_AUTH = 0x02
+const (
+	SOCKS5_AUTH_NONE         = 0x00
+	SOCKS5_AUTH              = 0x02
 	SOCKS5_AUTH_UNACCEPTABLE = 0xFF
 )
 
-const(
+const (
 	SOCKS_CMD_CONNECT = 0x01
-	SOCKS_CMD_BIND = 0x02
-	SOCKS5_CMD_UDP = 0x03
+	SOCKS_CMD_BIND    = 0x02
+	SOCKS5_CMD_UDP    = 0x03
 )
 
-const(
-	SOCKS5_ATYP_IPV4 = 0x01
+const (
+	SOCKS5_ATYP_IPV4       = 0x01
 	SOCKS5_ATYP_DOMAINNAME = 0x03
-	SOCKS5_ATYP_IPV6 = 0x04
+	SOCKS5_ATYP_IPV6       = 0x04
 )
 
-const(
+const (
 	SOCKS5_SUCCEEDED = 0x00
 	SOCKS5_GENERAL_SOCKS_SERVER_FAILURE
 	SOCKS5_CONNECTION_NOT_ALLOWED_BY_RULESET
@@ -54,24 +54,24 @@ const(
 	SOCKS5_UNASSIGNED
 )
 
-type ProxySession struct{
-	client     kendynet.StreamSession
-	server     kendynet.StreamSession
-	buff      *kendynet.ByteBuffer
-	status     int
-	closed     int32     
+type ProxySession struct {
+	client kendynet.StreamSession
+	server kendynet.StreamSession
+	buff   *kendynet.ByteBuffer
+	status int
+	closed int32
 }
 
 func (self *ProxySession) Close() {
-	
-	if !atomic.CompareAndSwapInt32(&self.closed,0,1) {
+
+	if !atomic.CompareAndSwapInt32(&self.closed, 0, 1) {
 		return
 	}
 
-	self.client.Close("",5)
+	self.client.Close("", 5)
 	self.client = nil
 	if nil != self.server {
-		self.server.Close("",0)
+		self.server.Close("", 0)
 		self.server = nil
 	}
 }
@@ -104,9 +104,9 @@ func (self *ProxySession) ProcessClientMsg(msg kendynet.Message) {
 		if len(b) >= 1 {
 			if b[0] == SOCKS_VERSION_4 {
 				self.ProcessSockV4()
-			}else if b[0] == SOCKS_VERSION_5 {
+			} else if b[0] == SOCKS_VERSION_5 {
 				self.ProcessSockV5()
-			}else {
+			} else {
 				self.Close()
 			}
 		}
@@ -121,8 +121,8 @@ func (self *ProxySession) ProcessSockV4() {
 
 		if b[8] != 0 {
 			fmt.Printf("b[8] != 0\n")
-			responseBuff.PutByte(1,byte(91))
-			self.client.SendMessage(responseBuff)			
+			responseBuff.PutByte(1, byte(91))
+			self.client.SendMessage(responseBuff)
 			self.Close()
 			return
 		}
@@ -131,8 +131,8 @@ func (self *ProxySession) ProcessSockV4() {
 		if CMD != SOCKS_CMD_CONNECT {
 			fmt.Printf("CMD != SOCKS_CMD_CONNECT\n")
 			//暂时不支持
-			responseBuff.PutByte(1,byte(91))
-			self.client.SendMessage(responseBuff)			
+			responseBuff.PutByte(1, byte(91))
+			self.client.SendMessage(responseBuff)
 			self.Close()
 			return
 		}
@@ -140,28 +140,28 @@ func (self *ProxySession) ProcessSockV4() {
 		tcpAddr := net.TCPAddr{}
 		tcpAddr.Port = int(binary.BigEndian.Uint16(b[2:4]))
 		tcpAddr.IP = b[4:8]
-		connector,err := tcp.NewConnector(tcpAddr.Network(),tcpAddr.String())
+		c, err := connector.New(tcpAddr.Network(), tcpAddr.String())
 		if err != nil {
-			fmt.Printf("NewConnector failed:%s\n",err.Error())
+			fmt.Printf("NewConnector failed:%s\n", err.Error())
 			return
 		}
-		session,err := connector.Dial(time.Second * 10)
+		session, err := c.Dial(time.Second * 10)
 
 		if err != nil {
-			fmt.Printf("Dial failed:%s\n",err.Error())			
+			fmt.Printf("Dial failed:%s\n", err.Error())
 			return
 		}
 
-		session.SetReceiver(codec.NewRawReceiver(65535))
+		//session.SetReceiver(codec.NewRawReceiver(65535))
 		//session.SetEventCallBack(onServerEvent)
 		session.SetUserData(self)
 		self.server = session
 		self.status = ESTABLISHED
 		session.Start(onServerEvent)
-		responseBuff.PutByte(1,byte(90))
+		responseBuff.PutByte(1, byte(90))
 		err = self.client.SendMessage(responseBuff)
 		if err != nil {
-			fmt.Printf("send responseBuff to client failed:%s\n",err.Error())
+			fmt.Printf("send responseBuff to client failed:%s\n", err.Error())
 		}
 	} else {
 		fmt.Printf("len < 9\n")
@@ -174,16 +174,16 @@ func (self *ProxySession) ProcessSockV5() {
 			b := self.buff.Bytes()
 			VER := b[0]
 			if VER != SOCKS_VERSION_5 {
-				fmt.Printf("un support socks version:%d\n",int(VER))
+				fmt.Printf("un support socks version:%d\n", int(VER))
 				self.Close()
 				return
 			}
 
 			NMETHODS := b[1]
-			METHOD   := SOCKS5_AUTH_UNACCEPTABLE
+			METHOD := SOCKS5_AUTH_UNACCEPTABLE
 
-			if self.buff.Len() >= uint64(2 + NMETHODS) {
-				for i := 2; i < 2 + int(NMETHODS); i++ {
+			if self.buff.Len() >= uint64(2+NMETHODS) {
+				for i := 2; i < 2+int(NMETHODS); i++ {
 					if b[i] == SOCKS5_AUTH_NONE {
 						METHOD = SOCKS5_AUTH_NONE
 					}
@@ -201,11 +201,11 @@ func (self *ProxySession) ProcessSockV5() {
 				fmt.Printf("un support auth\n")
 				self.Close()
 				return
-			}else {
+			} else {
 				self.status = PROCESS_REQUEST
 			}
 		}
-	}else if self.status == PROCESS_REQUEST {
+	} else if self.status == PROCESS_REQUEST {
 		if self.buff.Len() >= 4 {
 
 			responseBuff := kendynet.NewByteBuffer(12)
@@ -214,10 +214,10 @@ func (self *ProxySession) ProcessSockV5() {
 			CMD := b[1]
 			responseBuff.AppendByte(b[0])
 
-			if CMD != SOCKS_CMD_CONNECT {	
+			if CMD != SOCKS_CMD_CONNECT {
 				responseBuff.AppendByte(byte(SOCKS5_COMMAND_NOT_SUPPORTED))
 				self.client.SendMessage(responseBuff)
-				fmt.Printf("un support cmd\n")					
+				fmt.Printf("un support cmd\n")
 				self.Close()
 				return
 			}
@@ -231,46 +231,45 @@ func (self *ProxySession) ProcessSockV5() {
 				if self.buff.Len() < uint64(6+addrSize) {
 					return
 				}
-			}else if ATYP == SOCKS5_ATYP_IPV6 {
+			} else if ATYP == SOCKS5_ATYP_IPV6 {
 				addrSize = 8
 				if self.buff.Len() < uint64(6+addrSize) {
 					return
 				}
-			}else {	
+			} else {
 				responseBuff.AppendByte(byte(SOCKS5_ADDRESS_TYPE_NOT_SUPPORTED))
-				self.client.SendMessage(responseBuff)				
-				fmt.Printf("un support address type\n")					
+				self.client.SendMessage(responseBuff)
+				fmt.Printf("un support address type\n")
 				self.Close()
-				return					
+				return
 			}
 
 			tcpAddr := net.TCPAddr{}
-			tcpAddr.Port = int(binary.BigEndian.Uint16(b[4+addrSize:6+addrSize]))
-			tcpAddr.IP = b[4:4+addrSize]
+			tcpAddr.Port = int(binary.BigEndian.Uint16(b[4+addrSize : 6+addrSize]))
+			tcpAddr.IP = b[4 : 4+addrSize]
 
-
-			connector,err := tcp.NewConnector(tcpAddr.Network(),tcpAddr.String())
+			c, err := connector.New(tcpAddr.Network(), tcpAddr.String())
 			if err != nil {
-				fmt.Printf("NewConnector failed:%s\n",err.Error())
+				fmt.Printf("NewConnector failed:%s\n", err.Error())
 				return
 			}
-			session,err := connector.Dial(time.Second * 10)
+			session, err := c.Dial(time.Second * 10)
 
 			if err != nil {
-				fmt.Printf("Dial failed:%s\n",err.Error())			
+				fmt.Printf("Dial failed:%s\n", err.Error())
 				return
 			}
-			session.SetReceiver(codec.NewRawReceiver(65535))
+			//session.SetReceiver(codec.NewRawReceiver(65535))
 			session.SetUserData(self)
 			self.server = session
 			self.status = ESTABLISHED
 			session.Start(onServerEvent)
 			responseBuff.AppendByte(byte(SOCKS5_SUCCEEDED))
 			responseBuff.AppendByte(byte(0))
-			responseBuff.AppendBytes(b[3:6+addrSize])
+			responseBuff.AppendBytes(b[3 : 6+addrSize])
 			err = self.client.SendMessage(responseBuff)
 			if err != nil {
-				fmt.Printf("send responseBuff to client failed:%s\n",err.Error())
+				fmt.Printf("send responseBuff to client failed:%s\n", err.Error())
 			}
 			fmt.Printf("ESTABLISHED\n")
 		}
@@ -285,23 +284,23 @@ func main() {
 	}
 	service := os.Args[1]
 
-	server,err := tcp.NewListener("tcp4",service)
+	server, err := listener.New("tcp4", service)
 	if server != nil {
-		fmt.Printf("server running on:%s\n",service)
-		err = server.Start(func(session kendynet.StreamSession) {
-			proxySession := &ProxySession{status:CHECK_VERSION}
+		fmt.Printf("server running on:%s\n", service)
+		err = server.Serve(func(session kendynet.StreamSession) {
+			proxySession := &ProxySession{status: CHECK_VERSION}
 			proxySession.client = session
 			proxySession.server = nil
 			proxySession.buff = kendynet.NewByteBuffer(128)
-			session.SetUserData(proxySession)			
-			session.SetReceiver(codec.NewRawReceiver(65535))
+			session.SetUserData(proxySession)
+			//session.SetReceiver(codec.NewRawReceiver(65535))
 			session.Start(onClientEvent)
 		})
 		if nil != err {
-			fmt.Printf("TcpServer start failed %s\n",err)			
+			fmt.Printf("TcpServer start failed %s\n", err)
 		}
 
 	} else {
-		fmt.Printf("NewTcpServer failed %s\n",err)
+		fmt.Printf("NewTcpServer failed %s\n", err)
 	}
 }

@@ -34,7 +34,7 @@ func (this *Listener) Close() {
     }
 }
 
-func (this *Listener) Start(onNewClient func(kendynet.StreamSession)) error {
+func (this *Listener) Serve(onNewClient func(kendynet.StreamSession)) error {
 
     if nil == onNewClient {
         return kendynet.ErrInvaildNewClientCB

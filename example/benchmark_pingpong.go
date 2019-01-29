@@ -32,7 +32,7 @@ func server(service string) {
 	server, err := listener.New("tcp4", service)
 	if server != nil {
 		fmt.Printf("server running on:%s\n", service)
-		err = server.Start(func(session kendynet.StreamSession) {
+		err = server.Serve(func(session kendynet.StreamSession) {
 			atomic.AddInt32(&clientcount, 1)
 			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
 				fmt.Printf("client close:%s\n", reason)

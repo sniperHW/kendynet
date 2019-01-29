@@ -39,7 +39,7 @@ func server(service string) {
 	if server != nil {
 		go func() {
 			fmt.Printf("server running on:%s\n", service)
-			err = server.Start(func(session kendynet.StreamSession) {
+			err = server.Serve(func(session kendynet.StreamSession) {
 				session.SetEncoder(codec.NewPbEncoder(4096))
 				session.SetReceiver(codec.NewPBReceiver(4096))
 				session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {

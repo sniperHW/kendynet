@@ -29,7 +29,7 @@ func server(service string) {
 	server, err := listener.New("tcp4", service)
 	if server != nil {
 		fmt.Printf("server running on:%s\n", service)
-		err = server.Start(func(session kendynet.StreamSession) {
+		err = server.Serve(func(session kendynet.StreamSession) {
 			atomic.AddInt32(&clientcount, 1)
 			session.SetEncoder(codec.NewPbEncoder(4096))
 			session.SetReceiver(codec.NewPBReceiver(4096))
