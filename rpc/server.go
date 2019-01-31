@@ -35,6 +35,10 @@ func (this *RPCReplyer) reply(response RPCMessage) {
 	}
 }
 
+func (this *RPCReplyer) GetChannel() RPCChannel {
+	return this.channel
+}
+
 type RPCMethodHandler func(*RPCReplyer, interface{})
 
 type RPCServer struct {
