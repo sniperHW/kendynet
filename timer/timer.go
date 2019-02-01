@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+var once sync.Once
+
 type Timer struct {
 	id int64
 }
@@ -107,6 +109,15 @@ func loop() {
  */
 
 func newTimer(timeout time.Duration, repeat bool, eventQue *event.EventQueue, fn func(*Timer)) *Timer {
+
+	once.Do(func() {
+		notiChan = util.NewNotifyer()
+		minheap = util.NewMinHeap(65536)
+		idTimerMap = map[int64]*timer{}
+		go loop()
+
+	})
+
 	if nil == fn {
 		panic("fn == nil")
 	}
@@ -168,11 +179,4 @@ func (this *Timer) Cancel() {
 		return
 	}
 	mtx.Unlock()
-}
-
-func init() {
-	notiChan = util.NewNotifyer()
-	minheap = util.NewMinHeap(65536)
-	idTimerMap = map[int64]*timer{}
-	go loop()
 }
