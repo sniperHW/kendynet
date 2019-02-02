@@ -14,11 +14,66 @@ var ErrCallTimeout error = fmt.Errorf("rpc call timeout")
 
 var client_once sync.Once
 var sequence uint64
-var mtx sync.Mutex
-var minheap *util.MinHeap = util.NewMinHeap(4096)
-var waitResp map[uint64]*reqContext = map[uint64]*reqContext{} //待响应的请求
+var groupCount uint64 = 63
+var contextGroups []*contextGroup = make([]*contextGroup, groupCount)
 
 type RPCResponseHandler func(interface{}, error)
+
+type contextGroup struct {
+	mtx      sync.Mutex
+	minheap  *util.MinHeap          // = util.NewMinHeap(4096)
+	waitResp map[uint64]*reqContext // = map[uint64]*reqContext{} //待响应的请求
+}
+
+func (this *contextGroup) checkTimeout() {
+
+	timeout := []*reqContext{}
+
+	this.mtx.Lock()
+	for {
+		now := time.Now()
+		r := this.minheap.Min()
+		if r != nil && now.After(r.(*reqContext).deadline) {
+			this.minheap.PopMin()
+			if _, ok := this.waitResp[r.(*reqContext).seq]; !ok {
+				kendynet.Infof("timeout context:%d not found\n", r.(*reqContext).seq)
+			} else {
+				delete(this.waitResp, r.(*reqContext).seq)
+				timeout = append(timeout, r.(*reqContext))
+				kendynet.Infof("timeout context:%d\n", r.(*reqContext).seq)
+			}
+		} else {
+			break
+		}
+	}
+	this.mtx.Unlock()
+
+	for _, v := range timeout {
+		v.callResponseCB(nil, ErrCallTimeout)
+	}
+}
+
+func (this *contextGroup) onResponse(resp *RPCResponse) {
+	var (
+		ctx *reqContext
+		ok  bool
+	)
+
+	seq := resp.GetSeq()
+
+	this.mtx.Lock()
+	if ctx, ok = this.waitResp[seq]; ok {
+		delete(this.waitResp, seq)
+		this.minheap.Remove(ctx)
+	}
+	this.mtx.Unlock()
+
+	if nil != ctx {
+		ctx.callResponseCB(resp.Ret, resp.Err)
+	} else {
+		kendynet.Debugf("on response,but missing reqContext:%d\n", seq)
+	}
+}
 
 type reqContext struct {
 	heapIdx      uint32
@@ -75,25 +130,7 @@ func (this *RPCClient) OnRPCMessage(message interface{}) {
 	default:
 		panic("RPCClient.OnRPCMessage() invaild msg type")
 	}
-
-	var (
-		ctx *reqContext
-		ok  bool
-	)
-
-	mtx.Lock()
-	if ctx, ok = waitResp[msg.GetSeq()]; ok {
-		delete(waitResp, msg.GetSeq())
-		minheap.Remove(ctx)
-	}
-	mtx.Unlock()
-
-	if nil != ctx {
-		resp := msg.(*RPCResponse)
-		ctx.callResponseCB(resp.Ret, resp.Err)
-	} else {
-		kendynet.Debugf("on response,but missing reqContext:%d\n", msg.GetSeq())
-	}
+	contextGroups[msg.GetSeq()%uint64(len(contextGroups))].onResponse(msg.(*RPCResponse))
 }
 
 //投递，不关心响应和是否失败
@@ -146,12 +183,15 @@ func (this *RPCClient) AsynCall(channel RPCChannel, method string, arg interface
 		return err
 	} else {
 		context.deadline = time.Now().Add(timeout)
-		mtx.Lock()
-		defer mtx.Unlock()
+
+		group := contextGroups[req.Seq%uint64(len(contextGroups))]
+
+		group.mtx.Lock()
+		defer group.mtx.Unlock()
 		err := channel.SendRequest(request)
 		if err == nil {
-			waitResp[context.seq] = context
-			minheap.Insert(context)
+			group.waitResp[context.seq] = context
+			group.minheap.Insert(context)
 			return nil
 		} else {
 			return err
@@ -177,31 +217,18 @@ func (this *RPCClient) Call(channel RPCChannel, method string, arg interface{}, 
 func onceRoutine() {
 
 	client_once.Do(func() {
+		for i := uint64(0); i < groupCount; i++ {
+			contextGroups[i] = &contextGroup{
+				minheap:  util.NewMinHeap(128),
+				waitResp: map[uint64]*reqContext{},
+			}
+		}
+
 		go func() {
 			for {
 				time.Sleep(time.Duration(10) * time.Millisecond)
-				timeout := []*reqContext{}
-				mtx.Lock()
-				for {
-					now := time.Now()
-					r := minheap.Min()
-					if r != nil && now.After(r.(*reqContext).deadline) {
-						minheap.PopMin()
-						if _, ok := waitResp[r.(*reqContext).seq]; !ok {
-							kendynet.Infof("timeout context:%d not found\n", r.(*reqContext).seq)
-						} else {
-							delete(waitResp, r.(*reqContext).seq)
-							timeout = append(timeout, r.(*reqContext))
-							kendynet.Infof("timeout context:%d\n", r.(*reqContext).seq)
-						}
-					} else {
-						break
-					}
-				}
-				mtx.Unlock()
-
-				for _, v := range timeout {
-					v.callResponseCB(nil, ErrCallTimeout)
+				for _, v := range contextGroups {
+					v.checkTimeout()
 				}
 			}
 		}()
