@@ -158,7 +158,8 @@ func (this *RPCServer) Serve(service string) error {
 }
 
 type Caller struct {
-	client *rpc.RPCClient
+	client  *rpc.RPCClient
+	channel rpc.RPCChannel
 }
 
 func NewCaller() *Caller {
@@ -171,13 +172,12 @@ func (this *Caller) Dial(service string, timeout time.Duration) error {
 	if err != nil {
 		return err
 	}
-	channel := NewTcpStreamChannel(session)
-	this.client = rpc.NewClient(channel, &TestDecoder{}, &TestEncoder{})
+	this.channel = NewTcpStreamChannel(session)
+	this.client = rpc.NewClient(&TestDecoder{}, &TestEncoder{})
 	session.SetEncoder(codec.NewPbEncoder(65535))
 	session.SetReceiver(codec.NewPBReceiver(65535))
 	session.SetRecvTimeout(5 * time.Second)
 	session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
-		this.client.OnChannelClose(fmt.Errorf(reason))
 		fmt.Printf("channel close:%s\n", reason)
 	})
 	session.Start(func(event *kendynet.Event) {
@@ -191,11 +191,11 @@ func (this *Caller) Dial(service string, timeout time.Duration) error {
 }
 
 func (this *Caller) AsynCall(method string, arg interface{}, timeout time.Duration, cb rpc.RPCResponseHandler) {
-	this.client.AsynCall(method, arg, timeout, cb)
+	this.client.AsynCall(this.channel, method, arg, timeout, cb)
 }
 
 func (this *Caller) Call(method string, arg interface{}, timeout time.Duration) (interface{}, error) {
-	return this.client.Call(method, arg, timeout)
+	return this.client.Call(this.channel, method, arg, timeout)
 }
 
 func init() {

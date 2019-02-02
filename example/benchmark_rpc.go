@@ -9,7 +9,7 @@ import (
 	"github.com/sniperHW/kendynet/golog"
 	"github.com/sniperHW/kendynet/rpc"
 	"github.com/sniperHW/kendynet/timer"
-	"github.com/sniperHW/kendynet/util"
+	//"github.com/sniperHW/kendynet/util"
 	"os"
 	"strconv"
 	"sync/atomic"
@@ -20,12 +20,7 @@ import (
 var timeoutcount int32
 var reqcount int32
 
-func ff() {
-	fmt.Printf(util.CallStack(5))
-}
-
 func server(service string) {
-	ff()
 	count := int32(0)
 	total := 0
 	timer.Repeat(time.Second, nil, func(_ *timer.Timer) {
