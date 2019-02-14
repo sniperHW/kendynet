@@ -44,12 +44,12 @@ func (this *EventQueue) preparePost(fn interface{}, args ...interface{}) *elemen
 	return e
 }
 
-func (this *EventQueue) PostNoWait(fn interface{}, args ...interface{}) {
-	this.eventQueue.AddNoWait(this.preparePost(fn, args...))
+func (this *EventQueue) PostNoWait(fn interface{}, args ...interface{}) error {
+	return this.eventQueue.AddNoWait(this.preparePost(fn, args...))
 }
 
-func (this *EventQueue) Post(fn interface{}, args ...interface{}) {
-	this.eventQueue.Add(this.preparePost(fn, args...))
+func (this *EventQueue) Post(fn interface{}, args ...interface{}) error {
+	return this.eventQueue.Add(this.preparePost(fn, args...))
 }
 
 func (this *EventQueue) Close() {
