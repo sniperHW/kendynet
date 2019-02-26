@@ -2,34 +2,34 @@ package main
 
 import (
 	"fmt"
+	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/event"
+	"github.com/sniperHW/kendynet/golog"
 )
 
-var eventQueue *event.EventQueue
+//var eventQueue *event.EventQueue
 
 func testQueueMode() {
 
 	fmt.Println("-------------------testQueueMode-----------------")
 
-	handler := event.NewEventHandler(eventQueue)
+	handler := event.NewEventHandler()
 
-	handler.Register("queue", false, func() {
+	handler.Register("queue", func(_ event.Handle) {
 		fmt.Println("handler1")
+		handler.Clear("queue")
 	})
 
-	var h *event.Handle
-
-	h = handler.Register("queue", false, func() {
+	handler.Register("queue", func(_ event.Handle) {
 		fmt.Println("handler2")
-		handler.Remove(h)
 	})
 
-	handler.Register("queue", false, func() {
+	handler.Register("queue", func(_ event.Handle) {
 		fmt.Println("handler3")
 	})
 
 	/*
-	* 所有注册的处理器将按注册顺序依次执行
+	 * 所有注册的处理器将按注册顺序依次执行
 	 */
 
 	handler.Emit("queue")
@@ -40,25 +40,23 @@ func testQueueMode() {
 
 	handler.Emit("queue")
 
-	fmt.Println("")
-
 }
 
 func testQueueOnceMode() {
 
 	fmt.Println("-------------------testQueueOnceMode-----------------")
 
-	handler := event.NewEventHandler(eventQueue)
+	handler := event.NewEventHandler()
 
-	handler.Register("queue", false, func() {
-		fmt.Println("handler1")
+	handler.Register("queue", func(_ event.Handle, msg ...interface{}) {
+		fmt.Println("handler1", msg[0])
 	})
 
-	handler.Register("queue", true, func() {
+	handler.RegisterOnce("queue", func(_ event.Handle) {
 		fmt.Println("handler2")
 	})
 
-	handler.Register("queue", false, func() {
+	handler.Register("queue", func(_ event.Handle) {
 		fmt.Println("handler3")
 	})
 
@@ -66,24 +64,27 @@ func testQueueOnceMode() {
 	* 所有注册的处理器将按注册顺序依次执行
 	 */
 
-	handler.Emit("queue")
+	handler.Emit("queue", "hello")
+
+	fmt.Println("again")
 
 	//再次触发事件，因为handler2被注册为只触发一次，此时handler2已经被删除，所以不会再次被调用
 
-	handler.Emit("queue")
+	handler.Emit("queue", "world")
 
 }
 
 func main() {
 
-	eventQueue = event.NewEventQueue()
+	outLogger := golog.NewOutputLogger("log", "kendynet", 1024*1024*1000)
+	kendynet.InitLogger(golog.New("rpc", outLogger))
 
 	testQueueMode()
 
-	//testQueueOnceMode()
+	testQueueOnceMode()
 
-	eventQueue.Close()
+	//eventQueue.Close()
 
-	eventQueue.Run()
+	//eventQueue.Run()
 
 }
