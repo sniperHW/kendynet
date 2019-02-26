@@ -84,6 +84,10 @@ func (this *EventHandler) register(event interface{}, once bool, fn interface{})
 	}
 
 	switch fn.(type) {
+	case func():
+		break
+	case func(...interface{}):
+		break
 	case func(Handle):
 		break
 	case func(Handle, ...interface{}):
@@ -191,8 +195,13 @@ func (this *handlerSlot) register(h *handle) {
 func (this *handlerSlot) pcall(fn interface{}, h Handle, args []interface{}) {
 	defer util.Recover(kendynet.GetLogger())
 	switch fn.(type) {
+	case func():
+		fn.(func())()
 	case func(Handle):
 		fn.(func(Handle))(h)
+		break
+	case func(...interface{}):
+		fn.(func(...interface{}))(args...)
 		break
 	case func(Handle, ...interface{}):
 		fn.(func(Handle, ...interface{}))(h, args...)

@@ -15,16 +15,16 @@ func testQueueMode() {
 
 	handler := event.NewEventHandler()
 
-	handler.Register("queue", func(_ event.Handle) {
+	handler.Register("queue", func() {
 		fmt.Println("handler1")
 		handler.Clear("queue")
 	})
 
-	handler.Register("queue", func(_ event.Handle) {
+	handler.Register("queue", func() {
 		fmt.Println("handler2")
 	})
 
-	handler.Register("queue", func(_ event.Handle) {
+	handler.Register("queue", func() {
 		fmt.Println("handler3")
 	})
 
@@ -48,15 +48,15 @@ func testQueueOnceMode() {
 
 	handler := event.NewEventHandler()
 
-	handler.Register("queue", func(_ event.Handle, msg ...interface{}) {
+	handler.Register("queue", func(msg ...interface{}) {
 		fmt.Println("handler1", msg[0])
 	})
 
-	handler.RegisterOnce("queue", func(_ event.Handle) {
+	handler.RegisterOnce("queue", func() {
 		fmt.Println("handler2")
 	})
 
-	handler.Register("queue", func(_ event.Handle) {
+	handler.Register("queue", func() {
 		fmt.Println("handler3")
 	})
 
