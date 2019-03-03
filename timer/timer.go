@@ -168,15 +168,12 @@ func Repeat(timeout time.Duration, eventQue *event.EventQueue, callback func(*Ti
  *        一个go程中调用Cancel），对于重复定时器，可以保证定时器最多在执行一次之后终止。
  */
 func (this *Timer) Cancel() {
+	defer mtx.Unlock()
 	mtx.Lock()
 	id := this.id
 	t, ok := idTimerMap[id]
 	if ok {
 		delete(idTimerMap, id)
 		minheap.Remove(t)
-	} else {
-		mtx.Unlock()
-		return
 	}
-	mtx.Unlock()
 }
