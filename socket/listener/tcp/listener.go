@@ -7,10 +7,13 @@ import (
     "sync/atomic"
 )
 
+const defaultSocketSendQueueSize = 10000
+
 type Listener struct {
-    listener *net.TCPListener
-    started  int32
-    closed   int32
+    listener            *net.TCPListener
+    started             int32
+    closed              int32
+    socketSendQueueSize int
 }
 
 func New(nettype, service string) (*Listener, error) {
@@ -23,7 +26,11 @@ func New(nettype, service string) (*Listener, error) {
         kendynet.Errorf("ListenTCP service:%s error:%s\n", service, err.Error())
         return nil, err
     }
-    return &Listener{listener: listener}, nil
+    return &Listener{listener: listener, socketSendQueueSize: defaultSocketSendQueueSize}, nil
+}
+
+func (this *Listener) SetSocketSendQueueSize(size int) {
+    this.socketSendQueueSize = size
 }
 
 func (this *Listener) Close() {
@@ -59,7 +66,8 @@ func (this *Listener) Serve(onNewClient func(kendynet.StreamSession)) error {
             }
 
         } else {
-            onNewClient(socket.NewStreamSocket(conn))
+
+            onNewClient(socket.NewStreamSocket(conn, this.socketSendQueueSize))
         }
     }
 }
