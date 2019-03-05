@@ -9,14 +9,11 @@ import (
 	"sync/atomic"
 )
 
-const defaultSocketSendQueueSize = 10000
-
 type Listener struct {
-	listener            *net.TCPListener
-	upgrader            *gorilla.Upgrader
-	origin              string
-	started             int32
-	socketSendQueueSize int
+	listener *net.TCPListener
+	upgrader *gorilla.Upgrader
+	origin   string
+	started  int32
 }
 
 func New(nettype string, service string, origin string, upgrader ...*gorilla.Upgrader) (*Listener, error) {
@@ -30,9 +27,8 @@ func New(nettype string, service string, origin string, upgrader ...*gorilla.Upg
 	}
 
 	l := &Listener{
-		listener:            listener,
-		origin:              origin,
-		socketSendQueueSize: defaultSocketSendQueueSize,
+		listener: listener,
+		origin:   origin,
 	}
 
 	if len(upgrader) > 0 {
@@ -47,10 +43,6 @@ func New(nettype string, service string, origin string, upgrader ...*gorilla.Upg
 	}
 
 	return l, nil
-}
-
-func (this *Listener) SetSocketSendQueueSize(size int) {
-	this.socketSendQueueSize = size
 }
 
 func (this *Listener) Close() {
@@ -75,7 +67,7 @@ func (this *Listener) Serve(onNewClient func(kendynet.StreamSession)) error {
 			kendynet.Errorf("wssocket Upgrade failed:%s\n", err.Error())
 			return
 		}
-		sess := socket.NewWSSocket(c, this.socketSendQueueSize)
+		sess := socket.NewWSSocket(c)
 		onNewClient(sess)
 	})
 
