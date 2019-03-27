@@ -22,28 +22,36 @@ var handlePool = sync.Pool{
 }
 
 func get() *handle {
-	return handlePool.Get().(*handle)
+	h := handlePool.Get().(*handle)
+	h.status = status_ok
+	return h
 }
 
 func put(h *handle) {
-	h.removing = false
 	handlePool.Put(h)
 }
 
+const (
+	status_ok       = 0
+	status_remove   = 1
+	status_register = 2
+)
+
 type handle struct {
-	h        Handle
-	pprev    *handle
-	nnext    *handle
-	fn       interface{}
-	once     bool
-	event    interface{}
-	slot     *handlerSlot
-	removing bool
+	h      Handle
+	pprev  *handle
+	nnext  *handle
+	fn     interface{}
+	once   bool
+	event  interface{}
+	slot   *handlerSlot
+	status int
 }
 
 type handlerSlot struct {
-	l  handList
-	eh *EventHandler
+	l       handList
+	emiting bool
+	eh      *EventHandler
 }
 
 type EventHandler struct {
@@ -52,7 +60,6 @@ type EventHandler struct {
 	slots        map[interface{}]*handlerSlot
 	hmap         map[Handle]*handle
 	processQueue *EventQueue
-	emiting      bool
 }
 
 func NewEventHandler(processQueue ...*EventQueue) *EventHandler {
@@ -125,8 +132,8 @@ func (this *EventHandler) remove_(h Handle) {
 	if nil != hh {
 		slot, ok := this.slots[hh.event]
 		if ok {
-			if this.emiting {
-				hh.removing = true
+			if slot.emiting {
+				hh.status = status_remove
 			} else {
 				slot.remove(hh)
 			}
@@ -157,17 +164,7 @@ func (this *EventHandler) emit(event interface{}, args ...interface{}) {
 	this.mtx.Lock()
 	slot, ok := this.slots[event]
 	if ok {
-		this.emiting = true
 		slot.emit(args...)
-		this.emiting = false
-		cur := slot.l.head.nnext
-		for cur != &slot.l.tail {
-			next := cur.nnext
-			if cur.removing || cur.once {
-				slot.remove(cur)
-			}
-			cur = next
-		}
 	} else {
 		this.mtx.Unlock()
 	}
@@ -191,6 +188,10 @@ func (this *handlerSlot) register(h *handle) {
 	h.nnext = &this.l.tail
 	h.pprev = this.l.tail.pprev
 	this.l.tail.pprev = h
+	if this.emiting {
+		//在emit回调中注册新的handler不会在本次emit中执行
+		h.status = status_register
+	}
 }
 
 func (this *handlerSlot) pcall(fn interface{}, h Handle, args []interface{}) {
@@ -213,13 +214,28 @@ func (this *handlerSlot) pcall(fn interface{}, h Handle, args []interface{}) {
 }
 
 func (this *handlerSlot) emit(args ...interface{}) {
+	this.emiting = true
+	//第一遍遍历,执行事件回调
 	cur := this.l.head.nnext
 	for cur != &this.l.tail {
 		next := cur.nnext
-		if !cur.removing {
+		if cur.status == status_ok {
 			this.eh.mtx.Unlock()
 			this.pcall(cur.fn, cur.h, args)
 			this.eh.mtx.Lock()
+		}
+		cur = next
+	}
+	this.emiting = false
+
+	//第二遍遍历执行清除以及status_register->status_ok
+	cur = this.l.head.nnext
+	for cur != &this.l.tail {
+		next := cur.nnext
+		if cur.status == status_remove || cur.status == status_ok && cur.once {
+			this.remove(cur)
+		} else if cur.status == status_register {
+			cur.status = status_ok
 		}
 		cur = next
 	}
@@ -229,8 +245,8 @@ func (this *handlerSlot) clear() {
 	cur := this.l.head.nnext
 	for cur != &this.l.tail {
 		next := cur.nnext
-		if this.eh.emiting {
-			cur.removing = true
+		if this.emiting {
+			cur.status = status_remove
 		} else {
 			this.remove(cur)
 		}

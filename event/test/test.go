@@ -18,6 +18,9 @@ func testQueueMode() {
 	handler.Register("queue", func() {
 		fmt.Println("handler1")
 		handler.Clear("queue")
+		handler.Register("queue", func() {
+			fmt.Println("handler11")
+		})
 	})
 
 	handler.Register("queue", func() {
