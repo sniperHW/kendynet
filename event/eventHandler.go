@@ -26,17 +26,19 @@ func get() *handle {
 }
 
 func put(h *handle) {
+	h.removing = false
 	handlePool.Put(h)
 }
 
 type handle struct {
-	h     Handle
-	pprev *handle
-	nnext *handle
-	fn    interface{}
-	once  bool
-	event interface{}
-	slot  *handlerSlot
+	h        Handle
+	pprev    *handle
+	nnext    *handle
+	fn       interface{}
+	once     bool
+	event    interface{}
+	slot     *handlerSlot
+	removing bool
 }
 
 type handlerSlot struct {
@@ -50,7 +52,7 @@ type EventHandler struct {
 	slots        map[interface{}]*handlerSlot
 	hmap         map[Handle]*handle
 	processQueue *EventQueue
-	emiting      int32
+	emiting      bool
 }
 
 func NewEventHandler(processQueue ...*EventQueue) *EventHandler {
@@ -103,13 +105,9 @@ func (this *EventHandler) register(event interface{}, once bool, fn interface{})
 	h.event = event
 	h.h = Handle(atomic.AddInt64(&this.c, 1))
 
-	if atomic.LoadInt32(&this.emiting) == 1 {
-		this.register_(h)
-	} else {
-		this.mtx.Lock()
-		this.register_(h)
-		this.mtx.Unlock()
-	}
+	this.mtx.Lock()
+	this.register_(h)
+	this.mtx.Unlock()
 
 	return h.h
 }
@@ -127,19 +125,19 @@ func (this *EventHandler) remove_(h Handle) {
 	if nil != hh {
 		slot, ok := this.slots[hh.event]
 		if ok {
-			slot.remove(hh)
+			if this.emiting {
+				hh.removing = true
+			} else {
+				slot.remove(hh)
+			}
 		}
 	}
 }
 
 func (this *EventHandler) Remove(h Handle) {
-	if atomic.LoadInt32(&this.emiting) == 1 {
-		this.remove_(h)
-	} else {
-		this.mtx.Lock()
-		defer this.mtx.Unlock()
-		this.remove_(h)
-	}
+	this.mtx.Lock()
+	defer this.mtx.Unlock()
+	this.remove_(h)
 }
 
 func (this *EventHandler) clear_(event interface{}) {
@@ -150,27 +148,30 @@ func (this *EventHandler) clear_(event interface{}) {
 }
 
 func (this *EventHandler) Clear(event interface{}) {
-	if atomic.LoadInt32(&this.emiting) == 1 {
-		this.clear_(event)
-	} else {
-		this.mtx.Lock()
-		defer this.mtx.Unlock()
-		this.clear_(event)
-	}
+	this.mtx.Lock()
+	defer this.mtx.Unlock()
+	this.clear_(event)
 }
 
 func (this *EventHandler) emit(event interface{}, args ...interface{}) {
-	atomic.StoreInt32(&this.emiting, 1)
 	this.mtx.Lock()
-	defer func() {
-		this.mtx.Unlock()
-		atomic.StoreInt32(&this.emiting, 0)
-	}()
-
 	slot, ok := this.slots[event]
 	if ok {
+		this.emiting = true
 		slot.emit(args...)
+		this.emiting = false
+		cur := slot.l.head.nnext
+		for cur != &slot.l.tail {
+			next := cur.nnext
+			if cur.removing || cur.once {
+				slot.remove(cur)
+			}
+			cur = next
+		}
+	} else {
+		this.mtx.Unlock()
 	}
+	this.mtx.Unlock()
 }
 
 //触发事件
@@ -215,14 +216,10 @@ func (this *handlerSlot) emit(args ...interface{}) {
 	cur := this.l.head.nnext
 	for cur != &this.l.tail {
 		next := cur.nnext
-		if cur.slot != nil {
+		if !cur.removing {
+			this.eh.mtx.Unlock()
 			this.pcall(cur.fn, cur.h, args)
-			if nil != cur.slot && cur.once {
-				this.remove(cur)
-			}
-		}
-		if cur.slot == nil {
-			put(cur)
+			this.eh.mtx.Lock()
 		}
 		cur = next
 	}
@@ -232,7 +229,11 @@ func (this *handlerSlot) clear() {
 	cur := this.l.head.nnext
 	for cur != &this.l.tail {
 		next := cur.nnext
-		this.remove(cur)
+		if this.eh.emiting {
+			cur.removing = true
+		} else {
+			this.remove(cur)
+		}
 		cur = next
 	}
 }
@@ -242,7 +243,5 @@ func (this *handlerSlot) remove(h *handle) {
 	h.pprev.nnext = h.nnext
 	h.nnext.pprev = h.pprev
 	h.slot = nil
-	if this.eh.emiting == 0 {
-		put(h)
-	}
+	put(h)
 }
