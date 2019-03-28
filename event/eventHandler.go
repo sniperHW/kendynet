@@ -165,8 +165,6 @@ func (this *EventHandler) emit(event interface{}, args ...interface{}) {
 	slot, ok := this.slots[event]
 	if ok {
 		slot.emit(args...)
-	} else {
-		this.mtx.Unlock()
 	}
 	this.mtx.Unlock()
 }
