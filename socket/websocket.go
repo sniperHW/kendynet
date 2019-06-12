@@ -167,7 +167,7 @@ func NewWSSocket(conn *gorilla.Conn) kendynet.StreamSession {
 			conn: conn,
 		}
 		s.SocketBase = &SocketBase{
-			//sendQue:       util.NewBlockQueue(sendQueueSize...),
+			sendQue:       util.NewBlockQueue(8192),
 			sendCloseChan: make(chan int, 1),
 			imp:           s,
 		}

@@ -121,10 +121,6 @@ func (this *SocketBase) Start(eventCB func(*kendynet.Event)) error {
 		this.receiver = this.imp.defaultReceiver()
 	}
 
-	if nil == this.sendQue {
-		this.sendQue = util.NewBlockQueue()
-	}
-
 	this.onEvent = eventCB
 	this.flag |= started
 
@@ -163,11 +159,7 @@ func (this *SocketBase) SetReceiver(r kendynet.Receiver) {
 }
 
 func (this *SocketBase) SetSendQueueSize(size int) {
-	this.mutex.Lock()
-	defer this.mutex.Unlock()
-	if nil == this.sendQue {
-		this.sendQue = util.NewBlockQueue(size)
-	}
+	this.sendQue.SetFullSize(size)
 }
 
 func (this *SocketBase) Send(o interface{}) error {
