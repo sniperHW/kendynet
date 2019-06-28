@@ -3,12 +3,14 @@ package main
 import (
 	"fmt"
 	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/golog"
 	connector "github.com/sniperHW/kendynet/socket/connector/tcp"
 	listener "github.com/sniperHW/kendynet/socket/listener/tcp"
 	"github.com/sniperHW/kendynet/timer"
 	"os"
 	"os/signal"
-	"runtime/pprof"
+	"runtime"
+	//"runtime/pprof"
 	"strconv"
 	"sync/atomic"
 	"syscall"
@@ -26,7 +28,7 @@ func server(service string) {
 		tmp2 := atomic.LoadInt32(&packetcount)
 		atomic.StoreInt32(&bytescount, 0)
 		atomic.StoreInt32(&packetcount, 0)
-		fmt.Printf("clientcount:%d,transrfer:%d KB/s,packetcount:%d\n", clientcount, tmp1/1024, tmp2)
+		fmt.Printf("clientcount:%d,transrfer:%d KB/s,packetcount:%d\n", atomic.LoadInt32(&clientcount), tmp1/1024, tmp2)
 	})
 
 	server, err := listener.New("tcp4", service)
@@ -34,18 +36,30 @@ func server(service string) {
 		fmt.Printf("server running on:%s\n", service)
 		err = server.Serve(func(session kendynet.StreamSession) {
 			atomic.AddInt32(&clientcount, 1)
+			//session.SetSendQueueSize(2048)
 			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
-				fmt.Printf("client close:%s\n", reason)
 				atomic.AddInt32(&clientcount, -1)
+				fmt.Println("client close:", reason, session.GetUnderConn(), atomic.LoadInt32(&clientcount))
 			})
 			session.Start(func(event *kendynet.Event) {
 				if event.EventType == kendynet.EventTypeError {
 					event.Session.Close(event.Data.(error).Error(), 0)
 				} else {
+					var e error
 					atomic.AddInt32(&bytescount, int32(len(event.Data.(kendynet.Message).Bytes())))
 					atomic.AddInt32(&packetcount, int32(1))
-					event.Session.SendMessage(event.Data.(kendynet.Message))
-					//event.Session.Close("none",10)
+					for {
+						e = event.Session.SendMessage(event.Data.(kendynet.Message))
+						if e == nil {
+							return
+						} else if e != kendynet.ErrSendQueFull {
+							break
+						}
+						runtime.Gosched()
+					}
+					if e != nil {
+						fmt.Println("send error", e, session.GetUnderConn())
+					}
 				}
 			})
 		})
@@ -86,15 +100,21 @@ func client(service string, count int) {
 			//send the first messge
 			msg := kendynet.NewByteBuffer("hello")
 			session.SendMessage(msg)
+			session.SendMessage(msg)
+			session.SendMessage(msg)
 		}
 	}
 }
 
 func main() {
 
-	f, _ := os.Create("profile_file")
-	pprof.StartCPUProfile(f)     // 开始cpu profile，结果写到文件f中
-	defer pprof.StopCPUProfile() // 结束profile
+	//f, _ := os.Create("profile_file")
+	//pprof.StartCPUProfile(f)     // 开始cpu profile，结果写到文件f中
+	//defer pprof.StopCPUProfile() // 结束profile
+
+	outLogger := golog.NewOutputLogger("log", "kendynet", 1024*1024*1000)
+	kendynet.InitLogger(golog.New("rpc", outLogger))
+	kendynet.Debugln("start")
 
 	if len(os.Args) < 3 {
 		fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")
@@ -133,6 +153,8 @@ func main() {
 	}
 
 	_ = <-c //阻塞直至有信号传入
+
+	fmt.Println("exit")
 
 	return
 
