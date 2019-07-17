@@ -14,7 +14,7 @@ var ErrCallTimeout error = fmt.Errorf("rpc call timeout")
 
 var client_once sync.Once
 var sequence uint64
-var groupCount uint64 = 63
+var groupCount uint64 = 61
 var contextGroups []*contextGroup = make([]*contextGroup, groupCount)
 
 type RPCResponseHandler func(interface{}, error)
@@ -23,6 +23,8 @@ type contextGroup struct {
 	mtx      sync.Mutex
 	minheap  *util.MinHeap          // = util.NewMinHeap(4096)
 	waitResp map[uint64]*reqContext // = map[uint64]*reqContext{} //待响应的请求
+	notiChan *util.Notifyer
+	tt       *time.Timer
 }
 
 func (this *contextGroup) checkTimeout() {
@@ -50,6 +52,35 @@ func (this *contextGroup) checkTimeout() {
 
 	for _, v := range timeout {
 		v.callResponseCB(nil, ErrCallTimeout)
+	}
+}
+
+func (this *contextGroup) wait() {
+	sleepTime := 86400 * time.Second
+	now := time.Now()
+
+	this.mtx.Lock()
+	min := this.minheap.Min()
+	if nil != min && min.(*reqContext).deadline.After(now) {
+		sleepTime = min.(*reqContext).deadline.Sub(now)
+	}
+	this.mtx.Unlock()
+
+	if nil != this.tt {
+		this.tt.Stop()
+		this.tt.Reset(sleepTime)
+	} else {
+		this.tt = time.AfterFunc(sleepTime, func() {
+			this.notiChan.Notify()
+		})
+	}
+
+	this.notiChan.Wait()
+}
+
+func (this *contextGroup) notify(context *reqContext) {
+	if this.minheap.Size() == 1 || this.minheap.Min().(*reqContext).deadline.After(context.deadline) {
+		this.notiChan.Notify()
 	}
 }
 
@@ -185,13 +216,13 @@ func (this *RPCClient) AsynCall(channel RPCChannel, method string, arg interface
 		context.deadline = time.Now().Add(timeout)
 
 		group := contextGroups[req.Seq%uint64(len(contextGroups))]
-
 		group.mtx.Lock()
 		defer group.mtx.Unlock()
 		err := channel.SendRequest(request)
 		if err == nil {
 			group.waitResp[context.seq] = context
 			group.minheap.Insert(context)
+			group.notify(context)
 			return nil
 		} else {
 			return err
@@ -221,17 +252,28 @@ func onceRoutine() {
 			contextGroups[i] = &contextGroup{
 				minheap:  util.NewMinHeap(128),
 				waitResp: map[uint64]*reqContext{},
+				notiChan: util.NewNotifyer(),
 			}
 		}
 
-		go func() {
-			for {
-				time.Sleep(time.Duration(10) * time.Millisecond)
-				for _, v := range contextGroups {
-					v.checkTimeout()
+		for _, v := range contextGroups {
+			go func(g *contextGroup) {
+				for {
+					g.wait()
+					g.checkTimeout()
 				}
-			}
-		}()
+			}(v)
+		}
+		/*
+			go func() {
+				for {
+					time.Sleep(time.Duration(10) * time.Millisecond)
+					for _, v := range contextGroups {
+						v.checkTimeout()
+					}
+				}
+			}()
+		*/
 	})
 }
 

@@ -26,20 +26,20 @@ func main() {
 	heap := util.NewMinHeap(10)
 
 	ele1 := &Ele{value: 10}
-	ele2 := &Ele{value: 7}
-	ele3 := &Ele{value: 21}
-	ele4 := &Ele{value: 9}
+	ele2 := &Ele{value: 20}
+	ele3 := &Ele{value: 5}
+	/*ele4 := &Ele{value: 9}
 	ele5 := &Ele{value: 6}
 	ele6 := &Ele{value: 5}
 	ele7 := &Ele{value: 2}
 	ele8 := &Ele{value: 1}
 	ele9 := &Ele{value: 8}
-	ele10 := &Ele{value: 3}
+	ele10 := &Ele{value: 3}*/
 
 	heap.Insert(ele1)
 	heap.Insert(ele2)
 	heap.Insert(ele3)
-	heap.Insert(ele4)
+	/*heap.Insert(ele4)
 	heap.Insert(ele5)
 	heap.Insert(ele6)
 	heap.Insert(ele7)
@@ -53,7 +53,7 @@ func main() {
 	heap.Insert(&Ele{value: 97})
 	heap.Insert(&Ele{value: 66})
 	heap.Insert(&Ele{value: 32})
-	heap.Insert(&Ele{value: 71})
+	heap.Insert(&Ele{value: 71})*/
 
 	//ele7.value = 199
 	//heap.Insert(ele7)

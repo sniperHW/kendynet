@@ -77,6 +77,7 @@ func testSyncCall(caller *test_rpc.Caller) {
 }
 
 func testAsynCall(caller *test_rpc.Caller) {
+
 	var callback1 func(interface{}, error)
 	var callback2 func(interface{}, error)
 
@@ -95,6 +96,7 @@ func testAsynCall(caller *test_rpc.Caller) {
 		arg := &testproto.Hello{Hello: proto.String("hello fasdfasdfasdfasdfjasjfjeiofjkaljfklasjfkljasdifjasijflkasdjl")}
 		caller.AsynCall("hello", arg, time.Second, callback2)
 	}
+
 	for j := 0; j < 10; j++ {
 		arg := &testproto.Hello{Hello: proto.String("hello")}
 		caller.AsynCall("hello", arg, time.Second, callback1)
@@ -104,6 +106,7 @@ func testAsynCall(caller *test_rpc.Caller) {
 		arg := &testproto.Hello{Hello: proto.String("hello fasdfasdfasdfasdfjasjfjeiofjkaljfklasjfkljasdifjasijflkasdjl")}
 		caller.AsynCall("hello", arg, time.Second, callback2)
 	}
+
 }
 
 func client(service string, count int) {
