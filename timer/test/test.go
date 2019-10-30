@@ -16,7 +16,7 @@ func main() {
 	timer.Repeat(1*time.Second, nil, func(timer *timer.Timer) {
 		i++
 		fmt.Println("Repeat timer", i)
-		if i > 10 {
+		if i == 10 {
 			timer.Cancel()
 		}
 	})
