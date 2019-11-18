@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/golang/protobuf/proto"
 	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/event"
 	codec "github.com/sniperHW/kendynet/example/codec"
 	"github.com/sniperHW/kendynet/example/pb"
 	"github.com/sniperHW/kendynet/example/testproto"
@@ -33,7 +34,7 @@ func server(service string) {
 		fmt.Printf("clientcount:%d,packetcount:%d\n", clientcount, tmp)
 	})
 
-	evQueue := kendynet.NewEventQueue()
+	evQueue := event.NewEventQueue()
 
 	server, err := listener.New("tcp4", service)
 	if server != nil {
