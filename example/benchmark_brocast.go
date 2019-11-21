@@ -11,6 +11,8 @@ import (
 	connector "github.com/sniperHW/kendynet/socket/connector/tcp"
 	listener "github.com/sniperHW/kendynet/socket/listener/tcp"
 	"github.com/sniperHW/kendynet/timer"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"strconv"
 	"sync/atomic"
@@ -36,6 +38,8 @@ func server(service string) {
 
 	evQueue := event.NewEventQueue()
 
+	encoder := codec.NewPbEncoder(4096)
+
 	server, err := listener.New("tcp4", service)
 	if server != nil {
 		go func() {
@@ -54,10 +58,12 @@ func server(service string) {
 						session.Close(ev.Data.(error).Error(), 0)
 					} else {
 						evQueue.PostNoWait(func() {
-							for s, _ := range clientMap {
-								s.Send(ev.Data.(proto.Message))
-							}
+							//广播，编码一次，直接发送编码后的包，省得每次发送单独编码一次
+							resp, _ := encoder.EnCode(ev.Data.(proto.Message))
 							atomic.AddInt32(&packetcount, int32(len(clientMap)))
+							for s, _ := range clientMap {
+								s.SendMessage(resp)
+							}
 						})
 					}
 				})
@@ -131,6 +137,11 @@ func main() {
 		fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")
 		return
 	}
+
+	go func() {
+
+		http.ListenAndServe("0.0.0.0:6060", nil)
+	}()
 
 	service := os.Args[2]
 
