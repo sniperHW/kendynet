@@ -105,7 +105,7 @@ func (self *BlockQueue) Get() (closed bool, datas []interface{}) {
 	closed = self.closed
 	self.listGuard.Unlock()
 	if needSignal {
-		self.fullCond.Signal()
+		self.fullCond.Broadcast()
 	}
 	return
 }
@@ -125,7 +125,7 @@ func (self *BlockQueue) Swap(swaped []interface{}) (closed bool, datas []interfa
 	self.list = swaped
 	self.listGuard.Unlock()
 	if needSignal {
-		self.fullCond.Signal()
+		self.fullCond.Broadcast()
 	}
 	return
 }
