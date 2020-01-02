@@ -3,17 +3,12 @@ package main
 import (
 	"fmt"
 	"github.com/sniperHW/kendynet"
-	//"github.com/sniperHW/kendynet/golog"
 	"github.com/sniperHW/kendynet/socket/aio"
-	//connector "github.com/sniperHW/kendynet/socket/connector/tcp"
-	//listener "github.com/sniperHW/kendynet/socket/listener/tcp"
 	"github.com/sniperHW/kendynet/timer"
+	"net"
 	"os"
 	"os/signal"
 	"runtime"
-	//"runtime/pprof"
-	//"strconv"
-	"net"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -50,7 +45,7 @@ func server(service string) {
 			return
 		}
 
-		w, q := aio.GetWatcherAndCompleteQueue()
+		w, rq, wq := aio.GetWatcherAndCompleteQueue()
 
 		c, err := w.Watch(conn)
 		if err != nil {
@@ -60,7 +55,7 @@ func server(service string) {
 
 		atomic.AddInt32(&clientcount, 1)
 
-		aioSocket := aio.NewAioSocket(c, w, q)
+		aioSocket := aio.NewAioSocket(c, w, rq, wq)
 
 		aioSocket.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
 			atomic.AddInt32(&clientcount, -1)
@@ -93,7 +88,7 @@ func server(service string) {
 
 func main() {
 
-	aio.Init(1, 2)
+	aio.Init(1, runtime.NumCPU()*2)
 
 	go server("localhost:8110")
 

@@ -9,7 +9,8 @@ import (
 )
 
 var watchers []*aiogo.Watcher
-var completeQueues []*aiogo.CompleteQueue
+var readCompleteQueues []*aiogo.CompleteQueue
+var writeCompleteQueue []*aiogo.CompleteQueue
 
 func completeRoutine(completeQueue *aiogo.CompleteQueue) {
 	for {
@@ -29,9 +30,9 @@ func completeRoutine(completeQueue *aiogo.CompleteQueue) {
 	}
 }
 
-func GetWatcherAndCompleteQueue() (*aiogo.Watcher, *aiogo.CompleteQueue) {
+func GetWatcherAndCompleteQueue() (*aiogo.Watcher, *aiogo.CompleteQueue, *aiogo.CompleteQueue) {
 	r := rand.Int()
-	return watchers[r%len(watchers)], completeQueues[r%len(completeQueues)]
+	return watchers[r%len(watchers)], readCompleteQueues[r%len(readCompleteQueues)], writeCompleteQueue[r%len(writeCompleteQueue)]
 }
 
 func Init(watcherCount int, completeQueueCount int, bufferPool ...aiogo.BufferPool) error {
@@ -53,7 +54,13 @@ func Init(watcherCount int, completeQueueCount int, bufferPool ...aiogo.BufferPo
 
 	for i := 0; i < completeQueueCount; i++ {
 		queue := aiogo.NewCompleteQueueWithSpinlock()
-		completeQueues = append(completeQueues, queue)
+		readCompleteQueues = append(readCompleteQueues, queue)
+		go completeRoutine(queue)
+	}
+
+	for i := 0; i < completeQueueCount; i++ {
+		queue := aiogo.NewCompleteQueueWithSpinlock()
+		writeCompleteQueue = append(writeCompleteQueue, queue)
 		go completeRoutine(queue)
 	}
 

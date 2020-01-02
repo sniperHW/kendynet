@@ -46,20 +46,22 @@ type AioSocket struct {
 	pendingSend      *list.List
 	watcher          *aiogo.Watcher
 	sendLock         bool
-	completeQueue    *aiogo.CompleteQueue
+	rcompleteQueue   *aiogo.CompleteQueue
+	wcompleteQueue   *aiogo.CompleteQueue
 	sendQueueSize    int
 	onClearSendQueue func()
 	closeReason      string
 }
 
-func NewAioSocket(c *aiogo.Conn, w *aiogo.Watcher, q *aiogo.CompleteQueue) *AioSocket {
+func NewAioSocket(c *aiogo.Conn, w *aiogo.Watcher, rq *aiogo.CompleteQueue, wq *aiogo.CompleteQueue) *AioSocket {
 	s := &AioSocket{
-		aioConn:       c,
-		watcher:       w,
-		completeQueue: q,
-		sendQueueSize: 256,
-		sendBuffs:     make([][]byte, 256),
-		pendingSend:   list.New(),
+		aioConn:        c,
+		watcher:        w,
+		rcompleteQueue: rq,
+		wcompleteQueue: wq,
+		sendQueueSize:  256,
+		sendBuffs:      make([][]byte, 256),
+		pendingSend:    list.New(),
 	}
 	return s
 }
@@ -82,7 +84,7 @@ func (this *AioSocket) postSend() {
 	this.Unlock()
 
 	if c > 0 {
-		this.aioConn.Sendv(this.sendBuffs[:c], this, this.completeQueue)
+		this.aioConn.Sendv(this.sendBuffs[:c], this, this.wcompleteQueue)
 	}
 }
 
@@ -144,7 +146,7 @@ func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 	} else {
 		this.onEvent(e)
 		if e.EventType == kendynet.EventTypeMessage {
-			this.aioConn.Recv(nil, this, this.completeQueue)
+			this.aioConn.Recv(nil, this, this.rcompleteQueue)
 		}
 	}
 }
@@ -183,7 +185,7 @@ func (this *AioSocket) sendMessage(msg kendynet.Message) error {
 	this.pendingSend.PushBack(msg)
 
 	if !this.sendLock {
-		this.completeQueue.Post(&aiogo.CompleteEvent{
+		this.wcompleteQueue.Post(&aiogo.CompleteEvent{
 			Type: aiogo.User,
 			Ud:   this,
 		})
@@ -340,7 +342,7 @@ func (this *AioSocket) Start(eventCB func(*kendynet.Event)) error {
 	this.onEvent = eventCB
 	this.flag |= started
 
-	this.aioConn.Recv(nil, this, this.completeQueue)
+	this.aioConn.Recv(nil, this, this.rcompleteQueue)
 
 	return nil
 }
