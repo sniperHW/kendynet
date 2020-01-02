@@ -16,7 +16,7 @@ const (
 	closed          = (1 << 1)
 	wclosed         = (1 << 2)
 	rclosed         = (1 << 3)
-	maxPostSendSize = 1024 * 128
+	maxPostSendSize = 1024 * 1024
 )
 
 type defaultReceiver struct {
