@@ -104,7 +104,7 @@ func (this *StreamSocket) sendMessage(msg kendynet.Message) error {
 func (this *StreamSocket) sendThreadFunc() {
 
 	defer func() {
-		this.sendCloseChan <- 1
+		close(this.sendCloseChan)
 	}()
 
 	var err error
@@ -193,7 +193,7 @@ func NewStreamSocket(conn net.Conn) kendynet.StreamSession {
 		}
 		s.SocketBase = &SocketBase{
 			sendQue:       util.NewBlockQueue(1024),
-			sendCloseChan: make(chan int, 1),
+			sendCloseChan: make(chan struct{}),
 			imp:           s,
 		}
 		return s

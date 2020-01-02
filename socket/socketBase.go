@@ -37,7 +37,7 @@ type SocketBase struct {
 	onClose       func(kendynet.StreamSession, string)
 	onEvent       func(*kendynet.Event)
 	closeReason   string
-	sendCloseChan chan int
+	sendCloseChan chan struct{}
 	imp           SocketImpl
 }
 
