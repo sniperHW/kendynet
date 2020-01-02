@@ -29,7 +29,13 @@ type defaultReceiver struct {
 }
 
 func (this *defaultReceiver) ReceiveAndUnpack(_ kendynet.StreamSession) (interface{}, error) {
-	return kendynet.NewByteBuffer(this.buffer), nil
+	if nil != this.buffer {
+		b := kendynet.NewByteBuffer(this.buffer)
+		this.buffer = nil
+		return b, nil
+	} else {
+		return nil, nil
+	}
 }
 
 func (this *defaultReceiver) AppendBytes(buff []byte) {
