@@ -46,13 +46,16 @@ func (this *StreamSocket) Close(reason string, delay time.Duration) {
 	}
 
 	this.sendQue.Close()
-	this.mutex.Unlock()
+
 	if this.sendQue.Len() > 0 {
 		delay = delay * time.Second
 		if delay <= 0 {
 			this.sendQue.Clear()
 		}
 	}
+
+	this.mutex.Unlock()
+
 	if delay > 0 {
 		this.shutdownRead()
 		ticker := time.NewTicker(delay)
