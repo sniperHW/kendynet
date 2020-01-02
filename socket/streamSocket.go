@@ -27,6 +27,10 @@ func (this *defaultSSReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (in
 	return msg, err
 }
 
+func (this *defaultSSReceiver) AppendBytes(_ []byte) {
+
+}
+
 type StreamSocket struct {
 	*SocketBase
 	conn net.Conn
