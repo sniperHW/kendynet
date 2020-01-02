@@ -30,9 +30,10 @@ type defaultReceiver struct {
 
 func (this *defaultReceiver) ReceiveAndUnpack(_ kendynet.StreamSession) (interface{}, error) {
 	if nil != this.buffer {
-		b := kendynet.NewByteBuffer(this.buffer)
+		msg := kendynet.NewByteBuffer(len(this.buffer))
+		msg.AppendBytes(this.buffer)
 		this.buffer = nil
-		return b, nil
+		return msg, nil
 	} else {
 		return nil, nil
 	}
@@ -63,6 +64,7 @@ type AioSocket struct {
 	onClearSendQueue func()
 	closeReason      string
 	maxPostSendSize  int
+	recvBuff         []byte
 }
 
 func NewAioSocket(c *aiogo.Conn, w *aiogo.Watcher, rq *aiogo.CompleteQueue, wq *aiogo.CompleteQueue) *AioSocket {
@@ -75,6 +77,7 @@ func NewAioSocket(c *aiogo.Conn, w *aiogo.Watcher, rq *aiogo.CompleteQueue, wq *
 		sendBuffs:       make([][]byte, 512),
 		pendingSend:     list.New(),
 		maxPostSendSize: 1024 * 1024,
+		recvBuff:        make([]byte, 4096),
 	}
 	return s
 }
@@ -167,7 +170,7 @@ func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 			}
 
 			if nil == e {
-				this.aioConn.Recv(nil, this, this.rcompleteQueue)
+				this.aioConn.Recv(this.recvBuff, this, this.rcompleteQueue)
 				return
 			} else {
 				flag := this.getFlag()
@@ -381,7 +384,7 @@ func (this *AioSocket) Start(eventCB func(*kendynet.Event)) error {
 	this.onEvent = eventCB
 	this.flag |= started
 
-	this.aioConn.Recv(nil, this, this.rcompleteQueue)
+	this.aioConn.Recv(this.recvBuff, this, this.rcompleteQueue)
 
 	return nil
 }
