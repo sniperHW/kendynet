@@ -4,6 +4,7 @@ package aio
 
 import (
 	"container/list"
+	//"fmt"
 	"github.com/sniperHW/aiogo"
 	"github.com/sniperHW/kendynet"
 	"net"
@@ -74,9 +75,9 @@ func NewAioSocket(c *aiogo.Conn, w *aiogo.Watcher, rq *aiogo.CompleteQueue, wq *
 
 func (this *AioSocket) postSend() {
 	this.Lock()
-	this.sendLock = true
 	c := 0
 	totalSize := 0
+	//fmt.Println("pendingSend.Len()", this.pendingSend.Len())
 	for v := this.pendingSend.Front(); v != nil; v = this.pendingSend.Front() {
 		this.pendingSend.Remove(v)
 		this.sendBuffs[c] = v.Value.(kendynet.Message).Bytes()
@@ -91,6 +92,8 @@ func (this *AioSocket) postSend() {
 
 	if c > 0 {
 		this.aioConn.Sendv(this.sendBuffs[:c], this, this.wcompleteQueue)
+	} else {
+		panic("should not go here")
 	}
 }
 
@@ -210,6 +213,7 @@ func (this *AioSocket) sendMessage(msg kendynet.Message) error {
 	this.pendingSend.PushBack(msg)
 
 	if !this.sendLock {
+		this.sendLock = true
 		this.wcompleteQueue.Post(&aiogo.CompleteEvent{
 			Type: aiogo.User,
 			Ud:   this,
