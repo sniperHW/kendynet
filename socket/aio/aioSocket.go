@@ -127,32 +127,51 @@ func (this *AioSocket) getFlag() int32 {
 }
 
 func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
-
-	e := &kendynet.Event{Session: this}
-
-	if nil == r.Err {
-		this.receiver.AppendBytes(r.Buff[0][:r.Size])
-		msg, err := this.receiver.ReceiveAndUnpack(this)
-		if nil != err {
-			e.EventType = kendynet.EventTypeError
-			e.Data = err
+	if nil != r.Err {
+		flag := this.getFlag()
+		if flag&closed > 0 || flag&rclosed > 0 {
+			return
 		} else {
-			e.EventType = kendynet.EventTypeMessage
-			e.Data = msg
+			this.onEvent(&kendynet.Event{
+				Session:   this,
+				EventType: kendynet.EventTypeError,
+				Data:      r.Err,
+			})
 		}
 	} else {
-		e.EventType = kendynet.EventTypeError
-		e.Data = r.Err
-	}
+		this.receiver.AppendBytes(r.Buff[0][:r.Size])
+		for {
+			var e *kendynet.Event
+			msg, err := this.receiver.ReceiveAndUnpack(this)
+			if nil != err {
+				e = &kendynet.Event{
+					Session:   this,
+					EventType: kendynet.EventTypeError,
+					Data:      err,
+				}
+			} else if msg != nil {
+				e = &kendynet.Event{
+					Session:   this,
+					EventType: kendynet.EventTypeMessage,
+					Data:      msg,
+				}
+			}
 
-	flag := this.getFlag()
-
-	if flag&closed > 0 || flag&rclosed > 0 {
-		return
-	} else {
-		this.onEvent(e)
-		if e.EventType == kendynet.EventTypeMessage {
-			this.aioConn.Recv(nil, this, this.rcompleteQueue)
+			if nil == e {
+				this.aioConn.Recv(nil, this, this.rcompleteQueue)
+				break
+			} else {
+				flag := this.getFlag()
+				if flag&closed > 0 || flag&rclosed > 0 {
+					return
+				} else {
+					this.onEvent(e)
+					flag := this.flag
+					if flag&closed > 0 || flag&rclosed > 0 {
+						return
+					}
+				}
+			}
 		}
 	}
 }
