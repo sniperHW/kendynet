@@ -12,12 +12,16 @@ import (
 )
 
 const (
-	started         = (1 << 0)
-	closed          = (1 << 1)
-	wclosed         = (1 << 2)
-	rclosed         = (1 << 3)
-	maxPostSendSize = 1024 * 1024
+	started = (1 << 0)
+	closed  = (1 << 1)
+	wclosed = (1 << 2)
+	rclosed = (1 << 3)
 )
+
+type AioReceiver interface {
+	ReceiveAndUnpack(sess kendynet.StreamSession) (interface{}, error)
+	AppendBytes(buff []byte)
+}
 
 type defaultReceiver struct {
 	buffer []byte
@@ -34,7 +38,7 @@ func (this *defaultReceiver) AppendBytes(buff []byte) {
 type AioSocket struct {
 	sync.Mutex
 	ud               interface{}
-	receiver         kendynet.Receiver
+	receiver         AioReceiver
 	encoder          kendynet.EnCoder
 	flag             int32
 	sendTimeout      time.Duration
@@ -51,17 +55,19 @@ type AioSocket struct {
 	sendQueueSize    int
 	onClearSendQueue func()
 	closeReason      string
+	maxPostSendSize  int
 }
 
 func NewAioSocket(c *aiogo.Conn, w *aiogo.Watcher, rq *aiogo.CompleteQueue, wq *aiogo.CompleteQueue) *AioSocket {
 	s := &AioSocket{
-		aioConn:        c,
-		watcher:        w,
-		rcompleteQueue: rq,
-		wcompleteQueue: wq,
-		sendQueueSize:  256,
-		sendBuffs:      make([][]byte, 256),
-		pendingSend:    list.New(),
+		aioConn:         c,
+		watcher:         w,
+		rcompleteQueue:  rq,
+		wcompleteQueue:  wq,
+		sendQueueSize:   256,
+		sendBuffs:       make([][]byte, 512),
+		pendingSend:     list.New(),
+		maxPostSendSize: 1024 * 1024,
 	}
 	return s
 }
@@ -76,7 +82,7 @@ func (this *AioSocket) postSend() {
 		this.sendBuffs[c] = v.Value.(kendynet.Message).Bytes()
 		totalSize += len(this.sendBuffs[c])
 		c++
-		if c >= len(this.sendBuffs) || totalSize >= maxPostSendSize {
+		if c >= len(this.sendBuffs) || totalSize >= this.maxPostSendSize {
 			break
 		}
 	}
@@ -305,12 +311,16 @@ func (this *AioSocket) SetCloseCallBack(cb func(kendynet.StreamSession, string))
  *   设置接收解包器,必须在调用Start前设置，Start成功之后的调用将没有任何效果
  */
 func (this *AioSocket) SetReceiver(r kendynet.Receiver) {
-	this.Lock()
-	defer this.Unlock()
-	if (this.flag & started) > 0 {
-		return
+	if aio_r, ok := r.(AioReceiver); ok {
+		this.Lock()
+		defer this.Unlock()
+		if (this.flag & started) > 0 {
+			return
+		}
+		this.receiver = aio_r
+	} else {
+		panic("must use AioReceiver")
 	}
-	this.receiver = r
 }
 
 func (this *AioSocket) SetEncoder(encoder kendynet.EnCoder) {
@@ -377,6 +387,12 @@ func (this *AioSocket) SetRecvTimeout(duration time.Duration) {
 
 func (this *AioSocket) SetSendTimeout(duration time.Duration) {
 
+}
+
+func (this *AioSocket) SetMaxPostSendSize(size int) {
+	this.Lock()
+	defer this.Unlock()
+	this.maxPostSendSize = size
 }
 
 func (this *AioSocket) SetSendQueueSize(size int) {

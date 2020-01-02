@@ -32,10 +32,6 @@ func (this *defaultWSReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (in
 	}
 }
 
-func (this *defaultWSReceiver) AppendBytes(_ []byte) {
-
-}
-
 type WebSocket struct {
 	*SocketBase
 	conn *gorilla.Conn

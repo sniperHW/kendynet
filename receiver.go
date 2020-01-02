@@ -9,6 +9,4 @@ type Receiver interface {
 	*  从session接收数据，解包返回一个消息对象
 	 */
 	ReceiveAndUnpack(sess StreamSession) (interface{}, error)
-
-	AppendBytes([]byte)
 }

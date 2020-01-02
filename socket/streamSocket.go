@@ -6,7 +6,6 @@ package socket
 
 import (
 	"bufio"
-	//"fmt"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/util"
 	"net"
@@ -25,10 +24,6 @@ func (this *defaultSSReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (in
 	msg := kendynet.NewByteBuffer(n)
 	msg.AppendBytes(this.buffer[:n])
 	return msg, err
-}
-
-func (this *defaultSSReceiver) AppendBytes(_ []byte) {
-
 }
 
 type StreamSocket struct {
