@@ -56,16 +56,12 @@ func (this *PBReceiver) unPack() (interface{}, error) {
 }
 
 func (this *PBReceiver) AppendBytes(buff []byte) {
-	if this.unpackSize == 0 {
-		this.buffer = buff
-	} else {
-		capRemain := len(this.buffer) - this.unpackSize
-		if capRemain < len(buff) {
-			newBuff := make([]byte, len(this.buffer)+len(buff)-capRemain)
-			copy(newBuff, this.buffer[:this.unpackSize])
-		}
-		copy(this.buffer[this.unpackSize:], buff)
+	capRemain := len(this.buffer) - this.unpackSize
+	if capRemain < len(buff) {
+		newBuff := make([]byte, len(this.buffer)+len(buff)-capRemain)
+		copy(newBuff, this.buffer[:this.unpackSize])
 	}
+	copy(this.buffer[this.unpackSize:], buff)
 	this.unpackSize += len(buff)
 }
 

@@ -159,7 +159,7 @@ func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 
 			if nil == e {
 				this.aioConn.Recv(nil, this, this.rcompleteQueue)
-				break
+				return
 			} else {
 				flag := this.getFlag()
 				if flag&closed > 0 || flag&rclosed > 0 {
