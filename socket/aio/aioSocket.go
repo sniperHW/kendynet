@@ -24,17 +24,19 @@ const (
 type AioReceiver interface {
 	ReceiveAndUnpack(sess kendynet.StreamSession) (interface{}, error)
 	AppendBytes(buff []byte)
+	GetRecvBuff() []byte
 }
 
 type defaultReceiver struct {
+	bytes  int
 	buffer []byte
 }
 
 func (this *defaultReceiver) ReceiveAndUnpack(_ kendynet.StreamSession) (interface{}, error) {
-	if nil != this.buffer {
-		msg := kendynet.NewByteBuffer(len(this.buffer))
-		msg.AppendBytes(this.buffer)
-		this.buffer = nil
+	if 0 != this.bytes {
+		msg := kendynet.NewByteBuffer(this.bytes)
+		msg.AppendBytes(this.buffer[:this.bytes])
+		this.bytes = 0
 		return msg, nil
 	} else {
 		return nil, nil
@@ -42,7 +44,11 @@ func (this *defaultReceiver) ReceiveAndUnpack(_ kendynet.StreamSession) (interfa
 }
 
 func (this *defaultReceiver) AppendBytes(buff []byte) {
-	this.buffer = buff
+	this.bytes = len(buff)
+}
+
+func (this *defaultReceiver) GetRecvBuff() []byte {
+	return this.buffer
 }
 
 type AioSocket struct {
@@ -66,10 +72,10 @@ type AioSocket struct {
 	onClearSendQueue func()
 	closeReason      string
 	maxPostSendSize  int
-	recvBuff         []byte
+	//recvBuff         []byte
 }
 
-func NewAioSocket(netConn net.Conn, recvBuff []byte) *AioSocket {
+func NewAioSocket(netConn net.Conn) *AioSocket {
 
 	w, rq, wq := getWatcherAndCompleteQueue()
 
@@ -87,7 +93,7 @@ func NewAioSocket(netConn net.Conn, recvBuff []byte) *AioSocket {
 		sendBuffs:       make([][]byte, 512),
 		pendingSend:     list.New(),
 		maxPostSendSize: 1024 * 1024,
-		recvBuff:        recvBuff,
+		//recvBuff:        recvBuff,
 	}
 	return s
 }
@@ -180,7 +186,7 @@ func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 			}
 
 			if nil == e {
-				this.aioConn.Recv(this.recvBuff, this, this.rcompleteQueue)
+				this.aioConn.Recv(this.receiver.GetRecvBuff(), this, this.rcompleteQueue)
 				return
 			} else {
 				flag := this.getFlag()
@@ -390,13 +396,13 @@ func (this *AioSocket) Start(eventCB func(*kendynet.Event)) error {
 	}
 
 	if this.receiver == nil {
-		this.receiver = &defaultReceiver{}
+		this.receiver = &defaultReceiver{buffer: make([]byte, 4096)}
 	}
 
 	this.onEvent = eventCB
 	this.flag |= started
 
-	this.aioConn.Recv(this.recvBuff, this, this.rcompleteQueue)
+	this.aioConn.Recv(this.receiver.GetRecvBuff(), this, this.rcompleteQueue)
 
 	return nil
 }

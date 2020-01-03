@@ -47,7 +47,7 @@ func server(service string) {
 
 		atomic.AddInt32(&clientcount, 1)
 
-		aioSocket := aio.NewAioSocket(conn, make([]byte, 4096))
+		aioSocket := aio.NewAioSocket(conn)
 
 		aioSocket.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
 			atomic.AddInt32(&clientcount, -1)

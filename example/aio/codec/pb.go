@@ -3,9 +3,6 @@ package codec
 import (
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/example/pb"
-	//"github.com/sniperHW/kendynet/socket"
-	//"os"
-	//"time"
 )
 
 const minBuffSize = 4096
@@ -24,11 +21,13 @@ func (this *PbEncoder) EnCode(o interface{}) (kendynet.Message, error) {
 
 type PBReceiver struct {
 	buffer         []byte
+	recvBuff       []byte
 	maxpacket      int
 	unpackSize     int
 	unpackIdx      int
 	initBuffSize   int
 	totalMaxPacket int
+	minBuffRemain  int
 }
 
 func NewPBReceiver(maxMsgSize int) *PBReceiver {
@@ -42,7 +41,9 @@ func NewPBReceiver(maxMsgSize int) *PBReceiver {
 		receiver.initBuffSize = doubleTotalPacketSize
 	}
 	receiver.buffer = make([]byte, receiver.initBuffSize)
+	receiver.recvBuff = receiver.buffer
 	receiver.maxpacket = maxMsgSize
+	receiver.minBuffRemain = receiver.totalMaxPacket / 4
 	return receiver
 }
 
@@ -55,27 +56,30 @@ func (this *PBReceiver) unPack() (interface{}, error) {
 	return msg, err
 }
 
+func (this *PBReceiver) GetRecvBuff() []byte {
+	return this.recvBuff
+}
+
 func (this *PBReceiver) AppendBytes(buff []byte) {
-	/*capRemain := len(this.buffer) - this.unpackSize
-	if capRemain < len(buff) {
-		newBuff := make([]byte, len(this.buffer)+len(buff)-capRemain)
-		copy(newBuff, this.buffer[:this.unpackSize])
-	}
-	copy(this.buffer[this.unpackSize:], buff)*/
-	this.buffer = buff
-	this.unpackSize += len(buff)
+	s := len(buff)
+	this.unpackSize += s
+	this.recvBuff = this.recvBuff[s:]
 }
 
 func (this *PBReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface{}, error) {
 	msg, err := this.unPack()
-
-	if nil != msg {
-		/*if this.unpackSize > 0 {
-			//有数据尚未解包，需要移动到buffer前部
-			copy(this.buffer, this.buffer[this.unpackIdx:this.unpackIdx+this.unpackSize])
-		}*/
-		this.unpackIdx = 0
+	if nil == msg && nil == err {
+		if len(this.recvBuff) < this.minBuffRemain {
+			if this.unpackSize > 0 {
+				//有数据尚未解包，需要移动到buffer前部
+				copy(this.buffer, this.buffer[this.unpackIdx:this.unpackIdx+this.unpackSize])
+			}
+			this.unpackIdx = 0
+			this.recvBuff = this.buffer[this.unpackSize:]
+		} else if this.unpackSize == 0 {
+			this.unpackIdx = 0
+			this.recvBuff = this.buffer
+		}
 	}
-
 	return msg, err
 }
