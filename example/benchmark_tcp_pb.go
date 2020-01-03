@@ -90,11 +90,9 @@ func client(service string, count int) {
 			o := &testproto.Test{}
 			o.A = proto.String("hello")
 			o.B = proto.Int32(17)
-			session.Send(o)
-			session.Send(o)
-			session.Send(o)
-			session.Send(o)
-			session.Send(o)
+			for i := 0; i < 20; i++ {
+				session.Send(o)
+			}
 		}
 	}
 }

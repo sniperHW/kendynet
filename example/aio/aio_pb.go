@@ -98,11 +98,9 @@ func client(service string, count int) {
 			o := &testproto.Test{}
 			o.A = proto.String("hello")
 			o.B = proto.Int32(17)
-			aioSocket.Send(o)
-			aioSocket.Send(o)
-			aioSocket.Send(o)
-			aioSocket.Send(o)
-			aioSocket.Send(o)
+			for i := 0; i < 20; i++ {
+				aioSocket.Send(o)
+			}
 		}
 	}
 }
