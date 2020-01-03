@@ -6,7 +6,9 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
+	"unsafe"
 )
 
 const (
@@ -29,7 +31,7 @@ type SocketBase struct {
 	ud            interface{}
 	sendQue       *util.BlockQueue
 	receiver      kendynet.Receiver
-	encoder       kendynet.EnCoder
+	encoder       *kendynet.EnCoder
 	flag          int32
 	sendTimeout   time.Duration
 	recvTimeout   time.Duration
@@ -143,9 +145,10 @@ func (this *SocketBase) SetCloseCallBack(cb func(kendynet.StreamSession, string)
 }
 
 func (this *SocketBase) SetEncoder(encoder kendynet.EnCoder) {
-	this.mutex.Lock()
-	defer this.mutex.Unlock()
-	this.encoder = encoder
+	//this.mutex.Lock()
+	//defer this.mutex.Unlock()
+	//this.encoder = encoder
+	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&this.encoder)), unsafe.Pointer(&encoder))
 }
 
 func (this *SocketBase) SetReceiver(r kendynet.Receiver) {
@@ -166,19 +169,13 @@ func (this *SocketBase) Send(o interface{}) error {
 		return kendynet.ErrInvaildObject
 	}
 
-	if err := func() error {
-		this.mutex.Lock()
-		defer this.mutex.Unlock()
-		if this.encoder == nil {
-			return kendynet.ErrInvaildEncoder
-		} else {
-			return nil
-		}
-	}(); err != nil {
-		return err
+	encoder := (*kendynet.EnCoder)(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&this.encoder))))
+
+	if nil == *encoder {
+		return kendynet.ErrInvaildEncoder
 	}
 
-	msg, err := this.encoder.EnCode(o)
+	msg, err := (*encoder).EnCode(o)
 
 	if err != nil {
 		return err

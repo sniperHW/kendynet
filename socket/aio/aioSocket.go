@@ -9,7 +9,9 @@ import (
 	"github.com/sniperHW/kendynet"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
+	"unsafe"
 )
 
 const (
@@ -47,7 +49,7 @@ type AioSocket struct {
 	sync.Mutex
 	ud               interface{}
 	receiver         AioReceiver
-	encoder          kendynet.EnCoder
+	encoder          *kendynet.EnCoder
 	flag             int32
 	sendTimeout      time.Duration
 	recvTimeout      time.Duration
@@ -201,19 +203,13 @@ func (this *AioSocket) Send(o interface{}) error {
 		return kendynet.ErrInvaildObject
 	}
 
-	if err := func() error {
-		this.Lock()
-		defer this.Unlock()
-		if this.encoder == nil {
-			return kendynet.ErrInvaildEncoder
-		} else {
-			return nil
-		}
-	}(); err != nil {
-		return err
+	encoder := (*kendynet.EnCoder)(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&this.encoder))))
+
+	if nil == *encoder {
+		return kendynet.ErrInvaildEncoder
 	}
 
-	msg, err := this.encoder.EnCode(o)
+	msg, err := (*encoder).EnCode(o)
 
 	if err != nil {
 		return err
@@ -238,13 +234,10 @@ func (this *AioSocket) sendMessage(msg kendynet.Message) error {
 
 	if !this.sendLock {
 		this.sendLock = true
-		this.Unlock()
-		this.postSend()
-		this.Lock()
-		/*this.wcompleteQueue.Post(&aiogo.CompleteEvent{
+		this.wcompleteQueue.Post(&aiogo.CompleteEvent{
 			Type: aiogo.User,
 			Ud:   this,
-		})*/
+		})
 	}
 
 	return nil
@@ -374,9 +367,10 @@ func (this *AioSocket) SetReceiver(r kendynet.Receiver) {
 }
 
 func (this *AioSocket) SetEncoder(encoder kendynet.EnCoder) {
-	this.Lock()
-	defer this.Unlock()
-	this.encoder = encoder
+	//this.Lock()
+	//defer this.Unlock()
+	//this.encoder = encoder
+	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&this.encoder)), unsafe.Pointer(&encoder))
 }
 
 func (this *AioSocket) Start(eventCB func(*kendynet.Event)) error {
