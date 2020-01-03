@@ -201,11 +201,16 @@ func (this *AioSocket) Send(o interface{}) error {
 		return kendynet.ErrInvaildObject
 	}
 
-	this.Lock()
-	defer this.Unlock()
-
-	if this.encoder == nil {
-		return kendynet.ErrInvaildEncoder
+	if err := func() error {
+		this.Lock()
+		defer this.Unlock()
+		if this.encoder == nil {
+			return kendynet.ErrInvaildEncoder
+		} else {
+			return nil
+		}
+	}(); err != nil {
+		return err
 	}
 
 	msg, err := this.encoder.EnCode(o)
@@ -214,6 +219,8 @@ func (this *AioSocket) Send(o interface{}) error {
 		return err
 	}
 
+	this.Lock()
+	defer this.Unlock()
 	return this.sendMessage(msg)
 }
 
@@ -231,10 +238,13 @@ func (this *AioSocket) sendMessage(msg kendynet.Message) error {
 
 	if !this.sendLock {
 		this.sendLock = true
-		this.wcompleteQueue.Post(&aiogo.CompleteEvent{
+		this.Unlock()
+		this.postSend()
+		this.Lock()
+		/*this.wcompleteQueue.Post(&aiogo.CompleteEvent{
 			Type: aiogo.User,
 			Ud:   this,
-		})
+		})*/
 	}
 
 	return nil

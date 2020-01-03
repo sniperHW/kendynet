@@ -166,11 +166,16 @@ func (this *SocketBase) Send(o interface{}) error {
 		return kendynet.ErrInvaildObject
 	}
 
-	this.mutex.Lock()
-	defer this.mutex.Unlock()
-
-	if this.encoder == nil {
-		return kendynet.ErrInvaildEncoder
+	if err := func() error {
+		this.mutex.Lock()
+		defer this.mutex.Unlock()
+		if this.encoder == nil {
+			return kendynet.ErrInvaildEncoder
+		} else {
+			return nil
+		}
+	}(); err != nil {
+		return err
 	}
 
 	msg, err := this.encoder.EnCode(o)
@@ -179,6 +184,8 @@ func (this *SocketBase) Send(o interface{}) error {
 		return err
 	}
 
+	this.mutex.Lock()
+	defer this.mutex.Unlock()
 	return this.imp.sendMessage(msg)
 }
 
