@@ -56,12 +56,13 @@ func (this *PBReceiver) unPack() (interface{}, error) {
 }
 
 func (this *PBReceiver) AppendBytes(buff []byte) {
-	capRemain := len(this.buffer) - this.unpackSize
+	/*capRemain := len(this.buffer) - this.unpackSize
 	if capRemain < len(buff) {
 		newBuff := make([]byte, len(this.buffer)+len(buff)-capRemain)
 		copy(newBuff, this.buffer[:this.unpackSize])
 	}
-	copy(this.buffer[this.unpackSize:], buff)
+	copy(this.buffer[this.unpackSize:], buff)*/
+	this.buffer = buff
 	this.unpackSize += len(buff)
 }
 
@@ -69,10 +70,10 @@ func (this *PBReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface
 	msg, err := this.unPack()
 
 	if nil != msg {
-		if this.unpackSize > 0 {
+		/*if this.unpackSize > 0 {
 			//有数据尚未解包，需要移动到buffer前部
 			copy(this.buffer, this.buffer[this.unpackIdx:this.unpackIdx+this.unpackSize])
-		}
+		}*/
 		this.unpackIdx = 0
 	}
 
