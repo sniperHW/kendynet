@@ -10,6 +10,8 @@ import (
 	"github.com/sniperHW/kendynet/socket/aio"
 	"github.com/sniperHW/kendynet/timer"
 	"net"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"runtime"
 	"strconv"
@@ -124,6 +126,10 @@ func client(service string, count int) {
 }
 
 func main() {
+
+	go func() {
+		http.ListenAndServe("0.0.0.0:6060", nil)
+	}()
 
 	aio.Init(1, runtime.NumCPU())
 
