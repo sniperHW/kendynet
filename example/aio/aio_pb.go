@@ -46,17 +46,9 @@ func server(service string) {
 			return
 		}
 
-		w, rq, wq := aio.GetWatcherAndCompleteQueue()
-
-		c, err := w.Watch(conn)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-
 		atomic.AddInt32(&clientcount, 1)
 
-		aioSocket := aio.NewAioSocket(c, w, rq, wq)
+		aioSocket := aio.NewAioSocket(conn, make([]byte, 4096))
 
 		aioSocket.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
 			atomic.AddInt32(&clientcount, -1)
@@ -89,17 +81,7 @@ func client(service string, count int) {
 		if err != nil {
 			fmt.Printf("Dial error:%s\n", err.Error())
 		} else {
-
-			w, rq, wq := aio.GetWatcherAndCompleteQueue()
-
-			c, err := w.Watch(conn)
-			if err != nil {
-				fmt.Println(err)
-				return
-			}
-
-			aioSocket := aio.NewAioSocket(c, w, rq, wq)
-
+			aioSocket := aio.NewAioSocket(conn, make([]byte, 4096))
 			aioSocket.SetEncoder(codec.NewPbEncoder(4096))
 			aioSocket.SetReceiver(codec.NewPBReceiver(4096))
 			aioSocket.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {

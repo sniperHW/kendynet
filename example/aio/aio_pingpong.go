@@ -45,17 +45,9 @@ func server(service string) {
 			return
 		}
 
-		w, rq, wq := aio.GetWatcherAndCompleteQueue()
-
-		c, err := w.Watch(conn)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-
 		atomic.AddInt32(&clientcount, 1)
 
-		aioSocket := aio.NewAioSocket(c, w, rq, wq)
+		aioSocket := aio.NewAioSocket(conn, make([]byte, 4096))
 
 		aioSocket.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
 			atomic.AddInt32(&clientcount, -1)

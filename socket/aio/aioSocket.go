@@ -67,7 +67,15 @@ type AioSocket struct {
 	recvBuff         []byte
 }
 
-func NewAioSocket(c *aiogo.Conn, w *aiogo.Watcher, rq *aiogo.CompleteQueue, wq *aiogo.CompleteQueue) *AioSocket {
+func NewAioSocket(netConn net.Conn, recvBuff []byte) *AioSocket {
+
+	w, rq, wq := getWatcherAndCompleteQueue()
+
+	c, err := w.Watch(netConn)
+	if err != nil {
+		return nil
+	}
+
 	s := &AioSocket{
 		aioConn:         c,
 		watcher:         w,
@@ -77,7 +85,7 @@ func NewAioSocket(c *aiogo.Conn, w *aiogo.Watcher, rq *aiogo.CompleteQueue, wq *
 		sendBuffs:       make([][]byte, 512),
 		pendingSend:     list.New(),
 		maxPostSendSize: 1024 * 1024,
-		recvBuff:        make([]byte, 4096),
+		recvBuff:        recvBuff,
 	}
 	return s
 }

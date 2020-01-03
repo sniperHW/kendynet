@@ -30,7 +30,7 @@ func completeRoutine(completeQueue *aiogo.CompleteQueue) {
 	}
 }
 
-func GetWatcherAndCompleteQueue() (*aiogo.Watcher, *aiogo.CompleteQueue, *aiogo.CompleteQueue) {
+func getWatcherAndCompleteQueue() (*aiogo.Watcher, *aiogo.CompleteQueue, *aiogo.CompleteQueue) {
 	r := rand.Int()
 	return watchers[r%len(watchers)], readCompleteQueues[r%len(readCompleteQueues)], writeCompleteQueue[r%len(writeCompleteQueue)]
 }

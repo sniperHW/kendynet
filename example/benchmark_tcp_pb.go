@@ -10,6 +10,8 @@ import (
 	connector "github.com/sniperHW/kendynet/socket/connector/tcp"
 	listener "github.com/sniperHW/kendynet/socket/listener/tcp"
 	"github.com/sniperHW/kendynet/timer"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"strconv"
 	"sync/atomic"
@@ -98,6 +100,10 @@ func client(service string, count int) {
 }
 
 func main() {
+
+	go func() {
+		http.ListenAndServe("0.0.0.0:6060", nil)
+	}()
 
 	pb.Register(&testproto.Test{}, 1)
 	if len(os.Args) < 3 {
