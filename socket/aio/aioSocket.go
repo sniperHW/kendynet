@@ -195,6 +195,7 @@ func (this *AioSocket) getFlag() int32 {
 }
 
 func (this *AioSocket) onRecvBuff(buff []byte) {
+	//fmt.Println("onRecvBuff")
 	total := 0
 	this.receiver.AppendBytes(buff)
 	for {
@@ -217,20 +218,26 @@ func (this *AioSocket) onRecvBuff(buff []byte) {
 		if nil == e {
 			if total < 1024*64 {
 				buff := this.receiver.GetRecvBuff()
+				//fmt.Println("recv")
 				n, err := this.aioConn.Recv(buff, this, this.rcompleteQueue)
+				//fmt.Println("recv ret")
 				if n > 0 {
 					total += n
 					this.receiver.AppendBytes(buff[:n])
+					//fmt.Println("recv", n)
 				} else if err != nil {
+					//fmt.Println(err)
 					e = &kendynet.Event{
 						Session:   this,
 						EventType: kendynet.EventTypeError,
 						Data:      err,
 					}
 				} else {
+					//fmt.Println("pending")
 					return
 				}
 			} else {
+				//fmt.Println("post recv")
 				this.aioConn.PostRecv(this.receiver.GetRecvBuff(), this, this.rcompleteQueue)
 				return
 			}
@@ -241,6 +248,9 @@ func (this *AioSocket) onRecvBuff(buff []byte) {
 			if flag&closed > 0 || flag&rclosed > 0 {
 				return
 			} else {
+				//if e.EventType == kendynet.EventTypeMessage {
+				//	fmt.Println("on msg")
+				//}
 				this.onEvent(e)
 				flag := this.flag
 				if flag&closed > 0 || flag&rclosed > 0 {
