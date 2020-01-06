@@ -194,73 +194,6 @@ func (this *AioSocket) getFlag() int32 {
 	return this.flag
 }
 
-func (this *AioSocket) onRecvBuff(buff []byte) {
-	//fmt.Println("onRecvBuff")
-	total := 0
-	this.receiver.AppendBytes(buff)
-	for {
-		var e *kendynet.Event
-		msg, err := this.receiver.ReceiveAndUnpack(this)
-		if nil != err {
-			e = &kendynet.Event{
-				Session:   this,
-				EventType: kendynet.EventTypeError,
-				Data:      err,
-			}
-		} else if msg != nil {
-			e = &kendynet.Event{
-				Session:   this,
-				EventType: kendynet.EventTypeMessage,
-				Data:      msg,
-			}
-		}
-
-		if nil == e {
-			if total < 1024*64 {
-				buff := this.receiver.GetRecvBuff()
-				//fmt.Println("recv")
-				n, err := this.aioConn.Recv(buff, this, this.rcompleteQueue)
-				//fmt.Println("recv ret")
-				if n > 0 {
-					total += n
-					this.receiver.AppendBytes(buff[:n])
-					//fmt.Println("recv", n)
-				} else if err != nil {
-					//fmt.Println(err)
-					e = &kendynet.Event{
-						Session:   this,
-						EventType: kendynet.EventTypeError,
-						Data:      err,
-					}
-				} else {
-					//fmt.Println("pending")
-					return
-				}
-			} else {
-				//fmt.Println("post recv")
-				this.aioConn.PostRecv(this.receiver.GetRecvBuff(), this, this.rcompleteQueue)
-				return
-			}
-		}
-
-		if nil != e {
-			flag := this.getFlag()
-			if flag&closed > 0 || flag&rclosed > 0 {
-				return
-			} else {
-				//if e.EventType == kendynet.EventTypeMessage {
-				//	fmt.Println("on msg")
-				//}
-				this.onEvent(e)
-				flag := this.flag
-				if flag&closed > 0 || flag&rclosed > 0 {
-					return
-				}
-			}
-		}
-	}
-}
-
 func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 	if nil != r.Err {
 		flag := this.getFlag()
@@ -274,7 +207,61 @@ func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 			})
 		}
 	} else {
-		this.onRecvBuff(r.Buff[0][:r.Size])
+		buff := r.Buff[0][:r.Size]
+		total := 0
+		this.receiver.AppendBytes(buff)
+		for {
+			var e *kendynet.Event
+			msg, err := this.receiver.ReceiveAndUnpack(this)
+			if nil != err {
+				e = &kendynet.Event{
+					Session:   this,
+					EventType: kendynet.EventTypeError,
+					Data:      err,
+				}
+			} else if msg != nil {
+				e = &kendynet.Event{
+					Session:   this,
+					EventType: kendynet.EventTypeMessage,
+					Data:      msg,
+				}
+			}
+
+			if nil == e {
+				if total < 1024*64 {
+					buff = this.receiver.GetRecvBuff()
+					n, err := this.aioConn.Recv(buff, this, this.rcompleteQueue)
+					if n > 0 {
+						total += n
+						this.receiver.AppendBytes(buff[:n])
+					} else if err != nil {
+						e = &kendynet.Event{
+							Session:   this,
+							EventType: kendynet.EventTypeError,
+							Data:      err,
+						}
+					} else {
+						return
+					}
+				} else {
+					this.aioConn.PostRecv(this.receiver.GetRecvBuff(), this, this.rcompleteQueue)
+					return
+				}
+			}
+
+			if nil != e {
+				flag := this.getFlag()
+				if flag&closed > 0 || flag&rclosed > 0 {
+					return
+				} else {
+					this.onEvent(e)
+					flag := this.flag
+					if flag&closed > 0 || flag&rclosed > 0 {
+						return
+					}
+				}
+			}
+		}
 	}
 }
 
@@ -500,9 +487,6 @@ func (this *AioSocket) SetReceiver(r kendynet.Receiver) {
 }
 
 func (this *AioSocket) SetEncoder(encoder kendynet.EnCoder) {
-	//this.Lock()
-	//defer this.Unlock()
-	//this.encoder = encoder
 	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&this.encoder)), unsafe.Pointer(&encoder))
 }
 
