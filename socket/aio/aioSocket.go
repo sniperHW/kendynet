@@ -199,6 +199,7 @@ func (this *AioSocket) getFlag() int32 {
 }
 
 func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
+	fmt.Println("onRecvComplete")
 	if nil != r.Err {
 		flag := this.getFlag()
 		if flag&closed > 0 || flag&rclosed > 0 {
@@ -229,6 +230,7 @@ func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 						EventType: kendynet.EventTypeMessage,
 						Data:      msg,
 					}
+					fmt.Println("on msg")
 				}
 
 				if nil != e {
@@ -360,7 +362,7 @@ func (this *AioSocket) sendMessage(msg kendynet.Message) error {
 
 	if !this.sendLock {
 		this.sendLock = true
-		fmt.Println("post", aiogo.User, this.pendingSend.Len(), len(msg.Bytes()))
+		//fmt.Println("post", aiogo.User, this.pendingSend.Len(), len(msg.Bytes()))
 		this.wcompleteQueue.Post(&aiogo.CompleteEvent{
 			Type: aiogo.User,
 			Ud:   this,

@@ -3,7 +3,7 @@
 package aio
 
 import (
-	"fmt"
+	//"fmt"
 	"github.com/sniperHW/aiogo"
 	"math/rand"
 	"runtime"
@@ -21,7 +21,7 @@ func completeRoutine(completeQueue *aiogo.CompleteQueue) {
 		} else {
 			c := es.Ud.(*AioSocket)
 			if es.Type == aiogo.User {
-				fmt.Println("process aiogo.User")
+				//fmt.Println("process aiogo.User")
 				c.postSend()
 			} else if es.Type == aiogo.Read {
 				c.onRecvComplete(es)
