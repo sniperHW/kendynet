@@ -66,6 +66,10 @@ func (this *PBReceiver) AppendBytes(buff []byte) {
 	this.recvBuff = this.recvBuff[s:]
 }
 
+func (this *PBReceiver) GetUnPackSize() int {
+	return this.unpackSize
+}
+
 func (this *PBReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface{}, error) {
 	msg, err := this.unPack()
 	if nil == msg && nil == err {

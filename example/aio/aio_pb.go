@@ -20,6 +20,11 @@ import (
 )
 
 func server(service string) {
+
+	go func() {
+		http.ListenAndServe("0.0.0.0:6060", nil)
+	}()
+
 	clientcount := int32(0)
 	packetcount := int32(0)
 
@@ -106,10 +111,6 @@ func client(service string, count int) {
 }
 
 func main() {
-
-	go func() {
-		http.ListenAndServe("0.0.0.0:6060", nil)
-	}()
 
 	aio.Init(1, runtime.NumCPU()*2)
 

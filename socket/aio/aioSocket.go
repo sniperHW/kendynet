@@ -4,7 +4,7 @@ package aio
 
 import (
 	"container/list"
-	//"fmt"
+	"fmt"
 	"github.com/sniperHW/aiogo"
 	"github.com/sniperHW/kendynet"
 	"net"
@@ -25,6 +25,7 @@ type AioReceiver interface {
 	ReceiveAndUnpack(sess kendynet.StreamSession) (interface{}, error)
 	AppendBytes(buff []byte)
 	GetRecvBuff() []byte
+	GetUnPackSize() int
 }
 
 type defaultReceiver struct {
@@ -49,6 +50,10 @@ func (this *defaultReceiver) AppendBytes(buff []byte) {
 
 func (this *defaultReceiver) GetRecvBuff() []byte {
 	return this.buffer
+}
+
+func (this *defaultReceiver) GetUnPackSize() int {
+	return 0
 }
 
 type AioSocket struct {
@@ -96,6 +101,7 @@ func NewAioSocket(netConn net.Conn) *AioSocket {
 	return s
 }
 
+/*
 func (this *AioSocket) postSend() {
 	for {
 		this.Lock()
@@ -136,9 +142,9 @@ func (this *AioSocket) postSend() {
 			}
 		}
 	}
-}
+}*/
 
-/*func (this *AioSocket) postSend() {
+func (this *AioSocket) postSend() {
 	this.Lock()
 	c := 0
 	totalSize := 0
@@ -157,10 +163,8 @@ func (this *AioSocket) postSend() {
 
 	if c > 0 {
 		this.aioConn.PostSendv(this.sendBuffs[:c], this, this.wcompleteQueue)
-	} else {
-		panic("should not go here")
 	}
-}*/
+}
 
 func (this *AioSocket) onSendComplete(r *aiogo.CompleteEvent) {
 	if nil == r.Err {
@@ -194,7 +198,7 @@ func (this *AioSocket) getFlag() int32 {
 	return this.flag
 }
 
-/*func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
+func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 	if nil != r.Err {
 		flag := this.getFlag()
 		if flag&closed > 0 || flag&rclosed > 0 {
@@ -207,63 +211,69 @@ func (this *AioSocket) getFlag() int32 {
 			})
 		}
 	} else {
-		buff := r.Buff[0][:r.Size]
 		total := 0
-		this.receiver.AppendBytes(buff)
+		this.receiver.AppendBytes(r.Buff[0][:r.Size])
 		for {
-			var e *kendynet.Event
-			msg, err := this.receiver.ReceiveAndUnpack(this)
-			if nil != err {
-				e = &kendynet.Event{
-					Session:   this,
-					EventType: kendynet.EventTypeError,
-					Data:      err,
+			for {
+				var e *kendynet.Event
+				msg, err := this.receiver.ReceiveAndUnpack(this)
+				if nil != err {
+					e = &kendynet.Event{
+						Session:   this,
+						EventType: kendynet.EventTypeError,
+						Data:      err,
+					}
+				} else if msg != nil {
+					e = &kendynet.Event{
+						Session:   this,
+						EventType: kendynet.EventTypeMessage,
+						Data:      msg,
+					}
 				}
-			} else if msg != nil {
-				e = &kendynet.Event{
-					Session:   this,
-					EventType: kendynet.EventTypeMessage,
-					Data:      msg,
-				}
-			}
 
-			if nil == e {
-				if total < 1024*64 {
-					buff = this.receiver.GetRecvBuff()
-					n, err := this.aioConn.Recv(buff, this, this.rcompleteQueue)
-					if n > 0 {
-						total += n
-						this.receiver.AppendBytes(buff[:n])
-						continue
-					} else if err != nil {
-						e = &kendynet.Event{
-							Session:   this,
-							EventType: kendynet.EventTypeError,
-							Data:      err,
-						}
-					} else {
+				if nil != e {
+					flag := this.getFlag()
+					if flag&closed > 0 || flag&rclosed > 0 {
 						return
+					} else {
+						this.onEvent(e)
+						flag := this.flag
+						if e.EventType == kendynet.EventTypeError || flag&closed > 0 || flag&rclosed > 0 {
+							return
+						}
 					}
 				} else {
-					this.aioConn.PostRecv(this.receiver.GetRecvBuff(), this, this.rcompleteQueue)
-					return
+					break
 				}
 			}
 
-			flag := this.getFlag()
-			if flag&closed > 0 || flag&rclosed > 0 {
-				return
-			} else {
-				this.onEvent(e)
-				flag := this.flag
-				if flag&closed > 0 || flag&rclosed > 0 {
-					return
+			//if total < 1024*64 {
+			buff := this.receiver.GetRecvBuff()
+			n, err := this.aioConn.Recv(buff, this, this.rcompleteQueue)
+			if n > 0 {
+				total += n
+				this.receiver.AppendBytes(buff[:n])
+				continue
+			} else if err != nil {
+				flag := this.getFlag()
+				if !(flag&closed > 0 || flag&rclosed > 0) {
+					this.onEvent(&kendynet.Event{
+						Session:   this,
+						EventType: kendynet.EventTypeError,
+						Data:      err,
+					})
 				}
 			}
+			return
+			//}// else {
+			//this.aioConn.PostRecv(this.receiver.GetRecvBuff(), this, this.rcompleteQueue)
+			//return
+			//}
 		}
 	}
-}*/
+}
 
+/*
 func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 	if nil != r.Err {
 		flag := this.getFlag()
@@ -312,7 +322,7 @@ func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 			}
 		}
 	}
-}
+}*/
 
 func (this *AioSocket) Send(o interface{}) error {
 	if o == nil {
@@ -350,6 +360,7 @@ func (this *AioSocket) sendMessage(msg kendynet.Message) error {
 
 	if !this.sendLock {
 		this.sendLock = true
+		fmt.Println("post", aiogo.User, this.pendingSend.Len(), len(msg.Bytes()))
 		this.wcompleteQueue.Post(&aiogo.CompleteEvent{
 			Type: aiogo.User,
 			Ud:   this,
