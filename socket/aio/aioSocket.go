@@ -196,60 +196,55 @@ func (this *AioSocket) getFlag() int32 {
 
 func (this *AioSocket) onRecvBuff(buff []byte) {
 	total := 0
+	this.receiver.AppendBytes(buff)
 	for {
-		this.receiver.AppendBytes(buff)
-		for {
-			var e *kendynet.Event
-			msg, err := this.receiver.ReceiveAndUnpack(this)
-			if nil != err {
-				e = &kendynet.Event{
-					Session:   this,
-					EventType: kendynet.EventTypeError,
-					Data:      err,
-				}
-			} else if msg != nil {
-				e = &kendynet.Event{
-					Session:   this,
-					EventType: kendynet.EventTypeMessage,
-					Data:      msg,
-				}
+		var e *kendynet.Event
+		msg, err := this.receiver.ReceiveAndUnpack(this)
+		if nil != err {
+			e = &kendynet.Event{
+				Session:   this,
+				EventType: kendynet.EventTypeError,
+				Data:      err,
 			}
+		} else if msg != nil {
+			e = &kendynet.Event{
+				Session:   this,
+				EventType: kendynet.EventTypeMessage,
+				Data:      msg,
+			}
+		}
 
-			if nil == e {
-				if total < 1024*16 {
-					//fmt.Println("recv")
-					buff := this.receiver.GetRecvBuff()
-					n, err := this.aioConn.Recv(buff, this, this.rcompleteQueue)
-					if n > 0 {
-						total += n
-						buff = buff[:n]
-					} else if err != nil {
-						e = &kendynet.Event{
-							Session:   this,
-							EventType: kendynet.EventTypeError,
-							Data:      err,
-						}
-					} else {
-						//fmt.Println("pending")
-						return
+		if nil == e {
+			if total < 1024*64 {
+				buff := this.receiver.GetRecvBuff()
+				n, err := this.aioConn.Recv(buff, this, this.rcompleteQueue)
+				if n > 0 {
+					total += n
+					this.receiver.AppendBytes(buff[:n])
+				} else if err != nil {
+					e = &kendynet.Event{
+						Session:   this,
+						EventType: kendynet.EventTypeError,
+						Data:      err,
 					}
 				} else {
-					//fmt.Println("post")
-					this.aioConn.PostRecv(this.receiver.GetRecvBuff(), this, this.rcompleteQueue)
 					return
 				}
+			} else {
+				this.aioConn.PostRecv(this.receiver.GetRecvBuff(), this, this.rcompleteQueue)
+				return
 			}
+		}
 
-			if nil != e {
-				flag := this.getFlag()
+		if nil != e {
+			flag := this.getFlag()
+			if flag&closed > 0 || flag&rclosed > 0 {
+				return
+			} else {
+				this.onEvent(e)
+				flag := this.flag
 				if flag&closed > 0 || flag&rclosed > 0 {
 					return
-				} else {
-					this.onEvent(e)
-					flag := this.flag
-					if flag&closed > 0 || flag&rclosed > 0 {
-						return
-					}
 				}
 			}
 		}
