@@ -111,7 +111,7 @@ func main() {
 		http.ListenAndServe("0.0.0.0:6060", nil)
 	}()
 
-	aio.Init(runtime.NumCPU(), runtime.NumCPU())
+	aio.Init(1, runtime.NumCPU()*2)
 
 	pb.Register(&testproto.Test{}, 1)
 	if len(os.Args) < 3 {
