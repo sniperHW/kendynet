@@ -58,6 +58,7 @@ func (this *defaultReceiver) GetUnPackSize() int {
 
 type AioSocket struct {
 	sync.Mutex
+	muW              sync.Mutex
 	ud               interface{}
 	receiver         AioReceiver
 	encoder          *kendynet.EnCoder
@@ -102,7 +103,7 @@ func NewAioSocket(netConn net.Conn) *AioSocket {
 }
 
 func (this *AioSocket) postSend() {
-	this.Lock()
+	this.muW.Lock()
 	c := 0
 	totalSize := 0
 	for v := this.pendingSend.Front(); v != nil; v = this.pendingSend.Front() {
@@ -115,7 +116,7 @@ func (this *AioSocket) postSend() {
 		}
 	}
 
-	this.Unlock()
+	this.muW.Unlock()
 
 	if c > 0 {
 		this.aioConn.Sendv(this.sendBuffs[:c], this, this.wcompleteQueue)
@@ -124,16 +125,16 @@ func (this *AioSocket) postSend() {
 
 func (this *AioSocket) onSendComplete(r *aiogo.CompleteEvent) {
 	if nil == r.Err {
-		this.Lock()
+		this.muW.Lock()
 		if this.pendingSend.Len() == 0 {
 			this.sendLock = false
 			onClearSendQueue := this.onClearSendQueue
-			this.Unlock()
+			this.muW.Unlock()
 			if nil != onClearSendQueue {
 				onClearSendQueue()
 			}
 		} else {
-			this.Unlock()
+			this.muW.Unlock()
 			this.postSend()
 		}
 	} else {
@@ -221,14 +222,16 @@ func (this *AioSocket) Send(o interface{}) error {
 		return err
 	}
 
-	this.Lock()
-	defer this.Unlock()
+	this.muW.Lock()
+	defer this.muW.Unlock()
 	return this.sendMessage(msg)
 }
 
 func (this *AioSocket) sendMessage(msg kendynet.Message) error {
 
-	if (this.flag&closed) > 0 || (this.flag&wclosed) > 0 {
+	flag := this.getFlag()
+
+	if (flag&closed) > 0 || (flag&wclosed) > 0 {
 		return kendynet.ErrSocketClose
 	}
 
@@ -254,8 +257,8 @@ func (this *AioSocket) SendMessage(msg kendynet.Message) error {
 		return kendynet.ErrInvaildObject
 	}
 
-	this.Lock()
-	defer this.Unlock()
+	this.muW.Lock()
+	defer this.muW.Unlock()
 	return this.sendMessage(msg)
 }
 
@@ -283,12 +286,14 @@ func (this *AioSocket) Close(reason string, delay time.Duration) {
 		delay = 0 //写端已经关闭，delay参数没有意义设置为0
 	}
 
+	this.muW.Lock()
 	if this.pendingSend.Len() > 0 {
 		delay = delay * time.Second
 		if delay <= 0 {
 			this.pendingSend = list.New()
 		}
 	}
+	this.muW.Unlock()
 
 	var ch chan struct{}
 
@@ -437,13 +442,13 @@ func (this *AioSocket) SetSendTimeout(duration time.Duration) {
 }
 
 func (this *AioSocket) SetMaxPostSendSize(size int) {
-	this.Lock()
-	defer this.Unlock()
+	this.muW.Lock()
+	defer this.muW.Unlock()
 	this.maxPostSendSize = size
 }
 
 func (this *AioSocket) SetSendQueueSize(size int) {
-	this.Lock()
-	defer this.Unlock()
+	this.muW.Lock()
+	defer this.muW.Unlock()
 	this.sendQueueSize = size
 }
