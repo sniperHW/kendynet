@@ -7,10 +7,11 @@ import (
 	"github.com/sniperHW/kendynet/timer"
 	"net"
 	"os"
-	"os/signal"
+	//"os/signal"
 	"runtime"
 	"sync/atomic"
-	"syscall"
+	//"syscall"
+	"strconv"
 	"time"
 )
 
@@ -78,6 +79,85 @@ func server(service string) {
 	}
 }
 
+func dial(service string) (net.Conn, error) {
+	dialer := &net.Dialer{}
+	return dialer.Dial("tcp", service)
+}
+
+func client(service string, count int) {
+
+	for i := 0; i < count; i++ {
+		conn, err := dial(service)
+		if err != nil {
+			fmt.Printf("Dial error:%s\n", err.Error())
+		} else {
+			aioSocket := aio.NewAioSocket(conn)
+			aioSocket.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
+				fmt.Printf("client client close:%s\n", reason)
+			})
+			aioSocket.Start(func(event *kendynet.Event) {
+				if event.EventType == kendynet.EventTypeError {
+					event.Session.Close(event.Data.(error).Error(), 0)
+				} else {
+					event.Session.SendMessage(event.Data.(kendynet.Message))
+				}
+			})
+			//send the first messge
+			msg := kendynet.NewByteBuffer("hello")
+			aioSocket.SendMessage(msg)
+			aioSocket.SendMessage(msg)
+			aioSocket.SendMessage(msg)
+		}
+	}
+}
+
+func main() {
+
+	aio.Init(1, runtime.NumCPU()*2)
+
+	if len(os.Args) < 3 {
+		fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")
+		return
+	}
+
+	mode := os.Args[1]
+
+	if !(mode == "server" || mode == "client" || mode == "both") {
+		fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")
+		return
+	}
+
+	service := os.Args[2]
+
+	sigStop := make(chan bool)
+
+	if mode == "server" || mode == "both" {
+		go server(service)
+	}
+
+	if mode == "client" || mode == "both" {
+		if len(os.Args) < 4 {
+			fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")
+			return
+		}
+		connectioncount, err := strconv.Atoi(os.Args[3])
+		if err != nil {
+			fmt.Printf(err.Error())
+			return
+		}
+		//让服务器先运行
+		time.Sleep(10000000)
+		go client(service, connectioncount)
+
+	}
+
+	_, _ = <-sigStop
+
+	return
+
+}
+
+/*
 func main() {
 
 	aio.Init(1, runtime.NumCPU())
@@ -94,3 +174,4 @@ func main() {
 	return
 
 }
+*/
