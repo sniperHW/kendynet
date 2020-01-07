@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/socket/aio"
+	connector "github.com/sniperHW/kendynet/socket/connector/aio"
+	listener "github.com/sniperHW/kendynet/socket/listener/aio"
 	"github.com/sniperHW/kendynet/timer"
-	"net"
 	"os"
-	//"os/signal"
 	"runtime"
 	"sync/atomic"
 	//"syscall"
@@ -29,73 +29,67 @@ func server(service string) {
 		fmt.Printf("clientcount:%d,transrfer:%d KB/s,packetcount:%d\n", atomic.LoadInt32(&clientcount), tmp1/1024, tmp2)
 	})
 
-	tcpAddr, err := net.ResolveTCPAddr("tcp", service)
-	if err != nil {
-		panic(err.Error())
-	}
+	server, err := listener.New("tcp4", service)
+	if server != nil {
+		fmt.Printf("server running on:%s\n", service)
+		err = server.Serve(func(session kendynet.StreamSession) {
+			atomic.AddInt32(&clientcount, 1)
 
-	ln, err := net.ListenTCP("tcp", tcpAddr)
-	if err != nil {
-		panic(err.Error())
-	}
+			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
+				atomic.AddInt32(&clientcount, -1)
+				fmt.Println("client close:", reason, sess.GetUnderConn(), atomic.LoadInt32(&clientcount))
+			})
 
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			fmt.Println(err)
-			return
+			session.Start(func(msg *kendynet.Event) {
+				if msg.EventType == kendynet.EventTypeError {
+					msg.Session.Close(msg.Data.(error).Error(), 0)
+				} else {
+					var e error
+					atomic.AddInt32(&bytescount, int32(len(msg.Data.(kendynet.Message).Bytes())))
+					atomic.AddInt32(&packetcount, int32(1))
+					for {
+						e = msg.Session.SendMessage(msg.Data.(kendynet.Message))
+						if e == nil {
+							return
+						} else if e != kendynet.ErrSendQueFull {
+							break
+						}
+						runtime.Gosched()
+					}
+					if e != nil {
+						fmt.Println("send error", e, msg.Session.GetUnderConn())
+					}
+				}
+			})
+		})
+
+		if nil != err {
+			fmt.Printf("TcpServer start failed %s\n", err)
 		}
 
-		atomic.AddInt32(&clientcount, 1)
-
-		aioSocket := aio.NewAioSocket(conn)
-
-		aioSocket.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
-			atomic.AddInt32(&clientcount, -1)
-			fmt.Println("client close:", reason, sess.GetUnderConn(), atomic.LoadInt32(&clientcount))
-		})
-
-		aioSocket.Start(func(msg *kendynet.Event) {
-			if msg.EventType == kendynet.EventTypeError {
-				msg.Session.Close(msg.Data.(error).Error(), 0)
-			} else {
-				var e error
-				atomic.AddInt32(&bytescount, int32(len(msg.Data.(kendynet.Message).Bytes())))
-				atomic.AddInt32(&packetcount, int32(1))
-				for {
-					e = msg.Session.SendMessage(msg.Data.(kendynet.Message))
-					if e == nil {
-						return
-					} else if e != kendynet.ErrSendQueFull {
-						break
-					}
-					runtime.Gosched()
-				}
-				if e != nil {
-					fmt.Println("send error", e, msg.Session.GetUnderConn())
-				}
-			}
-		})
+	} else {
+		fmt.Printf("NewTcpServer failed %s\n", err)
 	}
-}
-
-func dial(service string) (net.Conn, error) {
-	dialer := &net.Dialer{}
-	return dialer.Dial("tcp", service)
 }
 
 func client(service string, count int) {
 
+	client, err := connector.New("tcp4", service)
+
+	if err != nil {
+		fmt.Printf("NewTcpClient failed:%s\n", err.Error())
+		return
+	}
+
 	for i := 0; i < count; i++ {
-		conn, err := dial(service)
+		session, err := client.Dial(time.Second * 10)
 		if err != nil {
 			fmt.Printf("Dial error:%s\n", err.Error())
 		} else {
-			aioSocket := aio.NewAioSocket(conn)
-			aioSocket.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
-				fmt.Printf("client client close:%s\n", reason)
+			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
+				fmt.Printf("client close:%s\n", reason)
 			})
-			aioSocket.Start(func(event *kendynet.Event) {
+			session.Start(func(event *kendynet.Event) {
 				if event.EventType == kendynet.EventTypeError {
 					event.Session.Close(event.Data.(error).Error(), 0)
 				} else {
@@ -104,9 +98,9 @@ func client(service string, count int) {
 			})
 			//send the first messge
 			msg := kendynet.NewByteBuffer("hello")
-			aioSocket.SendMessage(msg)
-			aioSocket.SendMessage(msg)
-			aioSocket.SendMessage(msg)
+			session.SendMessage(msg)
+			session.SendMessage(msg)
+			session.SendMessage(msg)
 		}
 	}
 }

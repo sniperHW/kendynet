@@ -8,8 +8,9 @@ import (
 	"github.com/sniperHW/kendynet/example/pb"
 	"github.com/sniperHW/kendynet/example/testproto"
 	"github.com/sniperHW/kendynet/socket/aio"
+	connector "github.com/sniperHW/kendynet/socket/connector/aio"
+	listener "github.com/sniperHW/kendynet/socket/listener/aio"
 	"github.com/sniperHW/kendynet/timer"
-	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -34,65 +35,59 @@ func server(service string) {
 		fmt.Printf("clientcount:%d,packetcount:%d\n", clientcount, tmp)
 	})
 
-	tcpAddr, err := net.ResolveTCPAddr("tcp", service)
-	if err != nil {
-		panic(err.Error())
-	}
+	server, err := listener.New("tcp4", service)
+	if server != nil {
+		fmt.Printf("server running on:%s\n", service)
+		err = server.Serve(func(session kendynet.StreamSession) {
+			atomic.AddInt32(&clientcount, 1)
 
-	ln, err := net.ListenTCP("tcp", tcpAddr)
-	if err != nil {
-		panic(err.Error())
-	}
+			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
+				atomic.AddInt32(&clientcount, -1)
+				fmt.Println("client close:", reason, sess.GetUnderConn(), atomic.LoadInt32(&clientcount))
+			})
 
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			fmt.Println(err)
-			return
+			session.SetEncoder(codec.NewPbEncoder(4096))
+			session.SetReceiver(codec.NewPBReceiver(4096))
+
+			session.Start(func(msg *kendynet.Event) {
+				if msg.EventType == kendynet.EventTypeError {
+					msg.Session.Close(msg.Data.(error).Error(), 0)
+				} else {
+					atomic.AddInt32(&packetcount, int32(1))
+					msg.Session.Send(msg.Data.(proto.Message))
+				}
+			})
+		})
+
+		if nil != err {
+			fmt.Printf("TcpServer start failed %s\n", err)
 		}
 
-		atomic.AddInt32(&clientcount, 1)
-
-		aioSocket := aio.NewAioSocket(conn)
-
-		aioSocket.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
-			atomic.AddInt32(&clientcount, -1)
-			fmt.Println("client close:", reason, sess.GetUnderConn(), atomic.LoadInt32(&clientcount))
-		})
-
-		aioSocket.SetEncoder(codec.NewPbEncoder(4096))
-		aioSocket.SetReceiver(codec.NewPBReceiver(4096))
-
-		aioSocket.Start(func(msg *kendynet.Event) {
-			if msg.EventType == kendynet.EventTypeError {
-				msg.Session.Close(msg.Data.(error).Error(), 0)
-			} else {
-				atomic.AddInt32(&packetcount, int32(1))
-				msg.Session.Send(msg.Data.(proto.Message))
-			}
-		})
+	} else {
+		fmt.Printf("NewTcpServer failed %s\n", err)
 	}
-}
-
-func dial(service string) (net.Conn, error) {
-	dialer := &net.Dialer{}
-	return dialer.Dial("tcp", service)
 }
 
 func client(service string, count int) {
 
+	client, err := connector.New("tcp4", service)
+
+	if err != nil {
+		fmt.Printf("NewTcpClient failed:%s\n", err.Error())
+		return
+	}
+
 	for i := 0; i < count; i++ {
-		conn, err := dial(service)
+		session, err := client.Dial(time.Second * 10)
 		if err != nil {
 			fmt.Printf("Dial error:%s\n", err.Error())
 		} else {
-			aioSocket := aio.NewAioSocket(conn)
-			aioSocket.SetEncoder(codec.NewPbEncoder(4096))
-			aioSocket.SetReceiver(codec.NewPBReceiver(4096))
-			aioSocket.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
+			session.SetEncoder(codec.NewPbEncoder(4096))
+			session.SetReceiver(codec.NewPBReceiver(4096))
+			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
 				fmt.Printf("client client close:%s\n", reason)
 			})
-			aioSocket.Start(func(event *kendynet.Event) {
+			session.Start(func(event *kendynet.Event) {
 				if event.EventType == kendynet.EventTypeError {
 					event.Session.Close(event.Data.(error).Error(), 0)
 				} else {
@@ -104,10 +99,11 @@ func client(service string, count int) {
 			o.A = proto.String("hello")
 			o.B = proto.Int32(17)
 			for i := 0; i < 5; i++ {
-				aioSocket.Send(o)
+				session.Send(o)
 			}
 		}
 	}
+
 }
 
 func main() {
