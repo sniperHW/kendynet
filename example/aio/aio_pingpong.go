@@ -80,9 +80,7 @@ func server(service string) {
 
 func main() {
 
-	_ := runtime.NumCPU()
-
-	aio.Init(1, 1)
+	aio.Init(1, runtime.NumCPU())
 
 	go server("localhost:8110")
 
