@@ -4,7 +4,7 @@ package aio
 
 import (
 	"container/list"
-	"fmt"
+	//"fmt"
 	"github.com/sniperHW/aiogo"
 	"github.com/sniperHW/kendynet"
 	"net"
@@ -148,7 +148,6 @@ func (this *AioSocket) postSend() {
 	this.Lock()
 	c := 0
 	totalSize := 0
-	//fmt.Println("pendingSend.Len()", this.pendingSend.Len())
 	for v := this.pendingSend.Front(); v != nil; v = this.pendingSend.Front() {
 		this.pendingSend.Remove(v)
 		this.sendBuffs[c] = v.Value.(kendynet.Message).Bytes()
@@ -162,7 +161,7 @@ func (this *AioSocket) postSend() {
 	this.Unlock()
 
 	if c > 0 {
-		this.aioConn.PostSendv(this.sendBuffs[:c], this, this.wcompleteQueue)
+		this.aioConn.Sendv(this.sendBuffs[:c], this, this.wcompleteQueue)
 	}
 }
 
@@ -198,6 +197,7 @@ func (this *AioSocket) getFlag() int32 {
 	return this.flag
 }
 
+/*
 func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 	fmt.Println("onRecvComplete")
 	if nil != r.Err {
@@ -273,9 +273,8 @@ func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 			//}
 		}
 	}
-}
+}*/
 
-/*
 func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 	if nil != r.Err {
 		flag := this.getFlag()
@@ -308,7 +307,7 @@ func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 			}
 
 			if nil == e {
-				this.aioConn.PostRecv(this.receiver.GetRecvBuff(), this, this.rcompleteQueue)
+				this.aioConn.Recv(this.receiver.GetRecvBuff(), this, this.rcompleteQueue)
 				return
 			} else {
 				flag := this.getFlag()
@@ -324,7 +323,7 @@ func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 			}
 		}
 	}
-}*/
+}
 
 func (this *AioSocket) Send(o interface{}) error {
 	if o == nil {
@@ -362,7 +361,6 @@ func (this *AioSocket) sendMessage(msg kendynet.Message) error {
 
 	if !this.sendLock {
 		this.sendLock = true
-		//fmt.Println("post", aiogo.User, this.pendingSend.Len(), len(msg.Bytes()))
 		this.wcompleteQueue.Post(&aiogo.CompleteEvent{
 			Type: aiogo.User,
 			Ud:   this,
@@ -522,7 +520,7 @@ func (this *AioSocket) Start(eventCB func(*kendynet.Event)) error {
 	this.onEvent = eventCB
 	this.flag |= started
 
-	this.aioConn.PostRecv(this.receiver.GetRecvBuff(), this, this.rcompleteQueue)
+	this.aioConn.Recv(this.receiver.GetRecvBuff(), this, this.rcompleteQueue)
 
 	return nil
 }
