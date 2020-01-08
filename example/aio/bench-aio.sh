@@ -25,7 +25,7 @@ function gobench {
     fi
     #GOMAXPROCS=1 $2 --port $4 &
     
-    $2 server > out.txt &
+    $2 server 127.0.0.1:$4 > out.txt &
     sleep 1
     echo "*** 50 connections, 10 seconds, 6 byte packets"
     nl=$'\r\n'
