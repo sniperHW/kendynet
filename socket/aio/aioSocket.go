@@ -222,33 +222,44 @@ func (this *AioSocket) Send(o interface{}) error {
 		return err
 	}
 
-	this.muW.Lock()
-	defer this.muW.Unlock()
 	return this.sendMessage(msg)
 }
 
 func (this *AioSocket) sendMessage(msg kendynet.Message) error {
+	send, err := func() (bool, error) {
+		this.muW.Lock()
+		defer this.muW.Unlock()
+		if (this.flag&closed) > 0 || (this.flag&wclosed) > 0 {
+			return false, kendynet.ErrSocketClose
+		}
 
-	flag := this.getFlag()
+		if this.pendingSend.Len() > this.sendQueueSize {
+			return false, kendynet.ErrSendQueFull
+		}
 
-	if (flag&closed) > 0 || (flag&wclosed) > 0 {
-		return kendynet.ErrSocketClose
+		this.pendingSend.PushBack(msg)
+
+		send := false
+
+		if !this.sendLock {
+			this.sendLock = true
+			send = true
+		}
+
+		return send, nil
+	}()
+
+	if nil != err {
+		return err
 	}
 
-	if this.pendingSend.Len() > this.sendQueueSize {
-		return kendynet.ErrSendQueFull
-	}
-
-	this.pendingSend.PushBack(msg)
-
-	if !this.sendLock {
-		this.sendLock = true
+	if send {
+		//this.postSend()
 		this.wcompleteQueue.Post(&aiogo.CompleteEvent{
 			Type: aiogo.User,
 			Ud:   this,
 		})
 	}
-
 	return nil
 }
 
@@ -257,8 +268,6 @@ func (this *AioSocket) SendMessage(msg kendynet.Message) error {
 		return kendynet.ErrInvaildObject
 	}
 
-	this.muW.Lock()
-	defer this.muW.Unlock()
 	return this.sendMessage(msg)
 }
 
