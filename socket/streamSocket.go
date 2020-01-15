@@ -5,7 +5,7 @@
 package socket
 
 import (
-	"bufio"
+	//"bufio"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/util"
 	"net"
@@ -104,69 +104,156 @@ func (this *StreamSocket) sendThreadFunc() {
 
 	var err error
 
+	var closed bool
+
+	var localList []interface{}
+
+	var writeBuffers net.Buffers
+
 	timeout := this.sendTimeout
 
-	writer := bufio.NewWriterSize(this.conn, kendynet.SendBufferSize)
+	totalBytes := int64(0)
 
 	for {
-		closed, localList := this.sendQue.Get()
+		if len(writeBuffers) > 0 {
+			closed, localList = this.sendQue.GetNoWait()
+		} else {
+			closed, localList = this.sendQue.Get()
+		}
 		size := len(localList)
 		if closed && size == 0 {
 			break
 		}
 
+		n := int64(0)
+
 		for i := 0; i < size; i++ {
 			msg := localList[i].(kendynet.Message)
-
 			data := msg.Bytes()
-			for data != nil || (i == (size-1) && writer.Buffered() > 0) {
-				if data != nil {
-					var s int
-					if len(data) > writer.Available() {
-						s = writer.Available()
-					} else {
-						s = len(data)
-					}
-					writer.Write(data[:s])
+			totalBytes += int64(len(data))
+			writeBuffers = append(writeBuffers, data)
+		}
 
-					if s != len(data) {
-						data = data[s:]
-					} else {
-						data = nil
-					}
-				}
+		if timeout > 0 {
+			this.conn.SetWriteDeadline(time.Now().Add(timeout))
+			n, err = writeBuffers.WriteTo(this.conn)
+			this.conn.SetWriteDeadline(time.Time{})
+		} else {
+			n, err = writeBuffers.WriteTo(this.conn)
+		}
 
-				if writer.Available() == 0 || i == (size-1) {
-
-					if timeout > 0 {
-						this.conn.SetWriteDeadline(time.Now().Add(timeout))
-						err = writer.Flush()
-						this.conn.SetWriteDeadline(time.Time{})
+		if nil != err {
+			if this.sendQue.Closed() {
+				return
+			}
+			if kendynet.IsNetTimeout(err) {
+				err = kendynet.ErrSendTimeout
+			} else {
+				kendynet.Errorf("writer.Flush error:%s\n", err.Error())
+				this.mutex.Lock()
+				this.flag |= wclosed
+				this.mutex.Unlock()
+			}
+			event := &kendynet.Event{Session: this, EventType: kendynet.EventTypeError, Data: err}
+			this.onEvent(event)
+			if this.sendQue.Closed() {
+				return
+			}
+		} else {
+			if n >= totalBytes {
+				writeBuffers = writeBuffers[:0]
+				totalBytes = 0
+			} else {
+				oldBuffers := writeBuffers
+				writeBuffers := net.Buffers{}
+				totalBytes = 0
+				for _, v := range oldBuffers {
+					if n >= int64(len(v)) {
+						n -= int64(len(v))
 					} else {
-						err = writer.Flush()
-					}
-					if err != nil {
-						if this.sendQue.Closed() {
-							return
+						if n > 0 {
+							v = v[n:]
+							n = 0
 						}
-						if kendynet.IsNetTimeout(err) {
-							err = kendynet.ErrSendTimeout
-						} else {
-							kendynet.Errorf("writer.Flush error:%s\n", err.Error())
-							this.mutex.Lock()
-							this.flag |= wclosed
-							this.mutex.Unlock()
-						}
-						event := &kendynet.Event{Session: this, EventType: kendynet.EventTypeError, Data: err}
-						this.onEvent(event)
-						if this.sendQue.Closed() {
-							return
-						}
+						writeBuffers = append(writeBuffers, v)
+						totalBytes += int64(len(v))
 					}
 				}
 			}
 		}
 	}
+
+	/*
+		defer func() {
+				close(this.sendCloseChan)
+			}()
+
+			var err error
+
+			timeout := this.sendTimeout
+
+			writer := bufio.NewWriterSize(this.conn, kendynet.SendBufferSize)
+
+			for {
+				closed, localList := this.sendQue.Get()
+				size := len(localList)
+				if closed && size == 0 {
+					break
+				}
+
+				for i := 0; i < size; i++ {
+					msg := localList[i].(kendynet.Message)
+
+					data := msg.Bytes()
+					for data != nil || (i == (size-1) && writer.Buffered() > 0) {
+						if data != nil {
+							var s int
+							if len(data) > writer.Available() {
+								s = writer.Available()
+							} else {
+								s = len(data)
+							}
+							writer.Write(data[:s])
+
+							if s != len(data) {
+								data = data[s:]
+							} else {
+								data = nil
+							}
+						}
+
+						if writer.Available() == 0 || i == (size-1) {
+
+							if timeout > 0 {
+								this.conn.SetWriteDeadline(time.Now().Add(timeout))
+								err = writer.Flush()
+								this.conn.SetWriteDeadline(time.Time{})
+							} else {
+								err = writer.Flush()
+							}
+							if err != nil {
+								if this.sendQue.Closed() {
+									return
+								}
+								if kendynet.IsNetTimeout(err) {
+									err = kendynet.ErrSendTimeout
+								} else {
+									kendynet.Errorf("writer.Flush error:%s\n", err.Error())
+									this.mutex.Lock()
+									this.flag |= wclosed
+									this.mutex.Unlock()
+								}
+								event := &kendynet.Event{Session: this, EventType: kendynet.EventTypeError, Data: err}
+								this.onEvent(event)
+								if this.sendQue.Closed() {
+									return
+								}
+							}
+						}
+					}
+				}
+			}
+	*/
 }
 
 func NewStreamSocket(conn net.Conn) kendynet.StreamSession {

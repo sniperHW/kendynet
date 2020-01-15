@@ -47,7 +47,7 @@ func Init(watcherCount int, completeQueueCount int, bufferPool ...aiogo.BufferPo
 	}
 
 	for i := 0; i < watcherCount; i++ {
-		watcher, err := aiogo.NewWatcher( /*runtime.NumCPU()/2,*/ bufferPool...)
+		watcher, err := aiogo.NewWatcher(bufferPool...)
 		if nil != err {
 			return err
 		}
