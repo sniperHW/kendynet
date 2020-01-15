@@ -5,7 +5,7 @@ package aio
 import (
 	"container/list"
 	//"fmt"
-	"bytes"
+	//"bytes"
 	"github.com/sniperHW/aiogo"
 	"github.com/sniperHW/kendynet"
 	"net"
@@ -69,8 +69,8 @@ type AioSocket struct {
 	onClose     func(kendynet.StreamSession, string)
 	onEvent     func(*kendynet.Event)
 	aioConn     *aiogo.Conn
-	//sendBuffs        [][]byte
-	sendBuff         bytes.Buffer //[]byte
+	sendBuffs   [][]byte
+	//sendBuff         bytes.Buffer //[]byte
 	pendingSend      *list.List
 	watcher          *aiogo.Watcher
 	sendLock         bool
@@ -92,12 +92,12 @@ func NewAioSocket(netConn net.Conn) *AioSocket {
 	}
 
 	s := &AioSocket{
-		aioConn:        c,
-		watcher:        w,
-		rcompleteQueue: rq,
-		wcompleteQueue: wq,
-		sendQueueSize:  256,
-		//sendBuffs:       make([][]byte, 512),
+		aioConn:         c,
+		watcher:         w,
+		rcompleteQueue:  rq,
+		wcompleteQueue:  wq,
+		sendQueueSize:   256,
+		sendBuffs:       make([][]byte, 512),
 		pendingSend:     list.New(),
 		maxPostSendSize: 1024 * 1024,
 	}
@@ -105,7 +105,7 @@ func NewAioSocket(netConn net.Conn) *AioSocket {
 }
 
 func (this *AioSocket) postSend() {
-	this.sendBuff.Reset()
+	/*this.sendBuff.Reset()
 	this.muW.Lock()
 	for v := this.pendingSend.Front(); v != nil; v = this.pendingSend.Front() {
 		this.pendingSend.Remove(v)
@@ -117,9 +117,9 @@ func (this *AioSocket) postSend() {
 	this.muW.Unlock()
 	if this.sendBuff.Len() > 0 {
 		this.aioConn.Send(this.sendBuff.Bytes(), this, this.wcompleteQueue)
-	}
+	}*/
 
-	/*this.muW.Lock()
+	this.muW.Lock()
 	c := 0
 	totalSize := 0
 	for v := this.pendingSend.Front(); v != nil; v = this.pendingSend.Front() {
@@ -135,7 +135,7 @@ func (this *AioSocket) postSend() {
 
 	if c > 0 {
 		this.aioConn.Sendv(this.sendBuffs[:c], this, this.wcompleteQueue)
-	}*/
+	}
 }
 
 func (this *AioSocket) onSendComplete(r *aiogo.CompleteEvent) {

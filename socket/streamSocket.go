@@ -165,7 +165,7 @@ func (this *StreamSocket) sendThreadFunc() {
 				totalBytes = 0
 			} else {
 				oldBuffers := writeBuffers
-				writeBuffers := net.Buffers{}
+				writeBuffers = net.Buffers{}
 				totalBytes = 0
 				for _, v := range oldBuffers {
 					if n >= int64(len(v)) {
