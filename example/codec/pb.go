@@ -4,11 +4,9 @@ import (
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/example/pb"
 	"github.com/sniperHW/kendynet/socket"
-	"os"
-	"time"
 )
 
-const minBuffSize = 4096
+const minBuffSize = 64
 
 type PbEncoder struct {
 	maxMsgSize uint64
@@ -30,6 +28,7 @@ type PBReceiver struct {
 	unpackIdx      uint64
 	initBuffSize   uint64
 	totalMaxPacket uint64
+	lastUnpackIdx  uint64
 }
 
 func NewPBReceiver(maxMsgSize uint64) *PBReceiver {
@@ -59,18 +58,16 @@ func (this *PBReceiver) unPack() (interface{}, error) {
 
 func (this *PBReceiver) check(buff []byte) {
 	l := len(buff)
-	l = l / 4
+	l = l / 8
 	for i := 0; i < l; i++ {
 		var j int
-		for j = 0; j < 4; j++ {
-			if buff[i*4+j] != 0xFF {
+		for j = 0; j < 8; j++ {
+			if buff[i*8+j] != 0 {
 				break
 			}
 		}
-		if j == 4 {
+		if j == 8 {
 			kendynet.Infoln(buff)
-			time.Sleep(time.Second)
-			os.Exit(0)
 		}
 	}
 }
@@ -86,21 +83,28 @@ func (this *PBReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface
 		if err == nil {
 			if uint64(len(this.recvBuff)) < this.totalMaxPacket/4 {
 				if this.unpackSize > 0 {
+					kendynet.Infoln("here", this.unpackSize)
 					//有数据尚未解包，需要移动到buffer前部
 					copy(this.buffer, this.buffer[this.unpackIdx:this.unpackIdx+this.unpackSize])
 				}
 				this.recvBuff = this.buffer[this.unpackSize:]
-
-				/*for k, _ := range this.recvBuff {
-					this.recvBuff[k] = 0xFF
-				}*/
-
+				//for k, _ := range this.recvBuff {
+				//	this.recvBuff[k] = 0
+				//}
 				this.unpackIdx = 0
 			}
 
-			n, err := sess.(*socket.StreamSocket).Read(this.recvBuff)
+			buff := make([]byte, 4096)
+
+			for k, _ := range buff {
+				buff[k] = 0
+			}
+
+			n, err := sess.(*socket.StreamSocket).Read(buff)
 			if n > 0 {
-				//this.check(this.recvBuff[:n])
+				this.check(buff[:n])
+				copy(this.recvBuff, buff[:n])
+				this.lastUnpackIdx = this.unpackIdx
 				this.unpackSize += uint64(n) //增加待解包数据
 				this.recvBuff = this.recvBuff[n:]
 			}
@@ -108,6 +112,8 @@ func (this *PBReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface
 				return nil, err
 			}
 		} else {
+			kendynet.Infoln(this.unpackIdx, this.unpackSize, this.buffer[this.lastUnpackIdx:this.unpackIdx+this.unpackSize])
+			panic("err")
 			break
 		}
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	//"bytes"
 	"fmt"
 	"github.com/golang/protobuf/proto"
 	"github.com/sniperHW/kendynet"
@@ -10,7 +11,9 @@ import (
 	"github.com/sniperHW/kendynet/golog"
 	connector "github.com/sniperHW/kendynet/socket/connector/tcp"
 	listener "github.com/sniperHW/kendynet/socket/listener/tcp"
-	"github.com/sniperHW/kendynet/timer"
+	//"github.com/sniperHW/kendynet/timer"
+	//"math/rand"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -19,48 +22,77 @@ import (
 	"time"
 )
 
-func server(service string) {
-	clientcount := int32(0)
-	packetcount := int32(0)
-
-	timer.Repeat(time.Second, nil, func(_ *timer.Timer) {
-		tmp := atomic.LoadInt32(&packetcount)
-		atomic.StoreInt32(&packetcount, 0)
-		fmt.Printf("clientcount:%d,packetcount:%d\n", clientcount, tmp)
-	})
-
-	server, err := listener.New("tcp4", service)
-	if server != nil {
-		fmt.Printf("server running on:%s\n", service)
-		err = server.Serve(func(session kendynet.StreamSession) {
-			atomic.AddInt32(&clientcount, 1)
-			session.SetEncoder(codec.NewPbEncoder(4096))
-			session.SetReceiver(codec.NewPBReceiver(4096))
-			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
-				fmt.Printf("server client close:%s\n", reason)
-				atomic.AddInt32(&clientcount, -1)
-			})
-			session.Start(func(event *kendynet.Event) {
-				if event.EventType == kendynet.EventTypeError {
-					event.Session.Close(event.Data.(error).Error(), 0)
-				} else {
-					//fmt.Printf("server on msg\n")
-					atomic.AddInt32(&packetcount, int32(1))
-					event.Session.Send(event.Data.(proto.Message))
-				}
-			})
-		})
-
-		if nil != err {
-			fmt.Printf("TcpServer start failed %s\n", err)
+func check(str string, buff []byte) {
+	l := len(buff)
+	l = l / 8
+	for i := 0; i < l; i++ {
+		var j int
+		for j = 0; j < 8; j++ {
+			if buff[i*8+j] != 0 {
+				break
+			}
 		}
+		if j == 8 {
+			kendynet.Infoln(str, buff)
+			panic("check error")
+			return
+		}
+	}
+}
 
-	} else {
-		fmt.Printf("NewTcpServer failed %s\n", err)
+func server(service string) {
+	l, err := listener.New("tcp", service)
+	if nil == err {
+		fmt.Printf("server running\n")
+		l.Serve(func(session kendynet.StreamSession) {
+			go func() {
+				conn := session.GetUnderConn().(net.Conn)
+				recvBuff := make([]byte, 4096)
+				for {
+					n, err := conn.Read(recvBuff)
+					if 0 == n || nil != err {
+						fmt.Println("read error", err)
+						return
+					}
+
+					//serverRecvBytes += int64(n)
+
+					sendBuff := recvBuff[:n]
+
+					check("server", sendBuff)
+
+					for {
+						n, err := conn.Write(sendBuff)
+						if nil != err {
+							fmt.Println("write error", err)
+							return
+						} else {
+							//serverSendBytes += int64(n)
+							if n == len(sendBuff) {
+								break
+							} else {
+								sendBuff = sendBuff[n:]
+							}
+						}
+					}
+				}
+			}()
+		})
 	}
 }
 
 func client(service string, count int) {
+
+	packetcount := int32(0)
+
+	go func() {
+		for {
+			time.Sleep(time.Second)
+			tmp := atomic.LoadInt32(&packetcount)
+			atomic.StoreInt32(&packetcount, 0)
+			fmt.Printf("packetcount:%d\n", tmp)
+		}
+	}()
 
 	client, err := connector.New("tcp4", service)
 
@@ -84,6 +116,7 @@ func client(service string, count int) {
 					event.Session.Close(event.Data.(error).Error(), 0)
 				} else {
 					//fmt.Printf("client on msg\n")
+					atomic.AddInt32(&packetcount, int32(1))
 					event.Session.Send(event.Data.(proto.Message))
 				}
 			})

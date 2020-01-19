@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/golang/protobuf/proto"
 	"github.com/sniperHW/kendynet"
@@ -11,6 +12,8 @@ import (
 	connector "github.com/sniperHW/kendynet/socket/connector/tcp"
 	listener "github.com/sniperHW/kendynet/socket/listener/tcp"
 	"github.com/sniperHW/kendynet/timer"
+	"math/rand"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -60,8 +63,25 @@ func server(service string) {
 	}
 }
 
-func client(service string, count int) {
+func check(str string, buff []byte) {
+	l := len(buff)
+	l = l / 8
+	for i := 0; i < l; i++ {
+		var j int
+		for j = 0; j < 8; j++ {
+			if buff[i*8+j] != 0 {
+				break
+			}
+		}
+		if j == 8 {
+			kendynet.Infoln(str, buff)
+			panic("check error")
+			return
+		}
+	}
+}
 
+func client(service string, count int) {
 	client, err := connector.New("tcp4", service)
 
 	if err != nil {
@@ -69,30 +89,71 @@ func client(service string, count int) {
 		return
 	}
 
-	for i := 0; i < count; i++ {
-		session, err := client.Dial(10 * time.Second)
-		if err != nil {
-			fmt.Printf("Dial error:%s\n", err.Error())
-		} else {
-			session.SetEncoder(codec.NewPbEncoder(4096))
-			session.SetReceiver(codec.NewPBReceiver(4096))
-			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
-				fmt.Printf("client client close:%s\n", reason)
-			})
-			session.Start(func(event *kendynet.Event) {
-				if event.EventType == kendynet.EventTypeError {
-					event.Session.Close(event.Data.(error).Error(), 0)
+	session, err := client.Dial(time.Second * 10)
+	if err != nil {
+		fmt.Printf("Dial error:%s\n", err.Error())
+	} else {
+
+		conn := session.GetUnderConn().(net.Conn)
+		encoder := codec.NewPbEncoder(4096)
+		o := &testproto.Test{}
+		o.A = proto.String("hello")
+		o.B = proto.Int32(17)
+		msg, _ := encoder.EnCode(o)
+
+		recvBuff := make([]byte, 65536)
+
+		var buff bytes.Buffer
+
+		for {
+
+			buff.Reset()
+
+			c := rand.Int()%25 + 25
+
+			for i := 0; i < c; i++ {
+				buff.Write(msg.Bytes())
+			}
+
+			b := buff.Bytes()
+
+			for {
+				n, err := conn.Write(b)
+				if nil != err {
+					fmt.Println("write error", err)
+					return
 				} else {
-					//fmt.Printf("client on msg\n")
-					event.Session.Send(event.Data.(proto.Message))
+					if n == len(b) {
+						break
+					} else {
+						b = b[n:]
+					}
 				}
-			})
-			//send the first messge
-			o := &testproto.Test{}
-			o.A = proto.String("hello")
-			o.B = proto.Int32(17)
-			for i := 0; i < 50; i++ {
-				session.Send(o)
+			}
+
+			/*recvBuff := make([]byte, len(buff.Bytes()))
+
+			n, err := io.ReadFull(conn, recvBuff)
+			if 0 == n || nil != err {
+				fmt.Println("read error", err)
+				return
+			}
+
+			clientRecvBytes += int64(n)
+			clientRecv = clientRecvBytes / int64(len(msg.Bytes()))
+			check(recvBuff)*/
+
+			recvBytes := 0
+			for recvBytes < len(buff.Bytes()) {
+				n, err := conn.Read(recvBuff)
+				if 0 == n || nil != err {
+					fmt.Println("read error", err)
+					return
+				}
+				//clientRecvBytes += int64(n)
+				//clientRecv = clientRecvBytes / int64(len(msg.Bytes()))
+				check("client", recvBuff[:n])
+				recvBytes += n
 			}
 		}
 	}
