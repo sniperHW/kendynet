@@ -81,9 +81,11 @@ func (this *PBReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface
 			break
 		}
 		if err == nil {
-			if uint64(len(this.recvBuff)) < this.totalMaxPacket/4 {
+			if this.unpackSize == 0 {
+				this.unpackIdx = 0
+				this.recvBuff = this.buffer
+			} else if uint64(len(this.recvBuff)) < this.totalMaxPacket/4 {
 				if this.unpackSize > 0 {
-					kendynet.Infoln("here", this.unpackSize)
 					//有数据尚未解包，需要移动到buffer前部
 					copy(this.buffer, this.buffer[this.unpackIdx:this.unpackIdx+this.unpackSize])
 				}
@@ -94,11 +96,7 @@ func (this *PBReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface
 				this.unpackIdx = 0
 			}
 
-			buff := make([]byte, 4096)
-
-			for k, _ := range buff {
-				buff[k] = 0
-			}
+			buff := make([]byte, len(this.recvBuff))
 
 			n, err := sess.(*socket.StreamSocket).Read(buff)
 			if n > 0 {
