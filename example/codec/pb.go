@@ -98,7 +98,7 @@ func (this *PBReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface
 
 			//buff := make([]byte, len(this.recvBuff))
 
-			n, err := sess.(*socket.StreamSocket).Read(this.readBuff)
+			n, err := sess.(*socket.StreamSocket).Read(this.recvBuff)
 			if n > 0 {
 				//this.check(buff[:n])
 				//copy(this.recvBuff, buff[:n])
