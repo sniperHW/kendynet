@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"sync/atomic"
 	//"syscall"
+	"github.com/sniperHW/kendynet/golog"
 	"strconv"
 	"time"
 )
@@ -21,19 +22,21 @@ func server(service string) {
 	bytescount := int32(0)
 	packetcount := int32(0)
 
-	timer.Repeat(time.Second, nil, func(_ *timer.Timer) {
+	timer.Repeat(time.Second, nil, func(_ *timer.Timer, ctx interface{}) {
 		tmp1 := atomic.LoadInt32(&bytescount)
 		tmp2 := atomic.LoadInt32(&packetcount)
 		atomic.StoreInt32(&bytescount, 0)
 		atomic.StoreInt32(&packetcount, 0)
 		fmt.Printf("clientcount:%d,transrfer:%d KB/s,packetcount:%d\n", atomic.LoadInt32(&clientcount), tmp1/1024, tmp2)
-	})
+	}, nil)
 
 	server, err := listener.New("tcp4", service)
 	if server != nil {
 		fmt.Printf("server running on:%s\n", service)
 		err = server.Serve(func(session kendynet.StreamSession) {
 			atomic.AddInt32(&clientcount, 1)
+
+			session.SetRecvTimeout(time.Second * 5)
 
 			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
 				atomic.AddInt32(&clientcount, -1)
@@ -106,6 +109,10 @@ func client(service string, count int) {
 }
 
 func main() {
+
+	outLogger := golog.NewOutputLogger("log", "kendynet", 1024*1024*1000)
+	kendynet.InitLogger(golog.New("rpc", outLogger))
+	kendynet.Debugln("start")
 
 	aio.Init(1, runtime.NumCPU()*2)
 

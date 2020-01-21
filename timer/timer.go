@@ -87,7 +87,7 @@ func (this *TimerMgr) loop() {
  *  eventQue:   如果非nil,callback会被投递到eventQue，否则在定时器主循环中执行
  */
 
-func (this *TimerMgr) newTimer(timeout time.Duration, repeat bool, eventQue *event.EventQueue, fn func(*Timer)) *Timer {
+func (this *TimerMgr) newTimer(timeout time.Duration, repeat bool, eventQue *event.EventQueue, fn func(*Timer, interface{}), ctx interface{}) *Timer {
 	if nil == fn {
 		return nil
 	}
@@ -98,6 +98,7 @@ func (this *TimerMgr) newTimer(timeout time.Duration, repeat bool, eventQue *eve
 		callback: fn,
 		eventQue: eventQue,
 		mgr:      this,
+		ctx:      ctx,
 	}
 
 	this.setTimer(t, false)
@@ -106,13 +107,13 @@ func (this *TimerMgr) newTimer(timeout time.Duration, repeat bool, eventQue *eve
 }
 
 //一次性定时器
-func (this *TimerMgr) Once(timeout time.Duration, eventQue *event.EventQueue, callback func(*Timer)) *Timer {
-	return this.newTimer(timeout, false, eventQue, callback)
+func (this *TimerMgr) Once(timeout time.Duration, eventQue *event.EventQueue, callback func(*Timer, interface{}), ctx interface{}) *Timer {
+	return this.newTimer(timeout, false, eventQue, callback, ctx)
 }
 
 //重复定时器
-func (this *TimerMgr) Repeat(timeout time.Duration, eventQue *event.EventQueue, callback func(*Timer)) *Timer {
-	return this.newTimer(timeout, true, eventQue, callback)
+func (this *TimerMgr) Repeat(timeout time.Duration, eventQue *event.EventQueue, callback func(*Timer, interface{}), ctx interface{}) *Timer {
+	return this.newTimer(timeout, true, eventQue, callback, ctx)
 }
 
 func (this *TimerMgr) remove(t *Timer) {
@@ -130,8 +131,9 @@ type Timer struct {
 	repeat   bool //是否重复定时器
 	firing   int32
 	canceled int32
-	callback func(*Timer)
+	callback func(*Timer, interface{})
 	mgr      *TimerMgr
+	ctx      interface{}
 }
 
 func (this *Timer) Less(o util.HeapElement) bool {
@@ -146,9 +148,9 @@ func (this *Timer) SetIndex(idx uint32) {
 	this.heapIdx = idx
 }
 
-func pcall(callback func(*Timer), t *Timer) {
+func pcall(callback func(*Timer, interface{}), t *Timer) {
 	defer util.Recover(kendynet.GetLogger())
-	callback(t)
+	callback(t, t.ctx)
 }
 
 func (this *Timer) call_(inloop bool) {
@@ -207,17 +209,17 @@ func (this *Timer) Cancel() bool {
 }
 
 //一次性定时器
-func Once(timeout time.Duration, eventQue *event.EventQueue, callback func(*Timer)) *Timer {
+func Once(timeout time.Duration, eventQue *event.EventQueue, callback func(*Timer, interface{}), ctx interface{}) *Timer {
 	once.Do(func() {
 		globalMgr = NewTimerMgr()
 	})
-	return globalMgr.Once(timeout, eventQue, callback)
+	return globalMgr.Once(timeout, eventQue, callback, ctx)
 }
 
 //重复定时器
-func Repeat(timeout time.Duration, eventQue *event.EventQueue, callback func(*Timer)) *Timer {
+func Repeat(timeout time.Duration, eventQue *event.EventQueue, callback func(*Timer, interface{}), ctx interface{}) *Timer {
 	once.Do(func() {
 		globalMgr = NewTimerMgr()
 	})
-	return globalMgr.Repeat(timeout, eventQue, callback)
+	return globalMgr.Repeat(timeout, eventQue, callback, ctx)
 }

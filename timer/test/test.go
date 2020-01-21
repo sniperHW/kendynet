@@ -13,7 +13,7 @@ func main() {
 
 	i := 0
 
-	timer.Repeat(1*time.Second, nil, func(timer *timer.Timer) {
+	timer.Repeat(1*time.Second, nil, func(timer *timer.Timer, ctx interface{}) {
 		i++
 		fmt.Println("Repeat timer", i)
 		if i == 10 {
@@ -21,7 +21,7 @@ func main() {
 		}
 	})
 
-	timer.Once(12*time.Second, nil, func(_ *timer.Timer) {
+	timer.Once(12*time.Second, nil, func(_ *timer.Timer, ctx interface{}) {
 		fmt.Println("Once timer")
 	})
 

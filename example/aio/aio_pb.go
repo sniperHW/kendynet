@@ -29,11 +29,11 @@ func server(service string) {
 	clientcount := int32(0)
 	packetcount := int32(0)
 
-	timer.Repeat(time.Second, nil, func(_ *timer.Timer) {
+	timer.Repeat(time.Second, nil, func(_ *timer.Timer, ctx interface{}) {
 		tmp := atomic.LoadInt32(&packetcount)
 		atomic.StoreInt32(&packetcount, 0)
 		fmt.Printf("clientcount:%d,packetcount:%d\n", clientcount, tmp)
-	})
+	}, nil)
 
 	server, err := listener.New("tcp4", service)
 	if server != nil {
@@ -98,7 +98,7 @@ func client(service string, count int) {
 			o := &testproto.Test{}
 			o.A = proto.String("hello")
 			o.B = proto.Int32(17)
-			for i := 0; i < 5; i++ {
+			for i := 0; i < 50; i++ {
 				session.Send(o)
 			}
 		}

@@ -8,6 +8,8 @@ import (
 	//"bytes"
 	"github.com/sniperHW/aiogo"
 	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/timer"
+	"io"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -59,18 +61,21 @@ func (this *defaultReceiver) GetUnPackSize() int {
 
 type AioSocket struct {
 	sync.Mutex
-	muW         sync.Mutex
-	ud          interface{}
-	receiver    AioReceiver
-	encoder     *kendynet.EnCoder
-	flag        int32
-	sendTimeout time.Duration
-	recvTimeout time.Duration
-	onClose     func(kendynet.StreamSession, string)
-	onEvent     func(*kendynet.Event)
-	aioConn     *aiogo.Conn
-	sendBuffs   [][]byte
-	//sendBuff         bytes.Buffer //[]byte
+	muW              sync.Mutex
+	ud               interface{}
+	receiver         AioReceiver
+	encoder          *kendynet.EnCoder
+	flag             int32
+	sendTimer        *timer.Timer
+	sendTimeout      time.Duration
+	sendTimeoutVer   int64
+	recvTimer        *timer.Timer
+	recvTimeout      time.Duration
+	recvTimeoutVer   int64
+	onClose          func(kendynet.StreamSession, string)
+	onEvent          func(*kendynet.Event)
+	aioConn          *aiogo.Conn
+	sendBuffs        [][]byte
 	pendingSend      *list.List
 	watcher          *aiogo.Watcher
 	sendLock         bool
@@ -105,24 +110,11 @@ func NewAioSocket(netConn net.Conn) *AioSocket {
 }
 
 func (this *AioSocket) postSend() {
-	/*this.sendBuff.Reset()
-	this.muW.Lock()
-	for v := this.pendingSend.Front(); v != nil; v = this.pendingSend.Front() {
-		this.pendingSend.Remove(v)
-		this.sendBuff.Write(v.Value.(kendynet.Message).Bytes())
-		if this.sendBuff.Len() >= this.maxPostSendSize {
-			break
-		}
-	}
-	this.muW.Unlock()
-	if this.sendBuff.Len() > 0 {
-		this.aioConn.Send(this.sendBuff.Bytes(), this, this.wcompleteQueue)
-	}*/
-
 	this.muW.Lock()
 	c := 0
 	totalSize := 0
 	for v := this.pendingSend.Front(); v != nil; v = this.pendingSend.Front() {
+		this.pendingSend.Remove(v)
 		this.sendBuffs[c] = v.Value.(kendynet.Message).Bytes()
 		totalSize += len(this.sendBuffs[c])
 		c++
@@ -134,6 +126,16 @@ func (this *AioSocket) postSend() {
 	this.muW.Unlock()
 
 	if c > 0 {
+
+		if this.sendTimeout > 0 {
+			this.Lock()
+			if nil != this.sendTimer {
+				this.sendTimer.Cancel()
+				this.sendTimer = registerTimeoutTimer(this, this.sendTimeout, this.onSendTimeout, atomic.AddInt64(&this.sendTimeoutVer, 1))
+			}
+			this.Unlock()
+		}
+
 		this.aioConn.Sendv(this.sendBuffs[:c], this, this.wcompleteQueue)
 	}
 }
@@ -176,6 +178,14 @@ func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 		if flag&closed > 0 || flag&rclosed > 0 {
 			return
 		} else {
+			this.Lock()
+			if r.Err == io.EOF {
+				this.flag |= rclosed
+			} else {
+				this.flag |= (rclosed | wclosed)
+			}
+			this.Unlock()
+
 			this.onEvent(&kendynet.Event{
 				Session:   this,
 				EventType: kendynet.EventTypeError,
@@ -202,6 +212,14 @@ func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 			}
 
 			if nil == e {
+				if this.recvTimeout > 0 {
+					this.Lock()
+					if nil != this.recvTimer {
+						this.recvTimer.Cancel()
+						this.recvTimer = registerTimeoutTimer(this, this.recvTimeout, this.onRecvTimeout, atomic.AddInt64(&this.recvTimeoutVer, 1))
+					}
+					this.Unlock()
+				}
 				this.aioConn.Recv(this.receiver.GetRecvBuff(), this, this.rcompleteQueue)
 				return
 			} else {
@@ -269,11 +287,11 @@ func (this *AioSocket) sendMessage(msg kendynet.Message) error {
 	}
 
 	if send {
-		//this.postSend()
-		this.wcompleteQueue.Post(&aiogo.CompleteEvent{
+		this.postSend()
+		/*this.wcompleteQueue.Post(&aiogo.CompleteEvent{
 			Type: aiogo.User,
 			Ud:   this,
-		})
+		})*/
 	}
 	return nil
 }
@@ -326,6 +344,11 @@ func (this *AioSocket) Close(reason string, delay time.Duration) {
 		this.onClearSendQueue = func() {
 			close(ch)
 		}
+	}
+
+	if nil != this.sendTimer {
+		this.sendTimer.Cancel()
+		this.sendTimer = nil
 	}
 
 	this.Unlock()
@@ -405,6 +428,60 @@ func (this *AioSocket) SetEncoder(encoder kendynet.EnCoder) {
 	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&this.encoder)), unsafe.Pointer(&encoder))
 }
 
+func (this *AioSocket) onRecvTimeout(_ *timer.Timer, ctx interface{}) {
+
+	if atomic.LoadInt64(&this.recvTimeoutVer) != ctx.(int64) {
+		return
+	}
+
+	this.Lock()
+	this.recvTimer = nil
+	if (this.flag&closed) > 0 || (this.flag&rclosed) > 0 {
+		this.Unlock()
+		return
+	}
+	this.Unlock()
+
+	this.onEvent(&kendynet.Event{
+		Session:   this,
+		EventType: kendynet.EventTypeError,
+		Data:      kendynet.ErrRecvTimeout,
+	})
+
+	this.Lock()
+	if !((this.flag&closed) > 0 || (this.flag&rclosed) > 0) && nil == this.recvTimer {
+		this.recvTimer = registerTimeoutTimer(this, this.recvTimeout, this.onRecvTimeout, atomic.AddInt64(&this.recvTimeoutVer, 1))
+	}
+	this.Unlock()
+
+}
+
+func (this *AioSocket) onSendTimeout(_ *timer.Timer, ctx interface{}) {
+	if atomic.LoadInt64(&this.sendTimeoutVer) != ctx.(int64) {
+		return
+	}
+
+	this.Lock()
+	this.sendTimer = nil
+	if (this.flag&closed) > 0 || (this.flag&wclosed) > 0 {
+		this.Unlock()
+		return
+	}
+	this.Unlock()
+
+	this.onEvent(&kendynet.Event{
+		Session:   this,
+		EventType: kendynet.EventTypeError,
+		Data:      kendynet.ErrSendTimeout,
+	})
+
+	this.Lock()
+	if !((this.flag&closed) > 0 || (this.flag&wclosed) > 0) && nil == this.sendTimer {
+		this.sendTimer = registerTimeoutTimer(this, this.sendTimeout, this.onSendTimeout, atomic.AddInt64(&this.sendTimeoutVer, 1))
+	}
+	this.Unlock()
+}
+
 func (this *AioSocket) Start(eventCB func(*kendynet.Event)) error {
 	if eventCB == nil {
 		panic("eventCB == nil")
@@ -427,6 +504,10 @@ func (this *AioSocket) Start(eventCB func(*kendynet.Event)) error {
 
 	this.onEvent = eventCB
 	this.flag |= started
+
+	if this.recvTimeout > 0 {
+		this.recvTimer = registerTimeoutTimer(this, this.recvTimeout, this.onRecvTimeout, atomic.AddInt64(&this.recvTimeoutVer, 1))
+	}
 
 	this.aioConn.Recv(this.receiver.GetRecvBuff(), this, this.rcompleteQueue)
 
@@ -457,12 +538,12 @@ func (this *AioSocket) GetUnderConn() interface{} {
 	return this.aioConn.GetRowConn()
 }
 
-func (this *AioSocket) SetRecvTimeout(duration time.Duration) {
-
+func (this *AioSocket) SetRecvTimeout(timeout time.Duration) {
+	this.recvTimeout = timeout
 }
 
-func (this *AioSocket) SetSendTimeout(duration time.Duration) {
-
+func (this *AioSocket) SetSendTimeout(timeout time.Duration) {
+	this.sendTimeout = timeout
 }
 
 func (this *AioSocket) SetMaxPostSendSize(size int) {

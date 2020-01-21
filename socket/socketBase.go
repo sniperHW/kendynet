@@ -226,7 +226,9 @@ func (this *SocketBase) recvThreadFunc() {
 				this.mutex.Lock()
 				if err == io.EOF {
 					this.flag |= rclosed
-				} else if !kendynet.IsNetTimeout(err) {
+				} else if kendynet.IsNetTimeout(err) {
+					event.Data = kendynet.ErrRecvTimeout
+				} else {
 					kendynet.Errorf("ReceiveAndUnpack error:%s\n", err.Error())
 					this.flag |= (rclosed | wclosed)
 				}

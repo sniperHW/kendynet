@@ -30,11 +30,11 @@ func server(service string) {
 	//clientMap只被单个goroutine访问，不需要任何保护
 	clientMap := make(map[kendynet.StreamSession]bool)
 
-	timer.Repeat(time.Second, nil, func(_ *timer.Timer) {
+	timer.Repeat(time.Second, nil, func(_ *timer.Timer, ctx interface{}) {
 		tmp := atomic.LoadInt32(&packetcount)
 		atomic.StoreInt32(&packetcount, 0)
 		fmt.Printf("clientcount:%d,packetcount:%d\n", clientcount, tmp)
-	})
+	}, nil)
 
 	evQueue := event.NewEventQueue()
 

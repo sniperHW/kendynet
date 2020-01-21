@@ -23,7 +23,7 @@ var reqcount int32
 func server(service string) {
 	count := int32(0)
 	total := 0
-	timer.Repeat(time.Second, nil, func(_ *timer.Timer) {
+	timer.Repeat(time.Second, nil, func(_ *timer.Timer, ctx interface{}) {
 		tmp := atomic.LoadInt32(&count)
 		atomic.StoreInt32(&count, 0)
 		tmp1 := atomic.LoadInt32(&timeoutcount)
@@ -31,7 +31,7 @@ func server(service string) {
 		tmp2 := atomic.LoadInt32(&reqcount)
 		atomic.StoreInt32(&reqcount, 0)
 		fmt.Printf("count:%d,timeoutcount:%d,reqcount:%d,total:%d\n", tmp, tmp1, tmp2, total)
-	})
+	}, nil)
 
 	server := test_rpc.NewRPCServer()
 	//注册服务
