@@ -41,6 +41,8 @@ func server(service string) {
 		err = server.Serve(func(session kendynet.StreamSession) {
 			atomic.AddInt32(&clientcount, 1)
 
+			session.SetRecvTimeout(time.Second * 5)
+
 			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
 				atomic.AddInt32(&clientcount, -1)
 				fmt.Println("client close:", reason, sess.GetUnderConn(), atomic.LoadInt32(&clientcount))

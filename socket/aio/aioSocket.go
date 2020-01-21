@@ -287,11 +287,11 @@ func (this *AioSocket) sendMessage(msg kendynet.Message) error {
 	}
 
 	if send {
-		this.postSend()
-		/*this.wcompleteQueue.Post(&aiogo.CompleteEvent{
+		//this.postSend()
+		this.wcompleteQueue.Post(&aiogo.CompleteEvent{
 			Type: aiogo.User,
 			Ud:   this,
-		})*/
+		})
 	}
 	return nil
 }
