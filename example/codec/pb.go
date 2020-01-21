@@ -96,12 +96,12 @@ func (this *PBReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface
 				this.unpackIdx = 0
 			}
 
-			buff := make([]byte, len(this.recvBuff))
+			//buff := make([]byte, len(this.recvBuff))
 
-			n, err := sess.(*socket.StreamSocket).Read(buff)
+			n, err := sess.(*socket.StreamSocket).Read(this.readBuff)
 			if n > 0 {
-				this.check(buff[:n])
-				copy(this.recvBuff, buff[:n])
+				//this.check(buff[:n])
+				//copy(this.recvBuff, buff[:n])
 				this.lastUnpackIdx = this.unpackIdx
 				this.unpackSize += uint64(n) //增加待解包数据
 				this.recvBuff = this.recvBuff[n:]
