@@ -24,8 +24,7 @@ func completeRoutine(completeQueue *aiogo.CompleteQueue) {
 		} else {
 			c := es.Ud.(*AioSocket)
 			if es.Type == aiogo.User {
-				//fmt.Println("process aiogo.User")
-				c.postSend()
+				c.onUserEvent()
 			} else if es.Type == aiogo.Read {
 				c.onRecvComplete(es)
 			} else {
