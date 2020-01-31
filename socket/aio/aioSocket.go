@@ -202,7 +202,7 @@ func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 			flag := this.getFlag()
 			if flag&closed > 0 || flag&rclosed > 0 {
 				return
-			} 
+			}
 			msg, err := this.receiver.ReceiveAndUnpack(this)
 			if nil != err {
 				this.onEvent(&kendynet.Event{
@@ -226,7 +226,7 @@ func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 					this.Unlock()
 				}
 				this.aioConn.Recv(this.receiver.GetRecvBuff(), this, this.rcompleteQueue)
-				return				
+				return
 			}
 		}
 	}
@@ -281,11 +281,11 @@ func (this *AioSocket) sendMessage(msg kendynet.Message) error {
 	}
 
 	if send {
-		this.postSend()
-		/*this.wcompleteQueue.Post(&aiogo.CompleteEvent{
+		//this.postSend()
+		this.wcompleteQueue.Post(&aiogo.CompleteEvent{
 			Type: aiogo.User,
 			Ud:   this,
-		})*/
+		})
 	}
 	return nil
 }
