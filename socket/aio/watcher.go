@@ -22,16 +22,16 @@ func completeRoutine(completeQueue *aiogo.CompleteQueue) {
 		if !ok {
 			return
 		} else {
-			if es.Type == aiogo.User {
-				es.Ud.(func())()
+			//if es.Type == aiogo.User {
+			//	es.Ud.(func())()
+			//} else {
+			c := es.Ud.(*AioSocket)
+			if es.Type == aiogo.Read {
+				c.onRecvComplete(es)
 			} else {
-				c := es.Ud.(*AioSocket)
-				if es.Type == aiogo.Read {
-					c.onRecvComplete(es)
-				} else {
-					c.onSendComplete(es)
-				}
+				c.onSendComplete(es)
 			}
+			//}
 		}
 	}
 }
