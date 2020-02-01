@@ -109,7 +109,7 @@ func NewAioSocket(netConn net.Conn) *AioSocket {
 	return s
 }
 
-func (this *AioSocket) postSend() {
+func (this *AioSocket) dosend() {
 	this.muW.Lock()
 	c := 0
 	totalSize := 0
@@ -152,7 +152,8 @@ func (this *AioSocket) onSendComplete(r *aiogo.CompleteEvent) {
 			}
 		} else {
 			this.muW.Unlock()
-			this.postSend()
+			this.aioConn.PostClosure(this.dosend)
+			//this.dosend()
 		}
 	} else {
 		flag := this.getFlag()
@@ -277,10 +278,10 @@ func (this *AioSocket) sendMessage(msg kendynet.Message) error {
 	}
 
 	if send {
-		this.aioConn.PostClosure(this.postSend)
+		this.aioConn.PostClosure(this.dosend)
 		//this.wcompleteQueue.Post(&aiogo.CompleteEvent{
 		//	Type: aiogo.User,
-		//	Ud:   this.postSend,
+		//	Ud:   this.dosend,
 		//})
 	}
 	return nil
