@@ -172,6 +172,14 @@ func (this *AioSocket) getFlag() int32 {
 	return this.flag
 }
 
+func (this *AioSocket) requestSend() {
+	this.postSend()
+}
+
+func (this *AioSocket) requestRecv() {
+	this.aioConn.Recv(this.receiver.GetRecvBuff(), this, this.rcompleteQueue)
+}
+
 func (this *AioSocket) onUserEvent() {
 	this.postSend()
 }
@@ -225,7 +233,11 @@ func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 					}
 					this.Unlock()
 				}
-				this.aioConn.Recv(this.receiver.GetRecvBuff(), this, this.rcompleteQueue)
+				//this.aioConn.Recv(this.receiver.GetRecvBuff(), this, this.rcompleteQueue)
+				this.wcompleteQueue.Post(&aiogo.CompleteEvent{
+					Type: aiogo.User,
+					Ud:   this.requestRecv,
+				})
 				return
 			}
 		}
@@ -284,7 +296,7 @@ func (this *AioSocket) sendMessage(msg kendynet.Message) error {
 		//this.postSend()
 		this.wcompleteQueue.Post(&aiogo.CompleteEvent{
 			Type: aiogo.User,
-			Ud:   this,
+			Ud:   this.requestSend,
 		})
 	}
 	return nil

@@ -13,7 +13,7 @@ import (
 
 var watchers []*aiogo.Watcher
 var readCompleteQueues []*aiogo.CompleteQueue
-var writeCompleteQueue []*aiogo.CompleteQueue
+var writeCompleteQueues []*aiogo.CompleteQueue
 var timerMgrs []*timer.TimerMgr //避免所有socket争抢同一个timerMgr
 
 func completeRoutine(completeQueue *aiogo.CompleteQueue) {
@@ -22,21 +22,31 @@ func completeRoutine(completeQueue *aiogo.CompleteQueue) {
 		if !ok {
 			return
 		} else {
-			c := es.Ud.(*AioSocket)
+			if es.Type == aiogo.User {
+				es.Ud.(func())()
+			} else {
+				c := es.Ud.(*AioSocket)
+				if es.Type == aiogo.Read {
+					c.onRecvComplete(es)
+				} else {
+					c.onSendComplete(es)
+				}
+			}
+			/*c := es.Ud.(*AioSocket)
 			if es.Type == aiogo.User {
 				c.onUserEvent()
 			} else if es.Type == aiogo.Read {
 				c.onRecvComplete(es)
 			} else {
 				c.onSendComplete(es)
-			}
+			}*/
 		}
 	}
 }
 
 func getWatcherAndCompleteQueue() (*aiogo.Watcher, *aiogo.CompleteQueue, *aiogo.CompleteQueue) {
 	r := rand.Int()
-	return watchers[r%len(watchers)], readCompleteQueues[r%len(readCompleteQueues)], writeCompleteQueue[r%len(writeCompleteQueue)]
+	return watchers[r%len(watchers)], readCompleteQueues[r%len(readCompleteQueues)], writeCompleteQueues[r%len(writeCompleteQueues)]
 }
 
 func registerTimeoutTimer(s *AioSocket, timeout time.Duration, callback func(*timer.Timer, interface{}), ctx interface{}) *timer.Timer {
@@ -69,7 +79,7 @@ func Init(watcherCount int, completeQueueCount int, bufferPool ...aiogo.BufferPo
 
 	for i := 0; i < completeQueueCount; i++ {
 		queue := aiogo.NewCompleteQueueWithSpinlock()
-		writeCompleteQueue = append(writeCompleteQueue, queue)
+		writeCompleteQueues = append(writeCompleteQueues, queue)
 		go completeRoutine(queue)
 	}
 
