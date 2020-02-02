@@ -3,18 +3,14 @@
 package aio
 
 import (
-	//"fmt"
 	"github.com/sniperHW/aiogo"
-	"github.com/sniperHW/kendynet/timer"
 	"math/rand"
 	"runtime"
-	"time"
 )
 
 var watchers []*aiogo.Watcher
 var readCompleteQueues []*aiogo.CompleteQueue
 var writeCompleteQueues []*aiogo.CompleteQueue
-var timerMgrs []*timer.TimerMgr //避免所有socket争抢同一个timerMgr
 
 func completeRoutine(completeQueue *aiogo.CompleteQueue) {
 	for {
@@ -41,12 +37,7 @@ func getWatcherAndCompleteQueue() (*aiogo.Watcher, *aiogo.CompleteQueue, *aiogo.
 	return watchers[r%len(watchers)], readCompleteQueues[r%len(readCompleteQueues)], writeCompleteQueues[r%len(writeCompleteQueues)]
 }
 
-func registerTimeoutTimer(s *AioSocket, timeout time.Duration, callback func(*timer.Timer, interface{}), ctx interface{}) *timer.Timer {
-	timerMgr := timerMgrs[s.aioConn.Fd()%len(timerMgrs)]
-	return timerMgr.Once(timeout, nil, callback, ctx)
-}
-
-func Init(watcherCount int, completeQueueCount int, bufferPool ...aiogo.BufferPool) error {
+func Init(watcherCount int, completeQueueCount int) error {
 	if watcherCount <= 0 {
 		watcherCount = 1
 	}
@@ -56,7 +47,7 @@ func Init(watcherCount int, completeQueueCount int, bufferPool ...aiogo.BufferPo
 	}
 
 	for i := 0; i < watcherCount; i++ {
-		watcher, err := aiogo.NewWatcher(bufferPool...)
+		watcher, err := aiogo.NewWatcher(nil)
 		if nil != err {
 			return err
 		}
@@ -73,10 +64,6 @@ func Init(watcherCount int, completeQueueCount int, bufferPool ...aiogo.BufferPo
 		queue := aiogo.NewCompleteQueueWithSpinlock()
 		writeCompleteQueues = append(writeCompleteQueues, queue)
 		go completeRoutine(queue)
-	}
-
-	for i := 0; i < 63; i++ {
-		timerMgrs = append(timerMgrs, timer.NewTimerMgr())
 	}
 
 	return nil
