@@ -6,7 +6,7 @@ import (
 )
 
 type Ele struct {
-	heapIdx uint32
+	heapIdx int
 	value   uint32
 }
 
@@ -14,11 +14,11 @@ func (this *Ele) Less(o util.HeapElement) bool {
 	return this.value < o.(*Ele).value
 }
 
-func (this *Ele) GetIndex() uint32 {
+func (this *Ele) GetIndex() int {
 	return this.heapIdx
 }
 
-func (this *Ele) SetIndex(idx uint32) {
+func (this *Ele) SetIndex(idx int) {
 	this.heapIdx = idx
 }
 

@@ -21,8 +21,8 @@ type RPCResponseHandler func(interface{}, error)
 
 type contextGroup struct {
 	mtx      sync.Mutex
-	minheap  *util.MinHeap          // = util.NewMinHeap(4096)
-	waitResp map[uint64]*reqContext // = map[uint64]*reqContext{} //待响应的请求
+	minheap  util.MinHeap
+	waitResp map[uint64]*reqContext
 	notiChan *util.Notifyer
 	tt       *time.Timer
 }
@@ -107,7 +107,7 @@ func (this *contextGroup) onResponse(resp *RPCResponse) {
 }
 
 type reqContext struct {
-	heapIdx      uint32
+	heapIdx      int
 	seq          uint64
 	onResponse   RPCResponseHandler
 	deadline     time.Time
@@ -118,11 +118,11 @@ func (this *reqContext) Less(o util.HeapElement) bool {
 	return o.(*reqContext).deadline.After(this.deadline)
 }
 
-func (this *reqContext) GetIndex() uint32 {
+func (this *reqContext) GetIndex() int {
 	return this.heapIdx
 }
 
-func (this *reqContext) SetIndex(idx uint32) {
+func (this *reqContext) SetIndex(idx int) {
 	this.heapIdx = idx
 }
 

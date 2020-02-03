@@ -19,11 +19,11 @@ func main() {
 		if i == 10 {
 			timer.Cancel()
 		}
-	})
+	}, nil)
 
 	timer.Once(12*time.Second, nil, func(_ *timer.Timer, ctx interface{}) {
 		fmt.Println("Once timer")
-	})
+	}, nil)
 
 	c := make(chan os.Signal)
 	signal.Notify(c, syscall.SIGINT) //监听指定信号

@@ -17,7 +17,7 @@ var (
 type TimerMgr struct {
 	sync.Mutex
 	notiChan *util.Notifyer
-	minheap  *util.MinHeap
+	minheap  util.MinHeap
 }
 
 func NewTimerMgr() *TimerMgr {
@@ -124,7 +124,7 @@ func (this *TimerMgr) remove(t *Timer) {
 
 type Timer struct {
 	sync.Mutex
-	heapIdx  uint32
+	heapIdx  int
 	expired  time.Time //到期时间
 	eventQue *event.EventQueue
 	timeout  time.Duration
@@ -140,11 +140,11 @@ func (this *Timer) Less(o util.HeapElement) bool {
 	return o.(*Timer).expired.After(this.expired)
 }
 
-func (this *Timer) GetIndex() uint32 {
+func (this *Timer) GetIndex() int {
 	return this.heapIdx
 }
 
-func (this *Timer) SetIndex(idx uint32) {
+func (this *Timer) SetIndex(idx int) {
 	this.heapIdx = idx
 }
 
