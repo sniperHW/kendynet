@@ -182,15 +182,16 @@ func (this *SocketBase) Send(o interface{}) error {
 	}
 
 	this.mutex.Lock()
-	defer this.mutex.Unlock()
-	return this.imp.sendMessage(msg)
+	err = this.imp.sendMessage(msg)
+	this.mutex.Unlock()
+	return err
 }
 
 func (this *SocketBase) SendMessage(msg kendynet.Message) error {
 	this.mutex.Lock()
-	defer this.mutex.Unlock()
-
-	return this.imp.sendMessage(msg)
+	err := this.imp.sendMessage(msg)
+	this.mutex.Unlock()
+	return err
 }
 
 func (this *SocketBase) recvThreadFunc() {

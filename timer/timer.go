@@ -31,32 +31,26 @@ func NewTimerMgr() *TimerMgr {
 }
 
 func (this *TimerMgr) setTimer(t *Timer, inloop bool) {
-	needNotify := false
 	t.expired = time.Now().Add(t.timeout)
 	this.Lock()
-	this.minheap.Insert(t)
-	min := this.minheap.Min().(*Timer)
-	if min == t || min.expired.After(t.expired) {
-		needNotify = true
-	}
-
 	if t.index > 0 {
 		this.index2Timer[t.index] = t
 	}
-
-	this.Unlock()
-	if !inloop && needNotify {
+	this.minheap.Insert(t)
+	min := this.minheap.Min().(*Timer)
+	if (min == t || min.expired.After(t.expired)) && !inloop {
 		this.notiChan.Notify()
 	}
+	this.Unlock()
 }
 
 func (this *TimerMgr) GetTimerByIndex(index uint64) *Timer {
 	this.Lock()
-	defer this.Unlock()
-	t, ok := this.index2Timer[index]
-	if ok {
+	if t, ok := this.index2Timer[index]; ok {
+		this.Unlock()
 		return t
 	} else {
+		this.Unlock()
 		return nil
 	}
 }
@@ -108,23 +102,21 @@ func (this *TimerMgr) loop() {
  */
 
 func (this *TimerMgr) newTimer(timeout time.Duration, repeat bool, eventQue *event.EventQueue, fn func(*Timer, interface{}), ctx interface{}, index uint64) *Timer {
-	if nil == fn {
+	if nil != fn {
+		t := &Timer{
+			timeout:  timeout,
+			repeat:   repeat,
+			callback: fn,
+			eventQue: eventQue,
+			mgr:      this,
+			ctx:      ctx,
+			index:    index,
+		}
+		this.setTimer(t, false)
+		return t
+	} else {
 		return nil
 	}
-
-	t := &Timer{
-		timeout:  timeout,
-		repeat:   repeat,
-		callback: fn,
-		eventQue: eventQue,
-		mgr:      this,
-		ctx:      ctx,
-		index:    index,
-	}
-
-	this.setTimer(t, false)
-
-	return t
 }
 
 //一次性定时器
@@ -133,10 +125,11 @@ func (this *TimerMgr) Once(timeout time.Duration, eventQue *event.EventQueue, ca
 }
 
 func (this *TimerMgr) OnceWithIndex(timeout time.Duration, eventQue *event.EventQueue, callback func(*Timer, interface{}), ctx interface{}, index uint64) *Timer {
-	if index <= 0 {
+	if index > 0 {
+		return this.newTimer(timeout, false, eventQue, callback, ctx, index)
+	} else {
 		return nil
 	}
-	return this.newTimer(timeout, false, eventQue, callback, ctx, index)
 }
 
 //重复定时器
@@ -189,6 +182,18 @@ func pcall(callback func(*Timer, interface{}), t *Timer) {
 	callback(t, t.ctx)
 }
 
+func (this *Timer) preCall() bool {
+	this.Lock()
+	if this.canceled {
+		this.Unlock()
+		return false
+	} else {
+		this.firing = true
+		this.Unlock()
+		return true
+	}
+}
+
 func (this *Timer) call_(inloop bool) {
 
 	this.Lock()
@@ -197,18 +202,17 @@ func (this *Timer) call_(inloop bool) {
 		return
 	} else {
 		this.firing = true
+		this.Unlock()
 	}
-	this.Unlock()
 
 	pcall(this.callback, this)
-
 	if this.repeat {
 		this.Lock()
+		defer this.Unlock()
 		if !this.canceled {
 			this.firing = false
 			this.mgr.setTimer(this, inloop)
 		}
-		this.Unlock()
 	}
 }
 
@@ -229,15 +233,17 @@ func (this *Timer) call() {
  */
 func (this *Timer) Cancel() bool {
 	this.Lock()
-	defer this.Unlock()
 	if this.canceled {
+		this.Unlock()
 		return false
 	}
 	this.canceled = true
 	if !this.firing {
 		this.mgr.remove(this)
 	}
-	return this.firing == false
+	firing := this.firing
+	this.Unlock()
+	return firing == false
 }
 
 //一次性定时器
