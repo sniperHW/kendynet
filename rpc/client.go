@@ -21,34 +21,14 @@ var contextGroups []*contextGroup = make([]*contextGroup, groupCount)
 type RPCResponseHandler func(interface{}, error)
 
 type contextGroup struct {
-	mtx      sync.Mutex
-	waitResp map[uint64]*reqContext
 	timerMgr *timer.TimerMgr
 }
 
 func (this *contextGroup) onResponse(resp *RPCResponse) {
-	var (
-		ctx *reqContext
-		ok  bool
-	)
-
-	seq := resp.GetSeq()
-
-	this.mtx.Lock()
-	if ctx, ok = this.waitResp[seq]; ok {
-		if ctx.timer.Cancel() {
-			delete(this.waitResp, seq)
-		} else {
-			this.mtx.Unlock()
-			return
-		}
-	}
-	this.mtx.Unlock()
-
-	if nil != ctx {
+	t := this.timerMgr.GetTimerByIndex(resp.GetSeq())
+	if nil != t && t.Cancel() {
+		ctx := t.GetCTX().(*reqContext)
 		ctx.callResponseCB(resp.Ret, resp.Err)
-	} else {
-		kendynet.Debugf("on response,but missing reqContext:%d\n", seq)
 	}
 }
 
@@ -56,8 +36,6 @@ type reqContext struct {
 	seq          uint64
 	onResponse   RPCResponseHandler
 	cbEventQueue *event.EventQueue
-	timer        *timer.Timer
-	group        *contextGroup
 }
 
 func (this *reqContext) callResponseCB(ret interface{}, err error) {
@@ -76,19 +54,7 @@ func (this *reqContext) callResponseCB_(ret interface{}, err error) {
 }
 
 func (this *reqContext) onTimeout(_ *timer.Timer, _ interface{}) {
-	ok := false
-	this.group.mtx.Lock()
-	if _, ok := this.group.waitResp[this.seq]; !ok {
-		kendynet.Infof("timeout context:%d not found\n", this.seq)
-	} else {
-		ok = true
-		delete(this.group.waitResp, this.seq)
-		kendynet.Infof("timeout context:%d\n", this.seq)
-	}
-	this.group.mtx.Unlock()
-	if ok {
-		this.callResponseCB(nil, ErrCallTimeout)
-	}
+	this.callResponseCB(nil, ErrCallTimeout)
 }
 
 type RPCClient struct {
@@ -164,12 +130,9 @@ func (this *RPCClient) AsynCall(channel RPCChannel, method string, arg interface
 		return err
 	} else {
 		group := contextGroups[req.Seq%uint64(len(contextGroups))]
-		group.mtx.Lock()
-		defer group.mtx.Unlock()
 		err := channel.SendRequest(request)
 		if err == nil {
-			group.waitResp[context.seq] = context
-			context.timer = group.timerMgr.Once(timeout, nil, context.onTimeout, nil)
+			group.timerMgr.OnceWithIndex(timeout, nil, context.onTimeout, context, context.seq)
 			return nil
 		} else {
 			return err
@@ -192,18 +155,6 @@ func (this *RPCClient) Call(channel RPCChannel, method string, arg interface{}, 
 	return
 }
 
-func onceRoutine() {
-
-	client_once.Do(func() {
-		for i := uint64(0); i < groupCount; i++ {
-			contextGroups[i] = &contextGroup{
-				timerMgr: timer.NewTimerMgr(),
-				waitResp: map[uint64]*reqContext{},
-			}
-		}
-	})
-}
-
 func NewClient(decoder RPCMessageDecoder, encoder RPCMessageEncoder, cbEventQueue ...*event.EventQueue) *RPCClient {
 	if nil == decoder {
 		panic("decoder == nil")
@@ -219,7 +170,13 @@ func NewClient(decoder RPCMessageDecoder, encoder RPCMessageEncoder, cbEventQueu
 		q = cbEventQueue[0]
 	}
 
-	onceRoutine()
+	client_once.Do(func() {
+		for i := uint64(0); i < groupCount; i++ {
+			contextGroups[i] = &contextGroup{
+				timerMgr: timer.NewTimerMgr(),
+			}
+		}
+	})
 
 	return &RPCClient{
 		encoder:      encoder,
