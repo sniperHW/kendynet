@@ -24,7 +24,6 @@ const (
 type AioReceiver interface {
 	ReceiveAndUnpack(kendynet.StreamSession) (interface{}, error)
 	OnRecvOk(kendynet.StreamSession, []byte)
-	GetRecvBuff() []byte
 }
 
 type defaultReceiver struct {
@@ -39,16 +38,12 @@ func (this *defaultReceiver) ReceiveAndUnpack(s kendynet.StreamSession) (interfa
 		this.bytes = 0
 		return msg, nil
 	} else {
-		return nil, s.(*AioSocket).Recv(this.GetRecvBuff())
+		return nil, s.(*AioSocket).Recv(this.buffer)
 	}
 }
 
 func (this *defaultReceiver) OnRecvOk(_ kendynet.StreamSession, buff []byte) {
 	this.bytes = len(buff)
-}
-
-func (this *defaultReceiver) GetRecvBuff() []byte {
-	return this.buffer
 }
 
 type AioSocket struct {
@@ -190,7 +185,6 @@ func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 					Data:      msg,
 				})
 			} else {
-				//this.aioConn.Recv(this.receiver.GetRecvBuff(), this, this.rcompleteQueue)
 				return
 			}
 		}
@@ -403,27 +397,32 @@ func (this *AioSocket) Start(eventCB func(*kendynet.Event)) error {
 		panic("eventCB == nil")
 	}
 
-	this.Lock()
-	defer this.Unlock()
+	if err := func() error {
+		this.Lock()
+		defer this.Unlock()
 
-	if (this.flag & closed) > 0 {
-		return kendynet.ErrSocketClose
+		if (this.flag & closed) > 0 {
+			return kendynet.ErrSocketClose
+		}
+
+		if (this.flag & started) > 0 {
+			return kendynet.ErrStarted
+		}
+
+		if this.receiver == nil {
+			this.receiver = &defaultReceiver{buffer: make([]byte, 4096)}
+		}
+
+		this.onEvent = eventCB
+		this.flag |= started
+		return nil
+	}(); nil != err {
+		return err
+	} else {
+		//发起第一个recv
+		this.receiver.ReceiveAndUnpack(this)
+		return nil
 	}
-
-	if (this.flag & started) > 0 {
-		return kendynet.ErrStarted
-	}
-
-	if this.receiver == nil {
-		this.receiver = &defaultReceiver{buffer: make([]byte, 4096)}
-	}
-
-	this.onEvent = eventCB
-	this.flag |= started
-
-	this.aioConn.Recv(this.receiver.GetRecvBuff(), this, this.rcompleteQueue)
-
-	return nil
 }
 
 func (this *AioSocket) LocalAddr() net.Addr {
