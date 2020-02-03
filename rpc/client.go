@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/event"
+	"github.com/sniperHW/kendynet/timer"
 	"github.com/sniperHW/kendynet/util"
 	"sync"
 	"sync/atomic"
@@ -21,67 +22,8 @@ type RPCResponseHandler func(interface{}, error)
 
 type contextGroup struct {
 	mtx      sync.Mutex
-	minheap  util.MinHeap
 	waitResp map[uint64]*reqContext
-	notiChan *util.Notifyer
-	tt       *time.Timer
-}
-
-func (this *contextGroup) checkTimeout() {
-
-	timeout := []*reqContext{}
-
-	this.mtx.Lock()
-	for {
-		now := time.Now()
-		r := this.minheap.Min()
-		if r != nil && now.After(r.(*reqContext).deadline) {
-			this.minheap.PopMin()
-			if _, ok := this.waitResp[r.(*reqContext).seq]; !ok {
-				kendynet.Infof("timeout context:%d not found\n", r.(*reqContext).seq)
-			} else {
-				delete(this.waitResp, r.(*reqContext).seq)
-				timeout = append(timeout, r.(*reqContext))
-				kendynet.Infof("timeout context:%d\n", r.(*reqContext).seq)
-			}
-		} else {
-			break
-		}
-	}
-	this.mtx.Unlock()
-
-	for _, v := range timeout {
-		v.callResponseCB(nil, ErrCallTimeout)
-	}
-}
-
-func (this *contextGroup) wait() {
-	sleepTime := 86400 * time.Second
-	now := time.Now()
-
-	this.mtx.Lock()
-	min := this.minheap.Min()
-	if nil != min && min.(*reqContext).deadline.After(now) {
-		sleepTime = min.(*reqContext).deadline.Sub(now)
-	}
-	this.mtx.Unlock()
-
-	if nil != this.tt {
-		this.tt.Stop()
-		this.tt.Reset(sleepTime)
-	} else {
-		this.tt = time.AfterFunc(sleepTime, func() {
-			this.notiChan.Notify()
-		})
-	}
-
-	this.notiChan.Wait()
-}
-
-func (this *contextGroup) notify(context *reqContext) {
-	if this.minheap.Size() == 1 || this.minheap.Min().(*reqContext).deadline.After(context.deadline) {
-		this.notiChan.Notify()
-	}
+	timerMgr *timer.TimerMgr
 }
 
 func (this *contextGroup) onResponse(resp *RPCResponse) {
@@ -94,8 +36,12 @@ func (this *contextGroup) onResponse(resp *RPCResponse) {
 
 	this.mtx.Lock()
 	if ctx, ok = this.waitResp[seq]; ok {
-		delete(this.waitResp, seq)
-		this.minheap.Remove(ctx)
+		if ctx.timer.Cancel() {
+			delete(this.waitResp, seq)
+		} else {
+			this.mtx.Unlock()
+			return
+		}
 	}
 	this.mtx.Unlock()
 
@@ -107,23 +53,11 @@ func (this *contextGroup) onResponse(resp *RPCResponse) {
 }
 
 type reqContext struct {
-	heapIdx      int
 	seq          uint64
 	onResponse   RPCResponseHandler
-	deadline     time.Time
 	cbEventQueue *event.EventQueue
-}
-
-func (this *reqContext) Less(o util.HeapElement) bool {
-	return o.(*reqContext).deadline.After(this.deadline)
-}
-
-func (this *reqContext) GetIndex() int {
-	return this.heapIdx
-}
-
-func (this *reqContext) SetIndex(idx int) {
-	this.heapIdx = idx
+	timer        *timer.Timer
+	group        *contextGroup
 }
 
 func (this *reqContext) callResponseCB(ret interface{}, err error) {
@@ -139,6 +73,22 @@ func (this *reqContext) callResponseCB(ret interface{}, err error) {
 func (this *reqContext) callResponseCB_(ret interface{}, err error) {
 	defer util.Recover(kendynet.GetLogger())
 	this.onResponse(ret, err)
+}
+
+func (this *reqContext) onTimeout(_ *timer.Timer, _ interface{}) {
+	ok := false
+	this.group.mtx.Lock()
+	if _, ok := this.group.waitResp[this.seq]; !ok {
+		kendynet.Infof("timeout context:%d not found\n", this.seq)
+	} else {
+		ok = true
+		delete(this.group.waitResp, this.seq)
+		kendynet.Infof("timeout context:%d\n", this.seq)
+	}
+	this.group.mtx.Unlock()
+	if ok {
+		this.callResponseCB(nil, ErrCallTimeout)
+	}
 }
 
 type RPCClient struct {
@@ -213,16 +163,13 @@ func (this *RPCClient) AsynCall(channel RPCChannel, method string, arg interface
 	if err != nil {
 		return err
 	} else {
-		context.deadline = time.Now().Add(timeout)
-
 		group := contextGroups[req.Seq%uint64(len(contextGroups))]
 		group.mtx.Lock()
 		defer group.mtx.Unlock()
 		err := channel.SendRequest(request)
 		if err == nil {
 			group.waitResp[context.seq] = context
-			group.minheap.Insert(context)
-			group.notify(context)
+			context.timer = group.timerMgr.Once(timeout, nil, context.onTimeout, nil)
 			return nil
 		} else {
 			return err
@@ -250,30 +197,10 @@ func onceRoutine() {
 	client_once.Do(func() {
 		for i := uint64(0); i < groupCount; i++ {
 			contextGroups[i] = &contextGroup{
-				minheap:  util.NewMinHeap(128),
+				timerMgr: timer.NewTimerMgr(),
 				waitResp: map[uint64]*reqContext{},
-				notiChan: util.NewNotifyer(),
 			}
 		}
-
-		for _, v := range contextGroups {
-			go func(g *contextGroup) {
-				for {
-					g.wait()
-					g.checkTimeout()
-				}
-			}(v)
-		}
-		/*
-			go func() {
-				for {
-					time.Sleep(time.Duration(10) * time.Millisecond)
-					for _, v := range contextGroups {
-						v.checkTimeout()
-					}
-				}
-			}()
-		*/
 	})
 }
 
