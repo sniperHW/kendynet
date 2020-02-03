@@ -26,9 +26,13 @@ type contextGroup struct {
 
 func (this *contextGroup) onResponse(resp *RPCResponse) {
 	t := this.timerMgr.GetTimerByIndex(resp.GetSeq())
-	if nil != t && t.Cancel() {
-		ctx := t.GetCTX().(*reqContext)
-		ctx.callResponseCB(resp.Ret, resp.Err)
+	if nil != t {
+		if t.Cancel() {
+			ctx := t.GetCTX().(*reqContext)
+			ctx.callResponseCB(resp.Ret, resp.Err)
+		}
+	} else {
+		kendynet.Infoln("onResponse with no reqContext", resp.GetSeq())
 	}
 }
 
@@ -54,6 +58,7 @@ func (this *reqContext) callResponseCB_(ret interface{}, err error) {
 }
 
 func (this *reqContext) onTimeout(_ *timer.Timer, _ interface{}) {
+	kendynet.Infoln("req timeout", this.seq)
 	this.callResponseCB(nil, ErrCallTimeout)
 }
 
