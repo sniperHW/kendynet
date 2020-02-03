@@ -20,6 +20,8 @@ import (
 	"time"
 )
 
+var bufferPool *codec.BufferPool = codec.NewBufferPool(4096, 1024)
+
 func server(service string) {
 
 	go func() {
@@ -49,7 +51,7 @@ func server(service string) {
 			})
 
 			session.SetEncoder(codec.NewPbEncoder(4096))
-			session.SetReceiver(codec.NewPBReceiver(4096))
+			session.SetReceiver(codec.NewPBReceiver(bufferPool, 4096))
 
 			session.Start(func(msg *kendynet.Event) {
 				if msg.EventType == kendynet.EventTypeError {
@@ -85,7 +87,7 @@ func client(service string, count int) {
 			fmt.Printf("Dial error:%s\n", err.Error())
 		} else {
 			session.SetEncoder(codec.NewPbEncoder(4096))
-			session.SetReceiver(codec.NewPBReceiver(4096))
+			session.SetReceiver(codec.NewPBReceiver(bufferPool, 4096))
 			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
 				fmt.Printf("client client close:%s\n", reason)
 			})
@@ -110,7 +112,7 @@ func client(service string, count int) {
 
 func main() {
 
-	aio.Init(1, runtime.NumCPU()*2)
+	aio.Init(1, runtime.NumCPU()*2, bufferPool)
 
 	pb.Register(&testproto.Test{}, 1)
 	if len(os.Args) < 3 {

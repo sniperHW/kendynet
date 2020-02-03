@@ -22,10 +22,9 @@ const (
 )
 
 type AioReceiver interface {
-	ReceiveAndUnpack(sess kendynet.StreamSession) (interface{}, error)
-	AppendBytes(buff []byte)
+	ReceiveAndUnpack(kendynet.StreamSession) (interface{}, error)
+	OnRecvOk(kendynet.StreamSession, []byte)
 	GetRecvBuff() []byte
-	GetUnPackSize() int
 }
 
 type defaultReceiver struct {
@@ -33,27 +32,23 @@ type defaultReceiver struct {
 	buffer []byte
 }
 
-func (this *defaultReceiver) ReceiveAndUnpack(_ kendynet.StreamSession) (interface{}, error) {
+func (this *defaultReceiver) ReceiveAndUnpack(s kendynet.StreamSession) (interface{}, error) {
 	if 0 != this.bytes {
 		msg := kendynet.NewByteBuffer(this.bytes)
 		msg.AppendBytes(this.buffer[:this.bytes])
 		this.bytes = 0
 		return msg, nil
 	} else {
-		return nil, nil
+		return nil, s.(*AioSocket).Recv(this.GetRecvBuff())
 	}
 }
 
-func (this *defaultReceiver) AppendBytes(buff []byte) {
+func (this *defaultReceiver) OnRecvOk(_ kendynet.StreamSession, buff []byte) {
 	this.bytes = len(buff)
 }
 
 func (this *defaultReceiver) GetRecvBuff() []byte {
 	return this.buffer
-}
-
-func (this *defaultReceiver) GetUnPackSize() int {
-	return 0
 }
 
 type AioSocket struct {
@@ -175,7 +170,7 @@ func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 			})
 		}
 	} else {
-		this.receiver.AppendBytes(r.Buff[0][:r.Size])
+		this.receiver.OnRecvOk(this, r.Buff[0][:r.Size])
 		for {
 			flag := this.getFlag()
 			if flag&closed > 0 || flag&rclosed > 0 {
@@ -195,11 +190,27 @@ func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 					Data:      msg,
 				})
 			} else {
-				this.aioConn.Recv(this.receiver.GetRecvBuff(), this, this.rcompleteQueue)
+				//this.aioConn.Recv(this.receiver.GetRecvBuff(), this, this.rcompleteQueue)
 				return
 			}
 		}
 	}
+}
+
+func (this *AioSocket) Recv(buff []byte) error {
+
+	this.Lock()
+	defer this.Unlock()
+
+	if (this.flag&closed) > 0 || (this.flag&rclosed) > 0 {
+		return kendynet.ErrSocketClose
+	}
+
+	if (this.flag & started) == 0 {
+		return kendynet.ErrNotStart
+	}
+
+	return this.aioConn.Recv(buff, this, this.rcompleteQueue)
 }
 
 func (this *AioSocket) Send(o interface{}) error {
@@ -440,11 +451,11 @@ func (this *AioSocket) GetUnderConn() interface{} {
 }
 
 func (this *AioSocket) SetRecvTimeout(timeout time.Duration) {
-
+	this.aioConn.SetRecvTimeout(timeout)
 }
 
 func (this *AioSocket) SetSendTimeout(timeout time.Duration) {
-
+	this.aioConn.SetSendTimeout(timeout)
 }
 
 func (this *AioSocket) SetMaxPostSendSize(size int) {
