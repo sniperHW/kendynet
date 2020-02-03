@@ -25,8 +25,7 @@ type contextGroup struct {
 }
 
 func (this *contextGroup) onResponse(resp *RPCResponse) {
-	t := this.timerMgr.GetTimerByIndex(resp.GetSeq())
-	if nil != t {
+	if t := this.timerMgr.GetTimerByIndex(resp.GetSeq()); nil != t {
 		if t.Cancel() {
 			ctx := t.GetCTX().(*reqContext)
 			ctx.callResponseCB(resp.Ret, resp.Err)
@@ -70,19 +69,15 @@ type RPCClient struct {
 
 //收到RPC消息后调用
 func (this *RPCClient) OnRPCMessage(message interface{}) {
-	msg, err := this.decoder.Decode(message)
-	if nil != err {
+	if msg, err := this.decoder.Decode(message); nil != err {
 		kendynet.Errorf(util.FormatFileLine("RPCClient rpc message decode err:%s\n", err.Error()))
-		return
+	} else {
+		if resp, ok := msg.(*RPCResponse); ok {
+			contextGroups[msg.GetSeq()%uint64(len(contextGroups))].onResponse(resp)
+		} else {
+			panic("RPCClient.OnRPCMessage() invaild msg type")
+		}
 	}
-
-	switch msg.(type) {
-	case *RPCResponse:
-		break
-	default:
-		panic("RPCClient.OnRPCMessage() invaild msg type")
-	}
-	contextGroups[msg.GetSeq()%uint64(len(contextGroups))].onResponse(msg.(*RPCResponse))
 }
 
 //投递，不关心响应和是否失败
@@ -95,16 +90,15 @@ func (this *RPCClient) Post(channel RPCChannel, method string, arg interface{}) 
 		NeedResp: false,
 	}
 
-	request, err := this.encoder.Encode(req)
-	if err != nil {
+	if request, err := this.encoder.Encode(req); nil != err {
 		return fmt.Errorf("encode error:%s\n", err.Error())
+	} else {
+		if err = channel.SendRequest(request); nil != err {
+			return err
+		} else {
+			return nil
+		}
 	}
-
-	err = channel.SendRequest(request)
-	if nil != err {
-		return err
-	}
-	return nil
 }
 
 /*
@@ -130,13 +124,11 @@ func (this *RPCClient) AsynCall(channel RPCChannel, method string, arg interface
 		cbEventQueue: this.cbEventQueue,
 	}
 
-	request, err := this.encoder.Encode(req)
-	if err != nil {
+	if request, err := this.encoder.Encode(req); err != nil {
 		return err
 	} else {
 		group := contextGroups[req.Seq%uint64(len(contextGroups))]
-		err := channel.SendRequest(request)
-		if err == nil {
+		if err = channel.SendRequest(request); err == nil {
 			group.timerMgr.OnceWithIndex(timeout, nil, context.onTimeout, context, context.seq)
 			return nil
 		} else {
@@ -153,10 +145,11 @@ func (this *RPCClient) Call(channel RPCChannel, method string, arg interface{}, 
 		err = err_
 		respChan <- nil
 	}
-	err = this.AsynCall(channel, method, arg, timeout, f)
-	if nil == err {
+
+	if err = this.AsynCall(channel, method, arg, timeout, f); nil == err {
 		_ = <-respChan
 	}
+
 	return
 }
 

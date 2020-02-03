@@ -23,7 +23,7 @@ type TimerMgr struct {
 func NewTimerMgr() *TimerMgr {
 	mgr := &TimerMgr{
 		notiChan:    util.NewNotifyer(),
-		minheap:     util.NewMinHeap(65536),
+		minheap:     util.NewMinHeap(4096),
 		index2Timer: map[uint64]*Timer{},
 	}
 	go mgr.loop()
