@@ -204,8 +204,6 @@ func (this *AioSocket) PostRecv(buff []byte) error {
 
 func (this *AioSocket) trySend() {
 
-	var err error
-
 	for {
 		this.muW.Lock()
 		if this.pendingSend.Len() == 0 {
@@ -232,7 +230,9 @@ func (this *AioSocket) trySend() {
 
 		this.muW.Unlock()
 
-		_, err = this.aioConn.SendBuffers(this.sendBuffs[:c], this, this.wcompleteQueue)
+		this.aioConn.PostSendBuffers(this.sendBuffs[:c], this, this.wcompleteQueue)
+
+		/*_, err := this.aioConn.SendBuffers(this.sendBuffs[:c], this, this.wcompleteQueue)
 
 		if nil != err {
 			if err != aiogo.ErrIoPending {
@@ -246,7 +246,7 @@ func (this *AioSocket) trySend() {
 				}
 			}
 			return
-		}
+		}*/
 	}
 }
 
