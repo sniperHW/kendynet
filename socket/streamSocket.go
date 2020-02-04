@@ -174,6 +174,7 @@ func (this *StreamSocket) sendThreadFunc() {
 }
 */
 
+/*
 func (this *StreamSocket) sendThreadFunc() {
 	defer func() {
 		close(this.sendCloseChan)
@@ -244,9 +245,8 @@ func (this *StreamSocket) sendThreadFunc() {
 			}
 		}
 	}
-}
+}*/
 
-/*
 func (this *StreamSocket) sendThreadFunc() {
 
 	defer func() {
@@ -333,7 +333,7 @@ func (this *StreamSocket) sendThreadFunc() {
 			}
 		}
 	}
-}*/
+}
 
 func NewStreamSocket(conn net.Conn) kendynet.StreamSession {
 	if nil == conn {
