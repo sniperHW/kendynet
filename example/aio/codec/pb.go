@@ -84,6 +84,7 @@ func (this *PBReceiver) OnRecvOk(s kendynet.StreamSession, buff []byte) {
 	this.recvBuff = this.recvBuff[l:]
 }
 
+/*
 func (this *PBReceiver) ReceiveAndUnpack(s kendynet.StreamSession) (interface{}, error) {
 	msg, err := this.unPack()
 	if nil == msg && nil == err {
@@ -101,6 +102,38 @@ func (this *PBReceiver) ReceiveAndUnpack(s kendynet.StreamSession) (interface{},
 		s.(*aio.AioSocket).PostRecv(this.recvBuff)
 	}
 	return msg, err
+}*/
+
+func (this *PBReceiver) ReceiveAndUnpack(s kendynet.StreamSession) (interface{}, error) {
+
+	for {
+		msg, err := this.unPack()
+		if nil == msg && nil == err {
+			if len(this.recvBuff) < this.minBuffRemain {
+				if this.unpackSize > 0 {
+					//有数据尚未解包，需要移动到buffer前部
+					copy(this.buffer, this.buffer[this.unpackIdx:this.unpackIdx+this.unpackSize])
+				}
+				this.unpackIdx = 0
+				this.recvBuff = this.buffer[this.unpackSize:]
+			} else if this.unpackSize == 0 {
+				this.unpackIdx = 0
+				this.recvBuff = this.buffer
+			}
+
+			buff, err := s.(*aio.AioSocket).Recv(this.recvBuff)
+			if nil != err {
+				return nil, err
+			} else if nil != buff {
+				this.OnRecvOk(s, buff)
+				continue
+			} else {
+				break
+			}
+		}
+		return msg, err
+	}
+	return nil, nil
 }
 
 func (this *PBReceiver) StartReceive(s kendynet.StreamSession) {
