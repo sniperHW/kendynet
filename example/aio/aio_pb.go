@@ -102,7 +102,7 @@ func client(service string, count int) {
 			o := &testproto.Test{}
 			o.A = proto.String("hello")
 			o.B = proto.Int32(17)
-			for i := 0; i < 500; i++ {
+			for i := 0; i < 50; i++ {
 				session.Send(o)
 			}
 		}
