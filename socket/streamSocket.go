@@ -5,7 +5,7 @@
 package socket
 
 import (
-	"bufio"
+	//"bufio"
 	//"bytes"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/util"
