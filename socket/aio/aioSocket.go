@@ -230,11 +230,11 @@ func (this *AioSocket) trySend() {
 
 		this.muW.Unlock()
 
-		this.aioConn.PostSendBuffers(this.sendBuffs[:c], this, this.wcompleteQueue)
-
-		return
-
-		/*_, err := this.aioConn.SendBuffers(this.sendBuffs[:c], this, this.wcompleteQueue)
+		/*
+			this.aioConn.PostSendBuffers(this.sendBuffs[:c], this, this.wcompleteQueue)
+			return
+		*/
+		_, err := this.aioConn.SendBuffers(this.sendBuffs[:c], this, this.wcompleteQueue)
 
 		if nil != err {
 			if err != aiogo.ErrIoPending {
@@ -248,14 +248,14 @@ func (this *AioSocket) trySend() {
 				}
 			}
 			return
-		}*/
+		}
 	}
 }
 
 func (this *AioSocket) onSendComplete(r *aiogo.CompleteEvent) {
 	if nil == r.Err {
-		//this.trySend()
-		this.aioConn.PostClosure(this.trySend)
+		this.trySend()
+		//this.aioConn.PostClosure(this.trySend)
 	} else {
 		flag := this.getFlag()
 		if !(flag&closed > 0) {
