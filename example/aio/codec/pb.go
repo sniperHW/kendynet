@@ -49,7 +49,7 @@ type PBReceiver struct {
 	maxMsgSize   int
 	w            int
 	r            int
-	firstRecv    bool
+	receiveSize  int
 }
 
 func NewPBReceiver(pool *BufferPool, maxMsgSize int) *PBReceiver {
@@ -59,7 +59,12 @@ func NewPBReceiver(pool *BufferPool, maxMsgSize int) *PBReceiver {
 	return receiver
 }
 
+func (this *PBReceiver) StartReceive(s kendynet.StreamSession) {
+	s.(*aio.AioSocket).PostRecv(nil)
+}
+
 func (this *PBReceiver) OnRecvOk(s kendynet.StreamSession, buff []byte) {
+	this.receiveSize += len(buff)
 	if nil == this.buffer {
 		this.buffer = buff
 		this.r = 0
@@ -75,8 +80,8 @@ func (this *PBReceiver) OnRecvOk(s kendynet.StreamSession, buff []byte) {
 		}
 		copy(this.buffer[:this.w], buff)
 		this.w += len(buff)
+		this.pool.Put(buff)
 	}
-	s.(*aio.AioSocket).Recv(nil)
 }
 
 func (this *PBReceiver) unPack() (interface{}, error) {
@@ -89,40 +94,62 @@ func (this *PBReceiver) unPack() (interface{}, error) {
 
 func (this *PBReceiver) ReceiveAndUnpack(s kendynet.StreamSession) (interface{}, error) {
 
-	if !this.firstRecv {
-		//由框架发起第一次recv
-		s.(*aio.AioSocket).Recv(nil)
-		this.firstRecv = true
-		return nil, nil
-	}
+	for {
 
-	if nil == this.buffer {
-		return nil, nil
-	}
+		msg, err := this.unPack()
 
-	msg, err := this.unPack()
-	if msg == nil || nil != err {
-		if this.isPoolBuffer {
-			this.pool.Put(this.buffer)
-		}
-		this.buffer = nil
-		this.r = 0
-		this.w = 0
-	}
+		if nil != msg {
+			return msg, nil
+		} else {
+			if nil == err {
+				if this.r != this.w {
+					if this.isPoolBuffer {
+						newBuffer := make([]byte, this.maxMsgSize+int(pb.PBHeaderSize))
+						copy(newBuffer, this.buffer[this.r:this.w])
+						this.pool.Put(this.buffer)
+						this.buffer = newBuffer
+						this.isPoolBuffer = false
+					} else {
+						copy(this.buffer, this.buffer[this.r:this.w])
+					}
+					this.w = this.w - this.r
+					this.r = 0
+				} else {
+					this.w = 0
+					this.r = 0
+					if this.isPoolBuffer {
+						this.pool.Put(this.buffer)
+						this.buffer = nil
+						this.isPoolBuffer = false
+					}
+				}
 
-	if nil == msg && nil == err {
-		if this.r != this.w {
-			if this.isPoolBuffer {
-				newBuffer := make([]byte, this.maxMsgSize+int(pb.PBHeaderSize))
-				copy(newBuffer, this.buffer[this.r:this.w])
-				this.buffer = newBuffer
-				this.isPoolBuffer = false
+				if this.receiveSize < 65536 {
+					buff, err := s.(*aio.AioSocket).Recv(nil)
+					if nil != err {
+						return nil, err
+					} else if nil != buff {
+						this.OnRecvOk(s, buff)
+					} else {
+						this.receiveSize = 0
+						return nil, nil
+					}
+				} else {
+					this.receiveSize = 0
+					if err = s.(*aio.AioSocket).PostRecv(nil); nil != err {
+						return nil, err
+					}
+				}
+
 			} else {
-				copy(this.buffer, this.buffer[this.r:this.w])
+				if this.isPoolBuffer {
+					this.pool.Put(this.buffer)
+					this.buffer = nil
+					this.isPoolBuffer = false
+				}
+				return nil, err
 			}
-			this.w = this.w - this.r
-			this.r = 0
+
 		}
 	}
-	return msg, err
 }
