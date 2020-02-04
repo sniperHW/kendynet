@@ -25,6 +25,7 @@ type AioReceiver interface {
 	ReceiveAndUnpack(kendynet.StreamSession) (interface{}, error)
 	OnRecvOk(kendynet.StreamSession, []byte)
 	StartReceive(kendynet.StreamSession)
+	OnClose()
 }
 
 type defaultReceiver struct {
@@ -62,6 +63,10 @@ func (this *defaultReceiver) ReceiveAndUnpack(s kendynet.StreamSession) (interfa
 func (this *defaultReceiver) OnRecvOk(_ kendynet.StreamSession, buff []byte) {
 	this.receiveBytes += len(buff)
 	this.bytes = len(buff)
+}
+
+func (this *defaultReceiver) OnClose() {
+
 }
 
 type AioSocket struct {
@@ -197,7 +202,9 @@ func (this *AioSocket) PostRecv(buff []byte) error {
 	return this.aioConn.PostRecv(buff, this, this.rcompleteQueue)
 }
 
-func (this *AioSocket) dosend() {
+func (this *AioSocket) trySend() {
+
+	var err error
 
 	for {
 		this.muW.Lock()
@@ -225,9 +232,7 @@ func (this *AioSocket) dosend() {
 
 		this.muW.Unlock()
 
-		//fmt.Println("sendBuffs", totalSize)
-
-		_, err := this.aioConn.SendBuffers(this.sendBuffs[:c], this, this.wcompleteQueue)
+		_, err = this.aioConn.SendBuffers(this.sendBuffs[:c], this, this.wcompleteQueue)
 
 		if nil != err {
 			if err != aiogo.ErrIoPending {
@@ -247,7 +252,8 @@ func (this *AioSocket) dosend() {
 
 func (this *AioSocket) onSendComplete(r *aiogo.CompleteEvent) {
 	if nil == r.Err {
-		this.aioConn.PostClosure(this.dosend)
+		this.trySend()
+		//this.aioConn.PostClosure(this.trySend)
 	} else {
 		flag := this.getFlag()
 		if !(flag&closed > 0) {
@@ -309,11 +315,7 @@ func (this *AioSocket) sendMessage(msg kendynet.Message) error {
 	}
 
 	if send {
-		this.aioConn.PostClosure(this.dosend)
-		//this.wcompleteQueue.Post(&aiogo.CompleteEvent{
-		//	Type: aiogo.User,
-		//	Ud:   this.dosend,
-		//})
+		this.aioConn.PostClosure(this.trySend)
 	}
 	return nil
 }
@@ -332,6 +334,7 @@ func (this *AioSocket) doClose() {
 	this.Lock()
 	onClose := this.onClose
 	this.Unlock()
+	this.receiver.OnClose()
 	if nil != onClose {
 		onClose(this, this.closeReason)
 	}
