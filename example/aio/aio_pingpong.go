@@ -114,7 +114,7 @@ func main() {
 	kendynet.InitLogger(golog.New("rpc", outLogger))
 	kendynet.Debugln("start")
 
-	aio.Init(1, runtime.NumCPU()*2, nil)
+	aio.Init(1, runtime.NumCPU()*2, runtime.NumCPU()*2, nil)
 
 	if len(os.Args) < 3 {
 		fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")

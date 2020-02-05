@@ -110,7 +110,7 @@ func client(service string, count int) {
 
 func main() {
 
-	aio.Init(1, runtime.NumCPU()*2, nil)
+	aio.Init(1, runtime.NumCPU()*2, runtime.NumCPU()*2, nil)
 
 	pb.Register(&testproto.Test{}, 1)
 	if len(os.Args) < 3 {

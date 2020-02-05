@@ -37,7 +37,7 @@ func getWatcherAndCompleteQueue() (*aiogo.Watcher, *aiogo.CompleteQueue, *aiogo.
 	return watchers[r%len(watchers)], readCompleteQueues[r%len(readCompleteQueues)], writeCompleteQueues[r%len(writeCompleteQueues)]
 }
 
-func Init(watcherCount int, completeQueueCount int, buffPool aiogo.BufferPool) error {
+func Init(watcherCount int, completeQueueCount int, workerCount int, buffPool aiogo.BufferPool) error {
 	if watcherCount <= 0 {
 		watcherCount = 1
 	}
@@ -47,7 +47,11 @@ func Init(watcherCount int, completeQueueCount int, buffPool aiogo.BufferPool) e
 	}
 
 	for i := 0; i < watcherCount; i++ {
-		watcher, err := aiogo.NewWatcher(&aiogo.WatcherOption{BufferPool: buffPool})
+		watcher, err := aiogo.NewWatcher(&aiogo.WatcherOption{
+			BufferPool:     buffPool,
+			NotifyOnlyMode: true,
+			WorkerCount:    workerCount,
+		})
 		if nil != err {
 			return err
 		}
