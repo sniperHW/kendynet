@@ -49,7 +49,7 @@ func Init(watcherCount int, completeQueueCount int, workerCount int, buffPool ai
 	for i := 0; i < watcherCount; i++ {
 		watcher, err := aiogo.NewWatcher(&aiogo.WatcherOption{
 			BufferPool:     buffPool,
-			NotifyOnlyMode: true,
+			NotifyOnlyMode: false,
 			WorkerCount:    workerCount,
 		})
 		if nil != err {

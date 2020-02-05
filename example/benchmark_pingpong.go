@@ -11,6 +11,8 @@ import (
 	"os/signal"
 	"runtime"
 	//"runtime/pprof"
+	"net/http"
+	_ "net/http/pprof"
 	"strconv"
 	"sync/atomic"
 	"syscall"
@@ -111,6 +113,10 @@ func main() {
 	//f, _ := os.Create("profile_file")
 	//pprof.StartCPUProfile(f)     // 开始cpu profile，结果写到文件f中
 	//defer pprof.StopCPUProfile() // 结束profile
+
+	go func() {
+		http.ListenAndServe("0.0.0.0:6060", nil)
+	}()
 
 	outLogger := golog.NewOutputLogger("log", "kendynet", 1024*1024*1000)
 	kendynet.InitLogger(golog.New("rpc", outLogger))

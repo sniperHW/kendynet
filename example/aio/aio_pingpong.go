@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	//"syscall"
 	"github.com/sniperHW/kendynet/golog"
+	"net/http"
+	_ "net/http/pprof"
 	"strconv"
 	"time"
 )
@@ -109,6 +111,10 @@ func client(service string, count int) {
 }
 
 func main() {
+
+	go func() {
+		http.ListenAndServe("0.0.0.0:6060", nil)
+	}()
 
 	outLogger := golog.NewOutputLogger("log", "kendynet", 1024*1024*1000)
 	kendynet.InitLogger(golog.New("rpc", outLogger))
