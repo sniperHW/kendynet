@@ -254,8 +254,7 @@ func (this *AioSocket) trySend() {
 
 func (this *AioSocket) onSendComplete(r *aiogo.CompleteEvent) {
 	if nil == r.Err {
-		this.trySend()
-		//this.aioConn.PostClosure(this.trySend)
+		this.aioConn.PostClosure(this.trySend)
 	} else {
 		flag := this.getFlag()
 		if !(flag&closed > 0) {
