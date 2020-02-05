@@ -18,16 +18,16 @@ func completeRoutine(completeQueue *aiogo.CompleteQueue) {
 		if !ok {
 			return
 		} else {
-			//if es.Type == aiogo.User {
-			//	es.Ud.(func())()
-			//} else {
-			c := es.Ud.(*AioSocket)
-			if es.Type == aiogo.Read {
-				c.onRecvComplete(es)
+			if es.Type == aiogo.User {
+				es.Ud.(func())()
 			} else {
-				c.onSendComplete(es)
+				c := es.Ud.(*AioSocket)
+				if es.Type == aiogo.Read {
+					c.onRecvComplete(es)
+				} else {
+					c.onSendComplete(es)
+				}
 			}
-			//}
 		}
 	}
 }

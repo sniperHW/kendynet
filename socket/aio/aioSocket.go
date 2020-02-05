@@ -254,7 +254,8 @@ func (this *AioSocket) trySend() {
 
 func (this *AioSocket) onSendComplete(r *aiogo.CompleteEvent) {
 	if nil == r.Err {
-		this.aioConn.PostClosure(this.trySend)
+		//this.aioConn.PostClosure(this.trySend)
+		this.trySend()
 	} else {
 		flag := this.getFlag()
 		if !(flag&closed > 0) {
@@ -316,7 +317,10 @@ func (this *AioSocket) sendMessage(msg kendynet.Message) error {
 	}
 
 	if send {
-		this.aioConn.PostClosure(this.trySend)
+		this.wcompleteQueue.Post(&aiogo.CompleteEvent{
+			Type: aiogo.User,
+			Ud:   this.trySend,
+		})
 	}
 	return nil
 }
