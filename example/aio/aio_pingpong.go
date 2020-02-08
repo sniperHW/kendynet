@@ -98,7 +98,20 @@ func client(service string, count int) {
 				if event.EventType == kendynet.EventTypeError {
 					event.Session.Close(event.Data.(error).Error(), 0)
 				} else {
-					event.Session.SendMessage(event.Data.(kendynet.Message))
+					//event.Session.SendMessage(event.Data.(kendynet.Message))
+					var e error
+					for {
+						e = event.Session.SendMessage(event.Data.(kendynet.Message))
+						if e == nil {
+							return
+						} else if e != kendynet.ErrSendQueFull {
+							break
+						}
+						runtime.Gosched()
+					}
+					if e != nil {
+						fmt.Println("send error", e, event.Session.GetUnderConn())
+					}
 				}
 			})
 			//send the first messge
@@ -120,7 +133,9 @@ func main() {
 	kendynet.InitLogger(golog.New("rpc", outLogger))
 	kendynet.Debugln("start")
 
-	aio.Init(1, runtime.NumCPU()*2, runtime.NumCPU()*2, nil)
+	_ = runtime.NumCPU() * 2
+
+	aio.Init(1, 1, 1, nil)
 
 	if len(os.Args) < 3 {
 		fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")

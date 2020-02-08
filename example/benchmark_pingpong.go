@@ -38,6 +38,7 @@ func server(service string) {
 		fmt.Printf("server running on:%s\n", service)
 		err = server.Serve(func(session kendynet.StreamSession) {
 			atomic.AddInt32(&clientcount, 1)
+			session.SetRecvTimeout(time.Second * 5)
 			//session.SetSendQueueSize(2048)
 			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
 				atomic.AddInt32(&clientcount, -1)
@@ -96,7 +97,19 @@ func client(service string, count int) {
 				if event.EventType == kendynet.EventTypeError {
 					event.Session.Close(event.Data.(error).Error(), 0)
 				} else {
-					event.Session.SendMessage(event.Data.(kendynet.Message))
+					var e error
+					for {
+						e = event.Session.SendMessage(event.Data.(kendynet.Message))
+						if e == nil {
+							return
+						} else if e != kendynet.ErrSendQueFull {
+							break
+						}
+						runtime.Gosched()
+					}
+					if e != nil {
+						fmt.Println("send error", e, session.GetUnderConn())
+					}
 				}
 			})
 			//send the first messge

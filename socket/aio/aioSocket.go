@@ -46,7 +46,7 @@ func (this *defaultReceiver) ReceiveAndUnpack(s kendynet.StreamSession) (interfa
 			this.bytes = 0
 			return msg, nil
 		} else {
-			if this.receiveBytes >= 65536*2 {
+			if this.receiveBytes >= 65536 {
 				return nil, s.(*AioSocket).PostRecv(this.buffer)
 			} else {
 				buff, err := s.(*AioSocket).Recv(this.buffer)
@@ -89,6 +89,8 @@ type AioSocket struct {
 	onClearSendQueue func()
 	closeReason      string
 	maxPostSendSize  int
+	totalRecv        int64
+	totalSend        int64
 }
 
 func NewAioSocket(netConn net.Conn) *AioSocket {
@@ -140,7 +142,8 @@ func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 			})
 		}
 	} else {
-		this.receiver.OnRecvOk(this, r.Buff[0])
+		this.totalRecv += int64(r.Size)
+		this.receiver.OnRecvOk(this, r.GetBuff())
 		for {
 			flag := this.getFlag()
 			if flag&closed > 0 || flag&rclosed > 0 {
@@ -230,10 +233,9 @@ func (this *AioSocket) trySend() {
 
 		this.muW.Unlock()
 
-		/*
-			this.aioConn.PostSendBuffers(this.sendBuffs[:c], this, this.wcompleteQueue)
-			return
-		*/
+		//this.aioConn.PostSendBuffers(this.sendBuffs[:c], this, this.wcompleteQueue)
+		//return
+
 		_, err := this.aioConn.SendBuffers(this.sendBuffs[:c], this, this.wcompleteQueue)
 
 		if nil != err {
@@ -254,7 +256,9 @@ func (this *AioSocket) trySend() {
 
 func (this *AioSocket) onSendComplete(r *aiogo.CompleteEvent) {
 	if nil == r.Err {
+		//fmt.Println("onSendComplete", r.Size)
 		//this.aioConn.PostClosure(this.trySend)
+		//this.totalSend += int64(r.Size)
 		this.trySend()
 	} else {
 		flag := this.getFlag()

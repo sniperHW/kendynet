@@ -34,7 +34,7 @@ func completeRoutine(completeQueue *aiogo.CompleteQueue) {
 
 func getWatcherAndCompleteQueue() (*aiogo.Watcher, *aiogo.CompleteQueue, *aiogo.CompleteQueue) {
 	r := rand.Int()
-	return watchers[r%len(watchers)], readCompleteQueues[r%len(readCompleteQueues)], writeCompleteQueues[r%len(writeCompleteQueues)]
+	return watchers[r%len(watchers)], readCompleteQueues[r%len(readCompleteQueues)], readCompleteQueues[r%len(readCompleteQueues)]
 }
 
 func Init(watcherCount int, completeQueueCount int, workerCount int, buffPool aiogo.BufferPool) error {
