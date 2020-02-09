@@ -4,6 +4,7 @@ package aio
 
 import (
 	"container/list"
+	"fmt"
 	"github.com/sniperHW/aiogo"
 	"github.com/sniperHW/kendynet"
 	"io"
@@ -47,18 +48,18 @@ func (this *defaultReceiver) ReceiveAndUnpack(s kendynet.StreamSession) (interfa
 			this.bytes = 0
 			return msg, nil
 		} else {
-			//if this.receiveBytes >= 65536 || this.receiveCount > 10 {
-			//	this.receiveBytes = 0
-			//	this.receiveCount = 0
-			return nil, s.(*AioSocket).PostRecv(this.buffer)
-			//} else {
-			//	buff, err := s.(*AioSocket).Recv(this.buffer)
-			//	if buff != nil {
-			//		this.OnRecvOk(s, buff)
-			//	} else {
-			//		return nil, err
-			//	}
-			//}
+			if this.receiveBytes >= 65536 || this.receiveCount > 10 {
+				this.receiveBytes = 0
+				this.receiveCount = 0
+				return nil, s.(*AioSocket).PostRecv(this.buffer)
+			} else {
+				buff, err := s.(*AioSocket).Recv(this.buffer)
+				if buff != nil {
+					this.OnRecvOk(s, buff)
+				} else {
+					return nil, err
+				}
+			}
 		}
 	}
 }
@@ -254,6 +255,8 @@ func (this *AioSocket) trySend() {
 				}
 			}
 			return
+		} else {
+			this.totalSend += int64(totalSize)
 		}
 	}
 }
@@ -262,7 +265,7 @@ func (this *AioSocket) onSendComplete(r *aiogo.CompleteEvent) {
 	if nil == r.Err {
 		//fmt.Println("onSendComplete", r.Size)
 		//this.aioConn.PostClosure(this.trySend)
-		//this.totalSend += int64(r.Size)
+		this.totalSend += int64(r.Size)
 		this.trySend()
 	} else {
 		flag := this.getFlag()
@@ -342,12 +345,11 @@ func (this *AioSocket) SendMessage(msg kendynet.Message) error {
 }
 
 func (this *AioSocket) doClose() {
-	this.watcher.UnWatch(this.aioConn)
-	this.aioConn.GetRowConn().Close()
+	this.aioConn.Close()
+	this.receiver.OnClose()
 	this.Lock()
 	onClose := this.onClose
 	this.Unlock()
-	this.receiver.OnClose()
 	if nil != onClose {
 		onClose(this, this.closeReason)
 	}
