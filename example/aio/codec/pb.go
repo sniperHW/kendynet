@@ -29,6 +29,8 @@ type PBReceiver struct {
 	initBuffSize   int
 	totalMaxPacket int
 	minBuffRemain  int
+	receiveBytes   int
+	receiveCount   int
 }
 
 func NewPBReceiver(maxMsgSize int) *PBReceiver {
@@ -58,6 +60,8 @@ func (this *PBReceiver) unPack() (interface{}, error) {
 
 func (this *PBReceiver) OnRecvOk(s kendynet.StreamSession, buff []byte) {
 	l := len(buff)
+	this.receiveBytes += l
+	this.receiveCount++
 	this.unpackSize += l
 	this.recvBuff = this.recvBuff[l:]
 }
@@ -79,14 +83,18 @@ func (this *PBReceiver) ReceiveAndUnpack(s kendynet.StreamSession) (interface{},
 				this.recvBuff = this.buffer
 			}
 
-			buff, err := s.(*aio.AioSocket).Recv(this.recvBuff)
-			if nil != err {
-				return nil, err
-			} else if nil != buff {
-				this.OnRecvOk(s, buff)
-				continue
+			if this.receiveBytes >= 65536 || this.receiveCount >= 10 {
+				return nil, s.(*AioSocket).PostRecv(this.buffer)
 			} else {
-				break
+				buff, err := s.(*aio.AioSocket).Recv(this.recvBuff)
+				if nil != err {
+					return nil, err
+				} else if nil != buff {
+					this.OnRecvOk(s, buff)
+					continue
+				} else {
+					break
+				}
 			}
 		}
 		return msg, err

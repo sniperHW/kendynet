@@ -32,6 +32,7 @@ type defaultReceiver struct {
 	bytes        int
 	buffer       []byte
 	receiveBytes int
+	receiveCount int
 }
 
 func (this *defaultReceiver) StartReceive(s kendynet.StreamSession) {
@@ -46,21 +47,24 @@ func (this *defaultReceiver) ReceiveAndUnpack(s kendynet.StreamSession) (interfa
 			this.bytes = 0
 			return msg, nil
 		} else {
-			if this.receiveBytes >= 65536 {
-				return nil, s.(*AioSocket).PostRecv(this.buffer)
-			} else {
-				buff, err := s.(*AioSocket).Recv(this.buffer)
-				if buff != nil {
-					this.OnRecvOk(s, buff)
-				} else {
-					return nil, err
-				}
-			}
+			//if this.receiveBytes >= 65536 || this.receiveCount > 10 {
+			//	this.receiveBytes = 0
+			//	this.receiveCount = 0
+			return nil, s.(*AioSocket).PostRecv(this.buffer)
+			//} else {
+			//	buff, err := s.(*AioSocket).Recv(this.buffer)
+			//	if buff != nil {
+			//		this.OnRecvOk(s, buff)
+			//	} else {
+			//		return nil, err
+			//	}
+			//}
 		}
 	}
 }
 
 func (this *defaultReceiver) OnRecvOk(_ kendynet.StreamSession, buff []byte) {
+	this.receiveCount++
 	this.receiveBytes += len(buff)
 	this.bytes = len(buff)
 }
