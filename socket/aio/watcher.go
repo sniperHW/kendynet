@@ -18,14 +18,16 @@ func completeRoutine(completeQueue *aiogo.CompleteQueue) {
 		if !ok {
 			return
 		} else {
-			if es.Type == aiogo.User {
-				es.Ud.(func())()
-			} else {
-				c := es.Ud.(*AioSocket)
-				if es.Type == aiogo.Read {
-					c.onRecvComplete(es)
+			for ; nil != es; es = es.Next {
+				if es.Type == aiogo.User {
+					es.Ud.(func())()
 				} else {
-					c.onSendComplete(es)
+					c := es.Ud.(*AioSocket)
+					if es.Type == aiogo.Read {
+						c.onRecvComplete(es)
+					} else {
+						c.onSendComplete(es)
+					}
 				}
 			}
 		}
@@ -48,9 +50,8 @@ func Init(watcherCount int, completeQueueCount int, workerCount int, buffPool ai
 
 	for i := 0; i < watcherCount; i++ {
 		watcher, err := aiogo.NewWatcher(&aiogo.WatcherOption{
-			BufferPool:     buffPool,
-			NotifyOnlyMode: false,
-			WorkerCount:    workerCount,
+			BufferPool:  buffPool,
+			WorkerCount: workerCount,
 		})
 		if nil != err {
 			return err
@@ -59,13 +60,13 @@ func Init(watcherCount int, completeQueueCount int, workerCount int, buffPool ai
 	}
 
 	for i := 0; i < completeQueueCount; i++ {
-		queue := aiogo.NewCompleteQueueWithSpinlock()
+		queue := aiogo.NewCompleteQueue()
 		readCompleteQueues = append(readCompleteQueues, queue)
 		go completeRoutine(queue)
 	}
 
 	for i := 0; i < completeQueueCount; i++ {
-		queue := aiogo.NewCompleteQueueWithSpinlock()
+		queue := aiogo.NewCompleteQueue()
 		writeCompleteQueues = append(writeCompleteQueues, queue)
 		go completeRoutine(queue)
 	}

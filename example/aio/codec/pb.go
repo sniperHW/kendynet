@@ -29,8 +29,6 @@ type PBReceiver struct {
 	initBuffSize   int
 	totalMaxPacket int
 	minBuffRemain  int
-	receiveBytes   int
-	receiveCount   int
 }
 
 func NewPBReceiver(maxMsgSize int) *PBReceiver {
@@ -60,50 +58,32 @@ func (this *PBReceiver) unPack() (interface{}, error) {
 
 func (this *PBReceiver) OnRecvOk(s kendynet.StreamSession, buff []byte) {
 	l := len(buff)
-	this.receiveBytes += l
-	this.receiveCount++
 	this.unpackSize += l
 	this.recvBuff = this.recvBuff[l:]
 }
 
 func (this *PBReceiver) ReceiveAndUnpack(s kendynet.StreamSession) (interface{}, error) {
-
-	for {
-		msg, err := this.unPack()
-		if nil == msg && nil == err {
-			if len(this.recvBuff) < this.minBuffRemain {
-				if this.unpackSize > 0 {
-					//有数据尚未解包，需要移动到buffer前部
-					copy(this.buffer, this.buffer[this.unpackIdx:this.unpackIdx+this.unpackSize])
-				}
-				this.unpackIdx = 0
-				this.recvBuff = this.buffer[this.unpackSize:]
-			} else if this.unpackSize == 0 {
-				this.unpackIdx = 0
-				this.recvBuff = this.buffer
+	msg, err := this.unPack()
+	if nil == msg && nil == err {
+		if len(this.recvBuff) < this.minBuffRemain {
+			if this.unpackSize > 0 {
+				//有数据尚未解包，需要移动到buffer前部
+				copy(this.buffer, this.buffer[this.unpackIdx:this.unpackIdx+this.unpackSize])
 			}
-
-			if this.receiveBytes >= 65536 || this.receiveCount >= 10 {
-				return nil, s.(*AioSocket).PostRecv(this.buffer)
-			} else {
-				buff, err := s.(*aio.AioSocket).Recv(this.recvBuff)
-				if nil != err {
-					return nil, err
-				} else if nil != buff {
-					this.OnRecvOk(s, buff)
-					continue
-				} else {
-					break
-				}
-			}
+			this.unpackIdx = 0
+			this.recvBuff = this.buffer[this.unpackSize:]
+		} else if this.unpackSize == 0 {
+			this.unpackIdx = 0
+			this.recvBuff = this.buffer
 		}
-		return msg, err
+
+		return nil, s.(*aio.AioSocket).Recv(this.buffer)
 	}
-	return nil, nil
+	return msg, err
 }
 
 func (this *PBReceiver) StartReceive(s kendynet.StreamSession) {
-	s.(*aio.AioSocket).PostRecv(this.recvBuff)
+	s.(*aio.AioSocket).Recv(this.recvBuff)
 }
 
 func (this *PBReceiver) OnClose() {

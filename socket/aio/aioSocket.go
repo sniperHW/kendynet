@@ -4,7 +4,6 @@ package aio
 
 import (
 	"container/list"
-	"fmt"
 	"github.com/sniperHW/aiogo"
 	"github.com/sniperHW/kendynet"
 	"io"
@@ -30,14 +29,12 @@ type AioReceiver interface {
 }
 
 type defaultReceiver struct {
-	bytes        int
-	buffer       []byte
-	receiveBytes int
-	receiveCount int
+	bytes  int
+	buffer []byte
 }
 
 func (this *defaultReceiver) StartReceive(s kendynet.StreamSession) {
-	s.(*AioSocket).PostRecv(this.buffer)
+	s.(*AioSocket).Recv(this.buffer)
 }
 
 func (this *defaultReceiver) ReceiveAndUnpack(s kendynet.StreamSession) (interface{}, error) {
@@ -48,25 +45,12 @@ func (this *defaultReceiver) ReceiveAndUnpack(s kendynet.StreamSession) (interfa
 			this.bytes = 0
 			return msg, nil
 		} else {
-			if this.receiveBytes >= 65536 || this.receiveCount > 10 {
-				this.receiveBytes = 0
-				this.receiveCount = 0
-				return nil, s.(*AioSocket).PostRecv(this.buffer)
-			} else {
-				buff, err := s.(*AioSocket).Recv(this.buffer)
-				if buff != nil {
-					this.OnRecvOk(s, buff)
-				} else {
-					return nil, err
-				}
-			}
+			return nil, s.(*AioSocket).Recv(this.buffer)
 		}
 	}
 }
 
 func (this *defaultReceiver) OnRecvOk(_ kendynet.StreamSession, buff []byte) {
-	this.receiveCount++
-	this.receiveBytes += len(buff)
 	this.bytes = len(buff)
 }
 
@@ -174,27 +158,7 @@ func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 	}
 }
 
-func (this *AioSocket) Recv(buff []byte) ([]byte, error) {
-
-	this.Lock()
-	defer this.Unlock()
-
-	if (this.flag&closed) > 0 || (this.flag&rclosed) > 0 {
-		return nil, kendynet.ErrSocketClose
-	}
-
-	if (this.flag & started) == 0 {
-		return nil, kendynet.ErrNotStart
-	}
-
-	if buff, err := this.aioConn.Recv(buff, this, this.rcompleteQueue); err != aiogo.ErrIoPending {
-		return buff, err
-	} else {
-		return buff, nil
-	}
-}
-
-func (this *AioSocket) PostRecv(buff []byte) error {
+func (this *AioSocket) Recv(buff []byte) error {
 
 	this.Lock()
 	defer this.Unlock()
@@ -207,64 +171,40 @@ func (this *AioSocket) PostRecv(buff []byte) error {
 		return kendynet.ErrNotStart
 	}
 
-	return this.aioConn.PostRecv(buff, this, this.rcompleteQueue)
+	return this.aioConn.Recv(buff, this, this.rcompleteQueue)
 }
 
 func (this *AioSocket) trySend() {
-
-	for {
-		this.muW.Lock()
-		if this.pendingSend.Len() == 0 {
-			this.sendLock = false
-			onClearSendQueue := this.onClearSendQueue
-			this.muW.Unlock()
-			if nil != onClearSendQueue {
-				onClearSendQueue()
-			}
-			return
-		}
-
-		c := 0
-		totalSize := 0
-		for v := this.pendingSend.Front(); v != nil; v = this.pendingSend.Front() {
-			this.pendingSend.Remove(v)
-			this.sendBuffs[c] = v.Value.(kendynet.Message).Bytes()
-			totalSize += len(this.sendBuffs[c])
-			c++
-			if c >= len(this.sendBuffs) || totalSize >= this.maxPostSendSize {
-				break
-			}
-		}
-
+	this.muW.Lock()
+	if this.pendingSend.Len() == 0 {
+		this.sendLock = false
+		onClearSendQueue := this.onClearSendQueue
 		this.muW.Unlock()
+		if nil != onClearSendQueue {
+			onClearSendQueue()
+		}
+		return
+	}
 
-		//this.aioConn.PostSendBuffers(this.sendBuffs[:c], this, this.wcompleteQueue)
-		//return
-
-		_, err := this.aioConn.SendBuffers(this.sendBuffs[:c], this, this.wcompleteQueue)
-
-		if nil != err {
-			if err != aiogo.ErrIoPending {
-				flag := this.getFlag()
-				if !(flag&closed > 0) {
-					this.onEvent(&kendynet.Event{
-						Session:   this,
-						EventType: kendynet.EventTypeError,
-						Data:      err,
-					})
-				}
-			}
-			return
-		} else {
-			this.totalSend += int64(totalSize)
+	c := 0
+	totalSize := 0
+	for v := this.pendingSend.Front(); v != nil; v = this.pendingSend.Front() {
+		this.pendingSend.Remove(v)
+		this.sendBuffs[c] = v.Value.(kendynet.Message).Bytes()
+		totalSize += len(this.sendBuffs[c])
+		c++
+		if c >= len(this.sendBuffs) || totalSize >= this.maxPostSendSize {
+			break
 		}
 	}
+
+	this.muW.Unlock()
+	this.aioConn.SendBuffers(this.sendBuffs[:c], this, this.wcompleteQueue)
+	return
 }
 
 func (this *AioSocket) onSendComplete(r *aiogo.CompleteEvent) {
 	if nil == r.Err {
-		//fmt.Println("onSendComplete", r.Size)
-		//this.aioConn.PostClosure(this.trySend)
 		this.totalSend += int64(r.Size)
 		this.trySend()
 	} else {
