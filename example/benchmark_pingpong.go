@@ -21,6 +21,10 @@ import (
 
 func server(service string) {
 
+	go func() {
+		http.ListenAndServe("0.0.0.0:6060", nil)
+	}()
+
 	clientcount := int32(0)
 	bytescount := int32(0)
 	packetcount := int32(0)
@@ -126,10 +130,6 @@ func main() {
 	//f, _ := os.Create("profile_file")
 	//pprof.StartCPUProfile(f)     // 开始cpu profile，结果写到文件f中
 	//defer pprof.StopCPUProfile() // 结束profile
-
-	go func() {
-		http.ListenAndServe("0.0.0.0:6060", nil)
-	}()
 
 	outLogger := golog.NewOutputLogger("log", "kendynet", 1024*1024*1000)
 	kendynet.InitLogger(golog.New("rpc", outLogger))
