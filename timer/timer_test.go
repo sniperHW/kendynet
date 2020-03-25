@@ -99,4 +99,69 @@ func TestTimer(t *testing.T) {
 		assert.Equal(t, timer_.Cancel(), true)
 	}
 
+	{
+
+		die := make(chan struct{})
+
+		expect_firetime := time.Now().Unix() + 2
+		var firetime int64
+		timer_ := Once(5*time.Second, nil, func(_ *Timer, ctx interface{}) {
+			firetime = time.Now().Unix()
+			fmt.Println("Once timer")
+			close(die)
+		}, nil)
+
+		assert.Equal(t, true, timer_.ResetFireTime(2*time.Second))
+
+		<-die
+
+		assert.Equal(t, firetime, expect_firetime)
+
+	}
+
+	{
+
+		die := make(chan struct{})
+
+		expect_firetime := time.Now().Unix() + 5
+		var firetime int64
+		timer_ := Once(2*time.Second, nil, func(_ *Timer, ctx interface{}) {
+			firetime = time.Now().Unix()
+			fmt.Println("Once timer")
+			close(die)
+		}, nil)
+
+		assert.Equal(t, true, timer_.ResetFireTime(5*time.Second))
+
+		<-die
+
+		assert.Equal(t, firetime, expect_firetime)
+
+	}
+
+	{
+
+		die := make(chan struct{})
+		i := 0
+
+		expect_firetime := time.Now().Unix() + 2
+
+		timer_ := Repeat(1*time.Second, nil, func(timer_ *Timer, ctx interface{}) {
+			i++
+			fmt.Println("Repeat timer", i)
+			assert.Equal(t, expect_firetime, time.Now().Unix())
+			if i == 2 {
+				assert.Equal(t, false, timer_.Cancel())
+				close(die)
+			} else {
+				expect_firetime = time.Now().Unix() + 1
+				timer_.ResetDuration(1 * time.Second)
+			}
+		}, nil)
+
+		timer_.ResetDuration(2 * time.Second)
+
+		<-die
+	}
+
 }

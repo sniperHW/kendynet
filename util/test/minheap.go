@@ -39,6 +39,12 @@ func main() {
 	heap.Insert(ele1)
 	heap.Insert(ele2)
 	heap.Insert(ele3)
+
+	fmt.Println(ele3.GetIndex())
+
+	ele3.value = 100
+	heap.Fix(ele3)
+	fmt.Println(ele3.GetIndex())
 	/*heap.Insert(ele4)
 	heap.Insert(ele5)
 	heap.Insert(ele6)
