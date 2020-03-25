@@ -42,11 +42,11 @@ func (this *RPCReplyer) GetChannel() RPCChannel {
 type RPCMethodHandler func(*RPCReplyer, interface{})
 
 type RPCServer struct {
-	encoder      RPCMessageEncoder
-	decoder      RPCMessageDecoder
-	methods      map[string]RPCMethodHandler
-	mutexMethods sync.Mutex
-	lastSeq      uint64
+	sync.RWMutex
+	encoder RPCMessageEncoder
+	decoder RPCMessageDecoder
+	methods map[string]RPCMethodHandler
+	lastSeq uint64
 }
 
 func (this *RPCServer) RegisterMethod(name string, method RPCMethodHandler) error {
@@ -58,8 +58,8 @@ func (this *RPCServer) RegisterMethod(name string, method RPCMethodHandler) erro
 		panic("method == nil")
 	}
 
-	defer this.mutexMethods.Unlock()
-	this.mutexMethods.Lock()
+	defer this.Unlock()
+	this.Lock()
 
 	_, ok := this.methods[name]
 	if ok {
@@ -70,8 +70,8 @@ func (this *RPCServer) RegisterMethod(name string, method RPCMethodHandler) erro
 }
 
 func (this *RPCServer) UnRegisterMethod(name string) {
-	defer this.mutexMethods.Unlock()
-	this.mutexMethods.Lock()
+	defer this.Unlock()
+	this.Lock()
 	delete(this.methods, name)
 }
 
@@ -103,9 +103,9 @@ func (this *RPCServer) OnRPCMessage(channel RPCChannel, message interface{}) {
 	case *RPCRequest:
 		{
 			req := msg.(*RPCRequest)
-			this.mutexMethods.Lock()
+			this.RLock()
 			method, ok := this.methods[req.Method]
-			this.mutexMethods.Unlock()
+			this.RUnlock()
 			if !ok {
 				err = fmt.Errorf("invaild method:%s", req.Method)
 				kendynet.Errorf(util.FormatFileLine("rpc request from(%s) invaild method %s\n", channel.Name(), req.Method))
