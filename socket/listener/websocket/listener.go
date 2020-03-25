@@ -64,7 +64,7 @@ func (this *Listener) Serve(onNewClient func(kendynet.StreamSession)) error {
 	http.HandleFunc(this.origin, func(w http.ResponseWriter, r *http.Request) {
 		c, err := this.upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			kendynet.Errorf("wssocket Upgrade failed:%s\n", err.Error())
+			kendynet.GetLogger().Errorf("wssocket Upgrade failed:%s\n", err.Error())
 			return
 		}
 		sess := socket.NewWSSocket(c)
@@ -73,7 +73,7 @@ func (this *Listener) Serve(onNewClient func(kendynet.StreamSession)) error {
 
 	err := http.Serve(this.listener, nil)
 	if err != nil {
-		kendynet.Errorf("http.Serve() failed:%s\n", err.Error())
+		kendynet.GetLogger().Errorf("http.Serve() failed:%s\n", err.Error())
 	}
 
 	this.listener.Close()

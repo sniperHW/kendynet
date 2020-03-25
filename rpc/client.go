@@ -31,7 +31,7 @@ func (this *contextGroup) onResponse(resp *RPCResponse) {
 			ctx.callResponseCB(resp.Ret, resp.Err)
 		}
 	} else {
-		kendynet.Infoln("onResponse with no reqContext", resp.GetSeq())
+		kendynet.GetLogger().Infoln("onResponse with no reqContext", resp.GetSeq())
 	}
 }
 
@@ -57,7 +57,7 @@ func (this *reqContext) callResponseCB_(ret interface{}, err error) {
 }
 
 func (this *reqContext) onTimeout(_ *timer.Timer, _ interface{}) {
-	kendynet.Infoln("req timeout", this.seq)
+	kendynet.GetLogger().Infoln("req timeout", this.seq)
 	this.callResponseCB(nil, ErrCallTimeout)
 }
 
@@ -70,7 +70,7 @@ type RPCClient struct {
 //收到RPC消息后调用
 func (this *RPCClient) OnRPCMessage(message interface{}) {
 	if msg, err := this.decoder.Decode(message); nil != err {
-		kendynet.Errorf(util.FormatFileLine("RPCClient rpc message decode err:%s\n", err.Error()))
+		kendynet.GetLogger().Errorf(util.FormatFileLine("RPCClient rpc message decode err:%s\n", err.Error()))
 	} else {
 		if resp, ok := msg.(*RPCResponse); ok {
 			contextGroups[msg.GetSeq()%uint64(len(contextGroups))].onResponse(resp)
