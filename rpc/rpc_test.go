@@ -18,21 +18,6 @@ import (
 	"time"
 )
 
-type Logger struct {
-}
-
-func (this *Logger) Debugf(format string, v ...interface{}) {}
-func (this *Logger) Debugln(v ...interface{})               {}
-func (this *Logger) Infof(format string, v ...interface{})  {}
-func (this *Logger) Infoln(v ...interface{})                {}
-func (this *Logger) Warnf(format string, v ...interface{})  {}
-func (this *Logger) Warnln(v ...interface{})                {}
-func (this *Logger) Errorf(format string, v ...interface{}) {}
-func (this *Logger) Errorln(v ...interface{})               {}
-func (this *Logger) Fatalf(format string, v ...interface{}) {}
-func (this *Logger) Fatalln(v ...interface{})               {}
-func (this *Logger) SetLevelByString(level string)          {}
-
 type TcpStreamChannel struct {
 	session kendynet.StreamSession
 	name    string
@@ -231,7 +216,7 @@ func init() {
 	pb.Register(&testproto.RPCResponse{}, 3)
 	pb.Register(&testproto.RPCRequest{}, 4)
 
-	kendynet.InitLogger(&Logger{})
+	kendynet.InitLogger(&kendynet.EmptyLogger{})
 }
 
 func TestRPC(t *testing.T) {

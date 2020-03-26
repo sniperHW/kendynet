@@ -15,6 +15,21 @@ func GetLogger() golog.LoggerI {
 	return logger
 }
 
+type EmptyLogger struct {
+}
+
+func (this *EmptyLogger) Debugf(format string, v ...interface{}) {}
+func (this *EmptyLogger) Debugln(v ...interface{})               {}
+func (this *EmptyLogger) Infof(format string, v ...interface{})  {}
+func (this *EmptyLogger) Infoln(v ...interface{})                {}
+func (this *EmptyLogger) Warnf(format string, v ...interface{})  {}
+func (this *EmptyLogger) Warnln(v ...interface{})                {}
+func (this *EmptyLogger) Errorf(format string, v ...interface{}) {}
+func (this *EmptyLogger) Errorln(v ...interface{})               {}
+func (this *EmptyLogger) Fatalf(format string, v ...interface{}) {}
+func (this *EmptyLogger) Fatalln(v ...interface{})               {}
+func (this *EmptyLogger) SetLevelByString(level string)          {}
+
 /*
 func Debugf(format string, v ...interface{}) {
 	if nil != logger {
