@@ -1,19 +1,16 @@
-package main
+package event
 
+//go test -covermode=count -v -run=.
 import (
 	"fmt"
-	"github.com/sniperHW/kendynet"
-	"github.com/sniperHW/kendynet/event"
-	"github.com/sniperHW/kendynet/golog"
+	"testing"
 )
-
-//var eventQueue *event.EventQueue
 
 func testQueueMode() {
 
 	fmt.Println("-------------------testQueueMode-----------------")
 
-	handler := event.NewEventHandler()
+	handler := NewEventHandler()
 
 	handler.Register("queue", func() {
 		fmt.Println("handler1")
@@ -49,7 +46,7 @@ func testQueueOnceMode() {
 
 	fmt.Println("-------------------testQueueOnceMode-----------------")
 
-	handler := event.NewEventHandler()
+	handler := NewEventHandler()
 
 	handler.Register("queue", func(msg ...interface{}) {
 		fmt.Println("handler1", msg[0])
@@ -64,7 +61,7 @@ func testQueueOnceMode() {
 	})
 
 	/*
-	* 所有注册的处理器将按注册顺序依次执行
+	 * 所有注册的处理器将按注册顺序依次执行
 	 */
 
 	handler.Emit("queue", "hello")
@@ -77,17 +74,25 @@ func testQueueOnceMode() {
 
 }
 
-func main() {
+func testUseEventQueue() {
+	queue := NewEventQueue()
+	go queue.Run()
 
-	outLogger := golog.NewOutputLogger("log", "kendynet", 1024*1024*1000)
-	kendynet.InitLogger(golog.New("rpc", outLogger))
+	handler := NewEventHandler(queue)
 
+	handler.Register("queue", func() {
+		fmt.Println("handler1")
+		queue.Close()
+	})
+
+	handler.Emit("queue")
+
+}
+
+func TestEvent(t *testing.T) {
 	testQueueMode()
 
 	testQueueOnceMode()
 
-	//eventQueue.Close()
-
-	//eventQueue.Run()
-
+	testUseEventQueue()
 }
