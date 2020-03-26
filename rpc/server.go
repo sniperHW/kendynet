@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/util"
-	"runtime"
 	"sync"
 	"sync/atomic"
 )
@@ -76,17 +75,10 @@ func (this *RPCServer) UnRegisterMethod(name string) {
 }
 
 func (this *RPCServer) callMethod(method RPCMethodHandler, replyer *RPCReplyer, arg interface{}) {
-	defer func() {
-		if r := recover(); r != nil {
-			buf := make([]byte, 65535)
-			l := runtime.Stack(buf, false)
-			err := fmt.Errorf("%v: %s", r, buf[:l])
-			kendynet.GetLogger().Errorf(util.FormatFileLine("%s\n", err.Error()))
-			replyer.reply(&RPCResponse{Seq: replyer.req.Seq, Err: err})
-		}
-	}()
-	method(replyer, arg)
-	return
+	if _, err := util.ProtectCall(method, replyer, arg); nil != err {
+		kendynet.GetLogger().Errorln(err.Error())
+		replyer.reply(&RPCResponse{Seq: replyer.req.Seq, Err: err})
+	}
 }
 
 /*

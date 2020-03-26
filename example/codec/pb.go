@@ -67,7 +67,7 @@ func (this *PBReceiver) check(buff []byte) {
 			}
 		}
 		if j == 8 {
-			kendynet.Infoln(buff)
+			kendynet.GetLogger().Infoln(buff)
 		}
 	}
 }
@@ -110,7 +110,7 @@ func (this *PBReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface
 				return nil, err
 			}
 		} else {
-			kendynet.Infoln(this.unpackIdx, this.unpackSize, this.buffer[this.lastUnpackIdx:this.unpackIdx+this.unpackSize])
+			kendynet.GetLogger().Infoln(this.unpackIdx, this.unpackSize, this.buffer[this.lastUnpackIdx:this.unpackIdx+this.unpackSize])
 			panic("err")
 			break
 		}

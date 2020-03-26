@@ -130,7 +130,6 @@ func main() {
 
 	outLogger := golog.NewOutputLogger("log", "kendynet", 1024*1024*1000)
 	kendynet.InitLogger(golog.New("rpc", outLogger))
-	kendynet.Debugln("start")
 
 	if len(os.Args) < 3 {
 		fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")
