@@ -2,6 +2,7 @@ package socket
 
 //go test -covermode=count -v -run=TestStreamSocket
 import (
+	"errors"
 	gorilla "github.com/gorilla/websocket"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/message"
@@ -13,8 +14,28 @@ import (
 	"time"
 )
 
-func init() {
-	kendynet.InitLogger(&kendynet.EmptyLogger{})
+type encoder struct {
+}
+
+func (this *encoder) EnCode(o interface{}) (kendynet.Message, error) {
+	switch o.(type) {
+	case *kendynet.ByteBuffer:
+		return o.(*kendynet.ByteBuffer), nil
+	default:
+		return nil, errors.New("invaild o")
+	}
+}
+
+type wsencoder struct {
+}
+
+func (this *wsencoder) EnCode(o interface{}) (kendynet.Message, error) {
+	switch o.(type) {
+	case string:
+		return message.NewWSMessage(message.WSTextMessage, o.(string)), nil
+	default:
+		return nil, errors.New("invaild o")
+	}
 }
 
 func TestWebSocket(t *testing.T) {
@@ -44,6 +65,8 @@ func TestWebSocket(t *testing.T) {
 			session.Start(func(event *kendynet.Event) {
 				if event.EventType == kendynet.EventTypeError {
 					event.Session.Close(event.Data.(error).Error(), 0)
+					assert.Equal(t, session.Start(func(event *kendynet.Event) {}), kendynet.ErrSocketClose)
+					assert.Equal(t, session.SendMessage(message.NewWSMessage(message.WSTextMessage, "hello")), kendynet.ErrSocketClose)
 				} else {
 					event.Session.SendMessage(event.Data.(kendynet.Message))
 				}
@@ -63,6 +86,10 @@ func TestWebSocket(t *testing.T) {
 
 		respChan := make(chan kendynet.Message)
 
+		session.SetReceiver(session.(*WebSocket).defaultReceiver())
+
+		session.SetEncoder(&wsencoder{})
+
 		session.Start(func(event *kendynet.Event) {
 			if event.EventType == kendynet.EventTypeError {
 				event.Session.Close(event.Data.(error).Error(), 0)
@@ -71,7 +98,14 @@ func TestWebSocket(t *testing.T) {
 			}
 		})
 
-		session.SendMessage(message.NewWSMessage(message.WSTextMessage, "hello"))
+		//启动后设置无效
+		session.SetReceiver(nil)
+
+		session.SetSendQueueSize(100)
+
+		assert.Equal(t, session.Start(func(event *kendynet.Event) {}), kendynet.ErrStarted)
+
+		session.Send("hello")
 
 		resp := <-respChan
 
@@ -131,6 +165,8 @@ func TestWebSocket(t *testing.T) {
 			}
 		})
 
+		assert.Equal(t, session.SendMessage(nil), kendynet.ErrInvaildBuff)
+
 		session.SendMessage(message.NewWSMessage(message.WSTextMessage, "hello"))
 
 		resp := <-respChan
@@ -165,6 +201,7 @@ func TestStreamSocket(t *testing.T) {
 					session.Start(func(event *kendynet.Event) {
 						if event.EventType == kendynet.EventTypeError {
 							event.Session.Close(event.Data.(error).Error(), 0)
+							assert.Equal(t, session.SendMessage(kendynet.NewByteBuffer("hello")), kendynet.ErrSocketClose)
 						} else {
 							event.Session.SendMessage(event.Data.(kendynet.Message))
 						}
@@ -185,15 +222,22 @@ func TestStreamSocket(t *testing.T) {
 
 		respChan := make(chan kendynet.Message)
 
+		session.SetReceiver(session.(*StreamSocket).defaultReceiver())
+
+		session.SetEncoder(&encoder{})
+
 		session.Start(func(event *kendynet.Event) {
 			if event.EventType == kendynet.EventTypeError {
 				event.Session.Close(event.Data.(error).Error(), 0)
+				assert.Equal(t, true, session.IsClosed())
 			} else {
 				respChan <- event.Data.(kendynet.Message)
 			}
 		})
 
-		session.SendMessage(kendynet.NewByteBuffer("hello"))
+		assert.Equal(t, session.SendMessage(nil), kendynet.ErrInvaildBuff)
+
+		session.Send(kendynet.NewByteBuffer("hello"))
 
 		resp := <-respChan
 

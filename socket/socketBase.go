@@ -145,9 +145,6 @@ func (this *SocketBase) SetCloseCallBack(cb func(kendynet.StreamSession, string)
 }
 
 func (this *SocketBase) SetEncoder(encoder kendynet.EnCoder) {
-	//this.mutex.Lock()
-	//defer this.mutex.Unlock()
-	//this.encoder = encoder
 	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&this.encoder)), unsafe.Pointer(&encoder))
 }
 

@@ -12,6 +12,9 @@ func InitLogger(l golog.LoggerI) {
 }
 
 func GetLogger() golog.LoggerI {
+	if nil == logger {
+		return &EmptyLogger{}
+	}
 	return logger
 }
 

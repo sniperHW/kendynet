@@ -215,8 +215,6 @@ func init() {
 	pb.Register(&testproto.World{}, 2)
 	pb.Register(&testproto.RPCResponse{}, 3)
 	pb.Register(&testproto.RPCRequest{}, 4)
-
-	kendynet.InitLogger(&kendynet.EmptyLogger{})
 }
 
 func TestRPC(t *testing.T) {
