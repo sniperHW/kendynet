@@ -29,7 +29,7 @@ func TestTimer(t *testing.T) {
 
 		assert.Equal(t, i, 10)
 
-		assert.Equal(t, timer_.Cancel(), false)
+		assert.Equal(t, false, timer_.Cancel())
 
 	}
 
@@ -137,6 +137,8 @@ func TestTimer(t *testing.T) {
 
 		assert.Equal(t, firetime, expect_firetime)
 
+		assert.Equal(t, false, timer_.ResetFireTime(5*time.Second))
+
 	}
 
 	{
@@ -162,6 +164,8 @@ func TestTimer(t *testing.T) {
 		timer_.ResetDuration(2 * time.Second)
 
 		<-die
+
+		assert.Equal(t, false, timer_.ResetDuration(2*time.Second))
 	}
 
 }
