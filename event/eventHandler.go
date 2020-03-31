@@ -3,7 +3,6 @@ package event
 import (
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/util"
-	"reflect"
 	"sync"
 	"sync/atomic"
 )
@@ -53,8 +52,26 @@ func NewEventHandler(processQueue ...*EventQueue) *EventHandler {
 	}
 }
 
-func (this *EventHandler) getSlot(h *handle) *handlerSlot {
-	slot, ok := this.slots[h.event]
+func (this *EventHandler) register(event interface{}, once bool, fn interface{}) Handle {
+	if nil == event {
+		panic("event == nil")
+	}
+
+	switch fn.(type) {
+	case func(), func(...interface{}), func(Handle), func(Handle, ...interface{}):
+	default:
+		panic("invaild fn type")
+	}
+
+	h := &handle{
+		fn:    fn,
+		once:  once,
+		event: event,
+	}
+
+	this.Lock()
+	defer this.Unlock()
+	slot, ok := this.slots[event]
 	if !ok {
 		slot = &handlerSlot{
 			l:       make([]handList, 2),
@@ -69,37 +86,6 @@ func (this *EventHandler) getSlot(h *handle) *handlerSlot {
 
 		this.slots[h.event] = slot
 	}
-	return slot
-}
-
-func (this *EventHandler) register(event interface{}, once bool, fn interface{}) Handle {
-	if nil == event {
-		panic("event == nil")
-	}
-
-	switch fn.(type) {
-	case func():
-		break
-	case func(...interface{}):
-		break
-	case func(Handle):
-		break
-	case func(Handle, ...interface{}):
-		break
-	default:
-		panic("invaild fn type")
-		break
-	}
-
-	h := &handle{
-		fn:    fn,
-		once:  once,
-		event: event,
-	}
-
-	this.Lock()
-	defer this.Unlock()
-	slot := this.getSlot(h)
 	slot.register(h)
 
 	return Handle(h)
@@ -130,9 +116,7 @@ func (this *EventHandler) Emit(event interface{}, args ...interface{}) {
 	this.RUnlock()
 	if ok {
 		if this.processQueue != nil {
-			this.processQueue.PostNoWait(func() {
-				slot.emit(args...)
-			})
+			this.processQueue.PostNoWait(slot.emit, args...)
 		} else {
 			slot.emit(args...)
 		}
@@ -176,23 +160,17 @@ func (this *handlerSlot) remove(h *handle) {
 	}
 }
 
-func (this *handlerSlot) pcall(h *handle, args []interface{}) {
-	fn := h.fn
+func pcall2(h *handle, args []interface{}) {
 	defer util.Recover(kendynet.GetLogger())
-	switch fn.(type) {
+	switch h.fn.(type) {
 	case func():
-		fn.(func())()
+		h.fn.(func())()
 	case func(Handle):
-		fn.(func(Handle))((Handle)(h))
-		break
+		h.fn.(func(Handle))((Handle)(h))
 	case func(...interface{}):
-		fn.(func(...interface{}))(args...)
-		break
+		h.fn.(func(...interface{}))(args...)
 	case func(Handle, ...interface{}):
-		fn.(func(Handle, ...interface{}))((Handle)(h), args...)
-		break
-	default:
-		panic("invaild fn type:" + reflect.TypeOf(fn).Name())
+		h.fn.(func(Handle, ...interface{}))((Handle)(h), args...)
 	}
 }
 
@@ -211,7 +189,7 @@ func (this *handlerSlot) emit(args ...interface{}) {
 		}
 		next := cur.nnext
 		if atomic.LoadInt32(&cur.removed) == 0 {
-			this.pcall(cur, args)
+			pcall2(cur, args)
 		}
 		cur = next
 	}

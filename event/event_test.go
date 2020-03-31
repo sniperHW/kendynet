@@ -152,7 +152,20 @@ func testUseEventQueue() {
 
 	handler.Register("queue", func() {
 		fmt.Println("handler1")
-		queue.Close()
+
+		queue.Post(func() {
+			fmt.Println("queue fun1")
+		})
+
+		queue.PostFullReturn(func([]interface{}) {
+			fmt.Println("queue fun2")
+		})
+
+		queue.PostNoWait(func(...interface{}) {
+			fmt.Println("queue fun3")
+			queue.Close()
+		})
+
 	})
 
 	handler.Emit("queue")
