@@ -1,6 +1,7 @@
 package timer
 
 //go test -covermode=count -v -run=.
+//go test -v -run=^$ -bench Benchmark -count 10
 import (
 	"fmt"
 	"github.com/sniperHW/kendynet/event"
@@ -8,6 +9,19 @@ import (
 	"testing"
 	"time"
 )
+
+func BenchmarkTimer(b *testing.B) {
+	t := Once(10*time.Second, nil, func(_ *Timer, ctx interface{}) {
+	}, nil)
+	t.Cancel()
+}
+
+func BenchmarkGoTimer(b *testing.B) {
+	t := time.AfterFunc(10*time.Second, func() {
+
+	})
+	t.Stop()
+}
 
 func TestTimer(t *testing.T) {
 
