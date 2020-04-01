@@ -6,34 +6,15 @@ import (
 	"github.com/sniperHW/kendynet/event"
 	"github.com/sniperHW/kendynet/timer"
 	"github.com/sniperHW/kendynet/util"
-	"sync"
 	"sync/atomic"
 	"time"
 )
 
 var ErrCallTimeout error = fmt.Errorf("rpc call timeout")
 
-var client_once sync.Once
 var sequence uint64
-var groupCount uint64 = 61
-var contextGroups []*contextGroup = make([]*contextGroup, groupCount)
 
 type RPCResponseHandler func(interface{}, error)
-
-type contextGroup struct {
-	timerMgr *timer.TimerMgr
-}
-
-func (this *contextGroup) onResponse(resp *RPCResponse) {
-	if t := this.timerMgr.GetTimerByIndex(resp.GetSeq()); nil != t {
-		if t.Cancel() {
-			ctx := t.GetCTX().(*reqContext)
-			ctx.callResponseCB(resp.Ret, resp.Err)
-		}
-	} else {
-		kendynet.GetLogger().Infoln("onResponse with no reqContext", resp.GetSeq())
-	}
-}
 
 type reqContext struct {
 	seq          uint64
@@ -41,19 +22,25 @@ type reqContext struct {
 	cbEventQueue *event.EventQueue
 }
 
-func (this *reqContext) callResponseCB(ret interface{}, err error) {
-	if this.cbEventQueue != nil {
-		this.cbEventQueue.PostNoWait(func() {
-			this.callResponseCB_(ret, err)
-		})
-	} else {
-		this.callResponseCB_(ret, err)
+func onResponse(resp *RPCResponse) {
+	var ok bool
+	var ctx interface{}
+	if ok, ctx = timer.CancelByIndex(resp.GetSeq()); ok {
+		ctx.(*reqContext).callResponseCB(resp.Ret, resp.Err)
+	} else if nil == ctx {
+		kendynet.GetLogger().Infoln("onResponse with no reqContext", resp.GetSeq())
 	}
 }
 
-func (this *reqContext) callResponseCB_(ret interface{}, err error) {
-	defer util.Recover(kendynet.GetLogger())
-	this.onResponse(ret, err)
+func (this *reqContext) callResponseCB(ret interface{}, err error) {
+	if this.cbEventQueue != nil {
+		this.cbEventQueue.PostNoWait(func() {
+			this.onResponse(ret, err)
+		})
+	} else {
+		defer util.Recover(kendynet.GetLogger())
+		this.onResponse(ret, err)
+	}
 }
 
 func (this *reqContext) onTimeout(_ *timer.Timer, _ interface{}) {
@@ -73,7 +60,7 @@ func (this *RPCClient) OnRPCMessage(message interface{}) {
 		kendynet.GetLogger().Errorf(util.FormatFileLine("RPCClient rpc message decode err:%s\n", err.Error()))
 	} else {
 		if resp, ok := msg.(*RPCResponse); ok {
-			contextGroups[msg.GetSeq()%uint64(len(contextGroups))].onResponse(resp)
+			onResponse(resp)
 		} else {
 			panic("RPCClient.OnRPCMessage() invaild msg type")
 		}
@@ -127,9 +114,8 @@ func (this *RPCClient) AsynCall(channel RPCChannel, method string, arg interface
 	if request, err := this.encoder.Encode(req); err != nil {
 		return err
 	} else {
-		group := contextGroups[req.Seq%uint64(len(contextGroups))]
 		if err = channel.SendRequest(request); err == nil {
-			group.timerMgr.OnceWithIndex(timeout, nil, context.onTimeout, context, context.seq)
+			timer.OnceWithIndex(timeout, nil, context.onTimeout, context, context.seq)
 			return nil
 		} else {
 			return err
@@ -167,14 +153,6 @@ func NewClient(decoder RPCMessageDecoder, encoder RPCMessageEncoder, cbEventQueu
 	if len(cbEventQueue) > 0 {
 		q = cbEventQueue[0]
 	}
-
-	client_once.Do(func() {
-		for i := uint64(0); i < groupCount; i++ {
-			contextGroups[i] = &contextGroup{
-				timerMgr: timer.NewTimerMgr(),
-			}
-		}
-	})
 
 	return &RPCClient{
 		encoder:      encoder,

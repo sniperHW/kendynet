@@ -257,6 +257,22 @@ func TestRPC(t *testing.T) {
 			_, err := caller.Call("hello", &testproto.Hello{Hello: proto.String("testtimeout")}, time.Second)
 			assert.Equal(t, err, ErrCallTimeout)
 		}
+
+	}
+
+	{
+		//asyncall
+		caller := NewCaller()
+		assert.Nil(t, caller.Dial("localhost:8110", 10*time.Second, nil))
+		ok := make(chan struct{})
+
+		caller.AsynCall("hello", &testproto.Hello{Hello: proto.String("hello")}, time.Second, func(r interface{}, err error) {
+			assert.Nil(t, err)
+			assert.Equal(t, r.(*testproto.World).GetWorld(), "world")
+			close(ok)
+		})
+
+		<-ok
 	}
 
 	{

@@ -11,16 +11,41 @@ import (
 )
 
 func BenchmarkTimer(b *testing.B) {
-	t := Once(10*time.Second, nil, func(_ *Timer, ctx interface{}) {
-	}, nil)
-	t.Cancel()
+	b.ReportAllocs()
+	timers := make([]*Timer, b.N)
+	for i := 0; i < b.N; i++ {
+		t := Once(10*time.Second, nil, func(_ *Timer, ctx interface{}) {
+		}, nil)
+		timers[i] = t
+	}
+
+	for i := b.N - 1; i > 0; i-- {
+		timers[i].Cancel()
+	}
+
+	//for _, v := range timers {
+	//	v.Cancel()
+	//}
 }
 
 func BenchmarkGoTimer(b *testing.B) {
-	t := time.AfterFunc(10*time.Second, func() {
+	b.ReportAllocs()
+	timers := make([]*time.Timer, b.N)
 
-	})
-	t.Stop()
+	for i := 0; i < b.N; i++ {
+		t := time.AfterFunc(10*time.Second, func() {
+
+		})
+		timers[i] = t
+	}
+
+	for i := b.N - 1; i > 0; i-- {
+		timers[i].Stop()
+	}
+
+	/*for _, v := range timers {
+		v.Stop()
+	}*/
 }
 
 func TestTimer(t *testing.T) {
@@ -111,6 +136,18 @@ func TestTimer(t *testing.T) {
 		assert.NotNil(t, timer_)
 
 		assert.Equal(t, timer_.Cancel(), true)
+	}
+
+	{
+
+		OnceWithIndex(1*time.Second, nil, func(_ *Timer, ctx interface{}) {
+			fmt.Println("Once timer")
+		}, nil, uint64(1))
+
+		time.Sleep(100 * time.Millisecond)
+
+		ok, _ := CancelByIndex(uint64(1))
+		assert.Equal(t, true, ok)
 	}
 
 	{
