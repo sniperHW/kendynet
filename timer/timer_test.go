@@ -62,6 +62,8 @@ func TestTimer(t *testing.T) {
 
 		assert.Equal(t, false, timer_.Cancel())
 
+		assert.Equal(t, false, timer_.ResetDuration(time.Second))
+
 	}
 
 	{
@@ -94,8 +96,9 @@ func TestTimer(t *testing.T) {
 
 	{
 		die := make(chan struct{})
-		timer_ := Once(1*time.Second, nil, func(_ *Timer, ctx interface{}) {
+		timer_ := Once(1*time.Second, nil, func(timer_ *Timer, ctx interface{}) {
 			fmt.Println("Once timer")
+			assert.Equal(t, false, timer_.Cancel())
 			close(die)
 		}, nil)
 
@@ -134,12 +137,21 @@ func TestTimer(t *testing.T) {
 
 		OnceWithIndex(1*time.Second, nil, func(_ *Timer, ctx interface{}) {
 			fmt.Println("Once timer")
-		}, nil, uint64(1))
+		}, 1, uint64(1))
+
+		assert.Nil(t, OnceWithIndex(1*time.Second, nil, func(_ *Timer, ctx interface{}) {
+			fmt.Println("Once timer")
+		}, 1, uint64(1)))
 
 		time.Sleep(100 * time.Millisecond)
 
-		ok, _ := CancelByIndex(uint64(1))
+		ok, ctx := CancelByIndex(uint64(1))
 		assert.Equal(t, true, ok)
+		assert.Equal(t, 1, ctx.(int))
+
+		ok, ctx = CancelByIndex(uint64(1))
+		assert.Equal(t, false, ok)
+
 	}
 
 	{
