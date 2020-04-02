@@ -22,7 +22,7 @@ type reqContext struct {
 	cbEventQueue *event.EventQueue
 }
 
-func (this *contextGroup) onResponse(resp *RPCResponse) {
+func onResponse(resp *RPCResponse) {
 	if t := timer.GetTimerByIndex(resp.GetSeq()); nil != t {
 		if t.Cancel() {
 			ctx := t.GetCTX().(*reqContext)
