@@ -116,9 +116,9 @@ func (this *RPCClient) AsynCall(channel RPCChannel, method string, arg interface
 	} else {
 		timer.OnceWithIndex(timeout, nil, context.onTimeout, context, context.seq)
 		if err = channel.SendRequest(request); err == nil {
-			timer.CancelByIndex(context.seq)
 			return nil
 		} else {
+			timer.CancelByIndex(context.seq)
 			return err
 		}
 	}
