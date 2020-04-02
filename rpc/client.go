@@ -349,7 +349,7 @@ func NewClient(decoder RPCMessageDecoder, encoder RPCMessageEncoder, cbEventQueu
 	client_once.Do(func() {
 		for i := uint64(0); i < groupCount; i++ {
 			contextGroups[i] = &contextGroup{
-				timerMgr: timer.NewTimerMgr(),
+				timerMgr: timer.NewTimerMgr(1),
 			}
 		}
 	})
