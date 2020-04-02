@@ -1,4 +1,4 @@
-package rpc
+/*package rpc
 
 import (
 	"fmt"
@@ -42,7 +42,7 @@ func onResponse(resp *RPCResponse) {
 	} else if nil == ctx {
 		kendynet.GetLogger().Infoln("onResponse with no reqContext", resp.GetSeq())
 	}
-}*/
+}* /
 
 func (this *reqContext) callResponseCB(ret interface{}, err error) {
 	if this.cbEventQueue != nil {
@@ -99,10 +99,6 @@ func (this *RPCClient) Post(channel RPCChannel, method string, arg interface{}) 
 		}
 	}
 }
-
-/*
- *  异步调用
- */
 
 func (this *RPCClient) AsynCall(channel RPCChannel, method string, arg interface{}, timeout time.Duration, cb RPCResponseHandler) error {
 
@@ -173,8 +169,8 @@ func NewClient(decoder RPCMessageDecoder, encoder RPCMessageEncoder, cbEventQueu
 		cbEventQueue: q,
 	}
 }
+*/
 
-/*
 package rpc
 
 import (
@@ -202,12 +198,19 @@ type contextGroup struct {
 }
 
 func (this *contextGroup) onResponse(resp *RPCResponse) {
-	if t := this.timerMgr.GetTimerByIndex(resp.GetSeq()); nil != t {
+	/*if t := this.timerMgr.GetTimerByIndex(resp.GetSeq()); nil != t {
 		if t.Cancel() {
 			ctx := t.GetCTX().(*reqContext)
 			ctx.callResponseCB(resp.Ret, resp.Err)
 		}
 	} else {
+		kendynet.GetLogger().Infoln("onResponse with no reqContext", resp.GetSeq())
+	}*/
+	var ok bool
+	var ctx interface{}
+	if ok, ctx = this.timerMgr.CancelByIndex(resp.GetSeq()); ok {
+		ctx.(*reqContext).callResponseCB(resp.Ret, resp.Err)
+	} else if nil == ctx {
 		kendynet.GetLogger().Infoln("onResponse with no reqContext", resp.GetSeq())
 	}
 }
@@ -277,10 +280,6 @@ func (this *RPCClient) Post(channel RPCChannel, method string, arg interface{}) 
 		}
 	}
 }
-
-/*
- *  异步调用
- * /
 
 func (this *RPCClient) AsynCall(channel RPCChannel, method string, arg interface{}, timeout time.Duration, cb RPCResponseHandler) error {
 
@@ -360,4 +359,3 @@ func NewClient(decoder RPCMessageDecoder, encoder RPCMessageEncoder, cbEventQueu
 		cbEventQueue: q,
 	}
 }
-*/
