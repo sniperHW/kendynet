@@ -1,4 +1,4 @@
-/*package rpc
+package rpc
 
 import (
 	"fmt"
@@ -90,7 +90,7 @@ func (this *RPCClient) Post(channel RPCChannel, method string, arg interface{}) 
 
 /*
  *  异步调用
- * /
+ */
 
 func (this *RPCClient) AsynCall(channel RPCChannel, method string, arg interface{}, timeout time.Duration, cb RPCResponseHandler) error {
 
@@ -160,8 +160,9 @@ func NewClient(decoder RPCMessageDecoder, encoder RPCMessageEncoder, cbEventQueu
 		decoder:      decoder,
 		cbEventQueue: q,
 	}
-}*/
+}
 
+/*
 package rpc
 
 import (
@@ -267,7 +268,7 @@ func (this *RPCClient) Post(channel RPCChannel, method string, arg interface{}) 
 
 /*
  *  异步调用
- */
+ * /
 
 func (this *RPCClient) AsynCall(channel RPCChannel, method string, arg interface{}, timeout time.Duration, cb RPCResponseHandler) error {
 
@@ -346,4 +347,4 @@ func NewClient(decoder RPCMessageDecoder, encoder RPCMessageEncoder, cbEventQueu
 		decoder:      decoder,
 		cbEventQueue: q,
 	}
-}
+}*/

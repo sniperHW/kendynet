@@ -340,7 +340,7 @@ type TimerMgr struct {
 func NewTimerMgr() *TimerMgr {
 
 	m := &TimerMgr{
-		slots: make([]*p, 1), //runtime.NumCPU()),
+		slots: make([]*p, 61), //runtime.NumCPU()),
 	}
 
 	for i, _ := range m.slots {
