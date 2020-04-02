@@ -1,4 +1,4 @@
-/*package timer
+package timer
 
 import (
 	"fmt"
@@ -87,7 +87,7 @@ func newp() *p {
  *  timeout:    超时时间
  *  repeat:     是否重复定时器
  *  eventQue:   如果非nil,callback会被投递到eventQue，否则在定时器主循环中执行
- * /
+ */
 
 func (this *p) newTimer(timeout time.Duration, repeat bool, eventQue *event.EventQueue, fn func(*Timer, interface{}), ctx interface{}, index uint64) *Timer {
 	if nil != fn {
@@ -278,7 +278,7 @@ func (this *TimerMgr) CancelByIndex(index uint64) (bool, interface{}) {
  *  终止定时器
  *  注意：因为定时器在单独go程序中调度，Cancel不保证能终止定时器的下次执行（例如定时器马上将要被调度执行，此时在另外
  *        一个go程中调用Cancel），对于重复定时器，可以保证定时器最多在执行一次之后终止。
- * /
+ */
 func (this *Timer) Cancel() bool {
 	return this.p.remove(this)
 }
@@ -315,7 +315,7 @@ func CancelByIndex(index uint64) (bool, interface{}) {
 	return globalMgr.CancelByIndex(index)
 }
 
-*/
+/*
 package timer
 
 import (
@@ -358,6 +358,7 @@ func (this *TimerMgr) Once(timeout time.Duration, eventQue *event.EventQueue, ca
 func (this *TimerMgr) OnceWithIndex(timeout time.Duration, eventQue *event.EventQueue, callback func(*Timer, interface{}), ctx interface{}, index uint64) *Timer {
 	if index > 0 {
 		slot := int(index) % len(this.slots)
+		fmt.Println(slot)
 		return this.slots[slot].newTimer(timeout, false, eventQue, callback, ctx, index)
 	} else {
 		return nil
@@ -512,7 +513,7 @@ func (this *p) clearAll() {
  *  timeout:    超时时间
  *  repeat:     是否重复定时器
  *  eventQue:   如果非nil,callback会被投递到eventQue，否则在定时器主循环中执行
- */
+ * /
 
 func (this *p) newTimer(timeout time.Duration, repeat bool, eventQue *event.EventQueue, fn func(*Timer, interface{}), ctx interface{}, index uint64) *Timer {
 	if nil != fn {
@@ -649,7 +650,7 @@ func (this *Timer) call() {
  *  终止定时器
  *  注意：因为定时器在单独go程序中调度，Cancel不保证能终止定时器的下次执行（例如定时器马上将要被调度执行，此时在另外
  *        一个go程中调用Cancel），对于重复定时器，可以保证定时器最多在执行一次之后终止。
- */
+ * /
 func (this *Timer) Cancel() bool {
 	return this.p.remove(this)
 }
@@ -699,4 +700,4 @@ func CancelByIndex(index uint64) (bool, interface{}) {
 		globalMgr = NewTimerMgr()
 	})
 	return globalMgr.CancelByIndex(index)
-}
+}*/
