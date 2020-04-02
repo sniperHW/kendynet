@@ -114,8 +114,9 @@ func (this *RPCClient) AsynCall(channel RPCChannel, method string, arg interface
 	if request, err := this.encoder.Encode(req); err != nil {
 		return err
 	} else {
+		timer.OnceWithIndex(timeout, nil, context.onTimeout, context, context.seq)
 		if err = channel.SendRequest(request); err == nil {
-			timer.OnceWithIndex(timeout, nil, context.onTimeout, context, context.seq)
+			timer.CancelByIndex(context.seq)
 			return nil
 		} else {
 			return err
