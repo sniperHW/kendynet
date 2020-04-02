@@ -111,22 +111,22 @@ func (this *p) newTimer(timeout time.Duration, repeat bool, eventQue *event.Even
 }
 
 func (this *p) addTimer(t *Timer, index uint64) bool {
-
 	if index > 0 {
 		this.Lock()
+		defer this.Unlock()
 		if _, ok := this.index2Timer[index]; ok {
-			this.Unlock()
 			return false
 		} else {
 			this.index2Timer[index] = t
-			this.Unlock()
+			t.t.Store(time.AfterFunc(t.duration, func() {
+				t.call()
+			}))
 		}
+	} else {
+		t.t.Store(time.AfterFunc(t.duration, func() {
+			t.call()
+		}))
 	}
-
-	t.t.Store(time.AfterFunc(t.duration, func() {
-		t.call()
-	}))
-
 	return true
 }
 
@@ -194,11 +194,17 @@ func (this *p) remove(t *Timer) bool {
 
 func (this *p) removeByIndex(index uint64) (bool, interface{}) {
 	this.Lock()
+	defer this.Unlock()
 	t, ok := this.index2Timer[index]
-	this.Unlock()
 	if ok {
-		ok = this.remove(t)
-		return ok, t.ctx
+		if atomic.CompareAndSwapInt32(&t.status, waitting, removed) {
+			t.t.Load().(*time.Timer).Stop()
+			delete(this.index2Timer, t.index)
+			return true, t.ctx
+		} else {
+			atomic.StoreInt32(&t.status, removed)
+			return false, t.ctx
+		}
 	} else {
 		return false, nil
 	}
