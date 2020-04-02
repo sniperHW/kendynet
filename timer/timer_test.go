@@ -19,13 +19,9 @@ func BenchmarkTimer(b *testing.B) {
 		timers[i] = t
 	}
 
-	for i := b.N - 1; i > 0; i-- {
-		timers[i].Cancel()
+	for _, v := range timers {
+		v.Cancel()
 	}
-
-	//for _, v := range timers {
-	//	v.Cancel()
-	//}
 }
 
 func BenchmarkGoTimer(b *testing.B) {
@@ -39,13 +35,9 @@ func BenchmarkGoTimer(b *testing.B) {
 		timers[i] = t
 	}
 
-	for i := b.N - 1; i > 0; i-- {
-		timers[i].Stop()
-	}
-
-	/*for _, v := range timers {
+	for _, v := range timers {
 		v.Stop()
-	}*/
+	}
 }
 
 func TestTimer(t *testing.T) {

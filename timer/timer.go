@@ -6,6 +6,7 @@ import (
 	"github.com/sniperHW/kendynet/event"
 	"github.com/sniperHW/kendynet/util"
 	"math/rand"
+	"runtime"
 	"sync"
 	"time"
 )
@@ -16,16 +17,17 @@ var (
 )
 
 type TimerMgr struct {
-	slots []*TimerSlot
+	slots []*p
 }
 
 func NewTimerMgr() *TimerMgr {
+
 	m := &TimerMgr{
-		slots: make([]*TimerSlot, 63),
+		slots: make([]*p, runtime.NumCPU()),
 	}
 
-	for i := 0; i < 63; i++ {
-		m.slots[i] = newTimerSlot()
+	for i, _ := range m.slots {
+		m.slots[i] = newp()
 	}
 
 	return m
@@ -62,15 +64,15 @@ func (this *TimerMgr) CancelByIndex(index uint64) (bool, interface{}) {
 	return this.slots[slot].removeByIndex(index)
 }
 
-type TimerSlot struct {
+type p struct {
 	sync.Mutex
 	notiChan    *util.Notifyer
 	minheap     util.MinHeap
 	index2Timer map[uint64]*Timer
 }
 
-func newTimerSlot() *TimerSlot {
-	mgr := &TimerSlot{
+func newp() *p {
+	mgr := &p{
 		notiChan:    util.NewNotifyer(),
 		minheap:     util.NewMinHeap(4096),
 		index2Timer: map[uint64]*Timer{},
@@ -79,11 +81,11 @@ func newTimerSlot() *TimerSlot {
 	return mgr
 }
 
-func (this *TimerSlot) setTimer(t *Timer, index uint64) {
+func (this *p) setTimer(t *Timer, index uint64) {
 	this.Lock()
 	defer this.Unlock()
 	if !t.canceled {
-		t.expired = time.Now().Add(t.timeout)
+		t.expired = time.Now().Add(t.duration)
 		if index > 0 {
 			this.index2Timer[index] = t
 		}
@@ -94,7 +96,7 @@ func (this *TimerSlot) setTimer(t *Timer, index uint64) {
 	}
 }
 
-func (this *TimerSlot) GetTimerByIndex(index uint64) *Timer {
+func (this *p) GetTimerByIndex(index uint64) *Timer {
 	this.Lock()
 	defer this.Unlock()
 	if t, ok := this.index2Timer[index]; ok {
@@ -104,14 +106,17 @@ func (this *TimerSlot) GetTimerByIndex(index uint64) *Timer {
 	}
 }
 
-func (this *TimerSlot) resetFireTime(t *Timer, timeout time.Duration) bool {
+func (this *p) resetFireTime(t *Timer, timeout time.Duration) bool {
+	if t.repeat {
+		return false
+	}
 	this.Lock()
 	defer this.Unlock()
 	if t.canceled || t.GetIndex() == -1 {
 		return false
 	} else {
-		t.timeout = timeout
-		t.expired = time.Now().Add(t.timeout)
+		t.duration = timeout
+		t.expired = time.Now().Add(t.duration)
 		this.minheap.Fix(t)
 		if t == this.minheap.Min().(*Timer) {
 			this.notiChan.Notify()
@@ -120,14 +125,17 @@ func (this *TimerSlot) resetFireTime(t *Timer, timeout time.Duration) bool {
 	}
 }
 
-func (this *TimerSlot) resetDuration(t *Timer, duration time.Duration) bool {
+func (this *p) resetDuration(t *Timer, duration time.Duration) bool {
+	if !t.repeat {
+		return false
+	}
 	this.Lock()
 	defer this.Unlock()
 	if t.canceled {
 		return false
 	} else {
-		t.timeout = duration
-		t.expired = time.Now().Add(t.timeout)
+		t.duration = duration
+		t.expired = time.Now().Add(t.duration)
 		if t.GetIndex() != -1 {
 			this.minheap.Fix(t)
 			if t == this.minheap.Min().(*Timer) {
@@ -138,7 +146,7 @@ func (this *TimerSlot) resetDuration(t *Timer, duration time.Duration) bool {
 	}
 }
 
-func (this *TimerSlot) loop() {
+func (this *p) loop() {
 	defaultSleepTime := 10 * time.Second
 	var tt *time.Timer
 	var min util.HeapElement
@@ -179,7 +187,7 @@ func (this *TimerSlot) loop() {
 	}
 }
 
-func (this *TimerSlot) clearAll() {
+func (this *p) clearAll() {
 	this.Lock()
 	this.Unlock()
 	this.minheap.Clear()
@@ -191,14 +199,14 @@ func (this *TimerSlot) clearAll() {
  *  eventQue:   如果非nil,callback会被投递到eventQue，否则在定时器主循环中执行
  */
 
-func (this *TimerSlot) newTimer(timeout time.Duration, repeat bool, eventQue *event.EventQueue, fn func(*Timer, interface{}), ctx interface{}, index uint64) *Timer {
+func (this *p) newTimer(timeout time.Duration, repeat bool, eventQue *event.EventQueue, fn func(*Timer, interface{}), ctx interface{}, index uint64) *Timer {
 	if nil != fn {
 		t := &Timer{
-			timeout:  timeout,
+			duration: timeout,
 			repeat:   repeat,
 			callback: fn,
 			eventQue: eventQue,
-			slot:     this,
+			p:        this,
 			ctx:      ctx,
 			index:    index,
 		}
@@ -210,11 +218,11 @@ func (this *TimerSlot) newTimer(timeout time.Duration, repeat bool, eventQue *ev
 }
 
 //一次性定时器
-func (this *TimerSlot) Once(timeout time.Duration, eventQue *event.EventQueue, callback func(*Timer, interface{}), ctx interface{}) *Timer {
+func (this *p) Once(timeout time.Duration, eventQue *event.EventQueue, callback func(*Timer, interface{}), ctx interface{}) *Timer {
 	return this.newTimer(timeout, false, eventQue, callback, ctx, 0)
 }
 
-func (this *TimerSlot) OnceWithIndex(timeout time.Duration, eventQue *event.EventQueue, callback func(*Timer, interface{}), ctx interface{}, index uint64) *Timer {
+func (this *p) OnceWithIndex(timeout time.Duration, eventQue *event.EventQueue, callback func(*Timer, interface{}), ctx interface{}, index uint64) *Timer {
 	if index > 0 {
 		return this.newTimer(timeout, false, eventQue, callback, ctx, index)
 	} else {
@@ -223,11 +231,11 @@ func (this *TimerSlot) OnceWithIndex(timeout time.Duration, eventQue *event.Even
 }
 
 //重复定时器
-func (this *TimerSlot) Repeat(duration time.Duration, eventQue *event.EventQueue, callback func(*Timer, interface{}), ctx interface{}) *Timer {
+func (this *p) Repeat(duration time.Duration, eventQue *event.EventQueue, callback func(*Timer, interface{}), ctx interface{}) *Timer {
 	return this.newTimer(duration, true, eventQue, callback, ctx, 0)
 }
 
-func (this *TimerSlot) remove(t *Timer) bool {
+func (this *p) remove(t *Timer) bool {
 	this.Lock()
 	defer this.Unlock()
 
@@ -247,7 +255,7 @@ func (this *TimerSlot) remove(t *Timer) bool {
 	}
 }
 
-func (this *TimerSlot) removeByIndex(index uint64) (bool, interface{}) {
+func (this *p) removeByIndex(index uint64) (bool, interface{}) {
 	this.Lock()
 	defer this.Unlock()
 	if t, ok := this.index2Timer[index]; ok {
@@ -271,11 +279,11 @@ type Timer struct {
 	heapIdx  int
 	expired  time.Time //到期时间
 	eventQue *event.EventQueue
-	timeout  time.Duration
+	duration time.Duration
 	repeat   bool //是否重复定时器
 	canceled bool
 	callback func(*Timer, interface{})
-	slot     *TimerSlot
+	p        *p
 	ctx      interface{}
 	index    uint64
 }
@@ -308,7 +316,7 @@ func (this *Timer) call_() {
 	}
 
 	if this.repeat {
-		this.slot.setTimer(this, 0)
+		this.p.setTimer(this, 0)
 	}
 }
 
@@ -328,17 +336,17 @@ func (this *Timer) call() {
  *        一个go程中调用Cancel），对于重复定时器，可以保证定时器最多在执行一次之后终止。
  */
 func (this *Timer) Cancel() bool {
-	return this.slot.remove(this)
+	return this.p.remove(this)
 }
 
 //只对一次性定时器有效
 func (this *Timer) ResetFireTime(timeout time.Duration) bool {
-	return this.slot.resetFireTime(this, timeout)
+	return this.p.resetFireTime(this, timeout)
 }
 
 //只对重复定时器有效
 func (this *Timer) ResetDuration(duration time.Duration) bool {
-	return this.slot.resetDuration(this, duration)
+	return this.p.resetDuration(this, duration)
 }
 
 //一次性定时器
