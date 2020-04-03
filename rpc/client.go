@@ -6,17 +6,14 @@ import (
 	"github.com/sniperHW/kendynet/event"
 	"github.com/sniperHW/kendynet/timer"
 	"github.com/sniperHW/kendynet/util"
-	"sync"
+	//"sync"
 	"sync/atomic"
 	"time"
 )
 
 var ErrCallTimeout error = fmt.Errorf("rpc call timeout")
 
-var client_once sync.Once
 var sequence uint64
-var groupCount uint64 = 61
-var contextGroups []*contextGroup = make([]*contextGroup, groupCount)
 
 type RPCResponseHandler func(interface{}, error)
 
@@ -25,14 +22,6 @@ type contextGroup struct {
 }
 
 func (this *contextGroup) onResponse(resp *RPCResponse) {
-	/*if t := this.timerMgr.GetTimerByIndex(resp.GetSeq()); nil != t {
-		if t.Cancel() {
-			ctx := t.GetCTX().(*reqContext)
-			ctx.callResponseCB(resp.Ret, resp.Err)
-		}
-	} else {
-		kendynet.GetLogger().Infoln("onResponse with no reqContext", resp.GetSeq())
-	}*/
 	var ok bool
 	var ctx interface{}
 	if ok, ctx = this.timerMgr.CancelByIndex(resp.GetSeq()); ok {
@@ -69,9 +58,10 @@ func (this *reqContext) onTimeout(_ *timer.Timer, _ interface{}) {
 }
 
 type RPCClient struct {
-	encoder      RPCMessageEncoder
-	decoder      RPCMessageDecoder
-	cbEventQueue *event.EventQueue
+	encoder       RPCMessageEncoder
+	decoder       RPCMessageDecoder
+	cbEventQueue  *event.EventQueue
+	contextGroups []*contextGroup
 }
 
 //收到RPC消息后调用
@@ -80,7 +70,7 @@ func (this *RPCClient) OnRPCMessage(message interface{}) {
 		kendynet.GetLogger().Errorf(util.FormatFileLine("RPCClient rpc message decode err:%s\n", err.Error()))
 	} else {
 		if resp, ok := msg.(*RPCResponse); ok {
-			contextGroups[msg.GetSeq()%uint64(len(contextGroups))].onResponse(resp)
+			this.contextGroups[msg.GetSeq()%uint64(len(this.contextGroups))].onResponse(resp)
 		} else {
 			panic("RPCClient.OnRPCMessage() invaild msg type")
 		}
@@ -130,7 +120,7 @@ func (this *RPCClient) AsynCall(channel RPCChannel, method string, arg interface
 	if request, err := this.encoder.Encode(req); err != nil {
 		return err
 	} else {
-		group := contextGroups[req.Seq%uint64(len(contextGroups))]
+		group := this.contextGroups[req.Seq%uint64(len(this.contextGroups))]
 		group.timerMgr.OnceWithIndex(timeout, nil, context.onTimeout, context, context.seq)
 		if err = channel.SendRequest(request); err == nil {
 			return nil
@@ -172,19 +162,20 @@ func NewClient(decoder RPCMessageDecoder, encoder RPCMessageEncoder, cbEventQueu
 		q = cbEventQueue[0]
 	}
 
-	client_once.Do(func() {
-		for i := uint64(0); i < groupCount; i++ {
-			contextGroups[i] = &contextGroup{
-				timerMgr: timer.NewTimerMgr(1),
-			}
-		}
-	})
-
-	return &RPCClient{
-		encoder:      encoder,
-		decoder:      decoder,
-		cbEventQueue: q,
+	c := &RPCClient{
+		encoder:       encoder,
+		decoder:       decoder,
+		cbEventQueue:  q,
+		contextGroups: make([]*contextGroup, 61),
 	}
+
+	for i, _ := range c.contextGroups {
+		c.contextGroups[i] = &contextGroup{
+			timerMgr: timer.NewTimerMgr(1),
+		}
+	}
+
+	return c
 }
 
 /*
