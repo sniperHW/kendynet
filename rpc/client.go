@@ -1,4 +1,4 @@
-/*package rpc
+package rpc
 
 import (
 	"fmt"
@@ -6,15 +6,41 @@ import (
 	"github.com/sniperHW/kendynet/event"
 	"github.com/sniperHW/kendynet/timer"
 	"github.com/sniperHW/kendynet/util"
+	"sync"
 	"sync/atomic"
 	"time"
 )
 
 var ErrCallTimeout error = fmt.Errorf("rpc call timeout")
 
+var client_once sync.Once
 var sequence uint64
+var groupCount uint64 = 61
+var contextGroups []*contextGroup = make([]*contextGroup, groupCount)
 
 type RPCResponseHandler func(interface{}, error)
+
+type contextGroup struct {
+	timerMgr *timer.TimerMgr
+}
+
+func (this *contextGroup) onResponse(resp *RPCResponse) {
+	/*if t := this.timerMgr.GetTimerByIndex(resp.GetSeq()); nil != t {
+		if t.Cancel() {
+			ctx := t.GetCTX().(*reqContext)
+			ctx.callResponseCB(resp.Ret, resp.Err)
+		}
+	} else {
+		kendynet.GetLogger().Infoln("onResponse with no reqContext", resp.GetSeq())
+	}*/
+	var ok bool
+	var ctx interface{}
+	if ok, ctx = this.timerMgr.CancelByIndex(resp.GetSeq()); ok {
+		ctx.(*reqContext).callResponseCB(resp.Ret, resp.Err)
+	} else if nil == ctx {
+		kendynet.GetLogger().Infoln("onResponse with no reqContext", resp.GetSeq())
+	}
+}
 
 type reqContext struct {
 	seq          uint64
@@ -22,37 +48,19 @@ type reqContext struct {
 	cbEventQueue *event.EventQueue
 }
 
-func onResponse(resp *RPCResponse) {
-	if t := timer.GetTimerByIndex(resp.GetSeq()); nil != t {
-		if t.Cancel() {
-			ctx := t.GetCTX().(*reqContext)
-			ctx.callResponseCB(resp.Ret, resp.Err)
-		}
-	} else {
-		kendynet.GetLogger().Infoln("onResponse with no reqContext", resp.GetSeq())
-	}
-}
-
-/*
-func onResponse(resp *RPCResponse) {
-	var ok bool
-	var ctx interface{}
-	if ok, ctx = timer.CancelByIndex(resp.GetSeq()); ok {
-		ctx.(*reqContext).callResponseCB(resp.Ret, resp.Err)
-	} else if nil == ctx {
-		kendynet.GetLogger().Infoln("onResponse with no reqContext", resp.GetSeq())
-	}
-}* /
-
 func (this *reqContext) callResponseCB(ret interface{}, err error) {
 	if this.cbEventQueue != nil {
 		this.cbEventQueue.PostNoWait(func() {
-			this.onResponse(ret, err)
+			this.callResponseCB_(ret, err)
 		})
 	} else {
-		defer util.Recover(kendynet.GetLogger())
-		this.onResponse(ret, err)
+		this.callResponseCB_(ret, err)
 	}
+}
+
+func (this *reqContext) callResponseCB_(ret interface{}, err error) {
+	defer util.Recover(kendynet.GetLogger())
+	this.onResponse(ret, err)
 }
 
 func (this *reqContext) onTimeout(_ *timer.Timer, _ interface{}) {
@@ -72,7 +80,7 @@ func (this *RPCClient) OnRPCMessage(message interface{}) {
 		kendynet.GetLogger().Errorf(util.FormatFileLine("RPCClient rpc message decode err:%s\n", err.Error()))
 	} else {
 		if resp, ok := msg.(*RPCResponse); ok {
-			onResponse(resp)
+			contextGroups[msg.GetSeq()%uint64(len(contextGroups))].onResponse(resp)
 		} else {
 			panic("RPCClient.OnRPCMessage() invaild msg type")
 		}
@@ -122,11 +130,12 @@ func (this *RPCClient) AsynCall(channel RPCChannel, method string, arg interface
 	if request, err := this.encoder.Encode(req); err != nil {
 		return err
 	} else {
-		timer.OnceWithIndex(timeout, nil, context.onTimeout, context, context.seq)
+		group := contextGroups[req.Seq%uint64(len(contextGroups))]
+		group.timerMgr.OnceWithIndex(timeout, nil, context.onTimeout, context, context.seq)
 		if err = channel.SendRequest(request); err == nil {
 			return nil
 		} else {
-			timer.CancelByIndex(context.seq)
+			group.timerMgr.CancelByIndex(context.seq)
 			return err
 		}
 	}
@@ -163,13 +172,22 @@ func NewClient(decoder RPCMessageDecoder, encoder RPCMessageEncoder, cbEventQueu
 		q = cbEventQueue[0]
 	}
 
+	client_once.Do(func() {
+		for i := uint64(0); i < groupCount; i++ {
+			contextGroups[i] = &contextGroup{
+				timerMgr: timer.NewTimerMgr(1),
+			}
+		}
+	})
+
 	return &RPCClient{
 		encoder:      encoder,
 		decoder:      decoder,
 		cbEventQueue: q,
 	}
 }
-*/
+
+/*
 
 package rpc
 
@@ -185,8 +203,6 @@ import (
 )
 
 var ErrCallTimeout error = fmt.Errorf("rpc call timeout")
-
-var client_once sync.Once
 var sequence uint64
 
 type RPCResponseHandler func(interface{}, error)
@@ -339,3 +355,4 @@ func NewClient(decoder RPCMessageDecoder, encoder RPCMessageEncoder, cbEventQueu
 
 	return c
 }
+*/
