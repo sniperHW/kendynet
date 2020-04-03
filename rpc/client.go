@@ -1,4 +1,4 @@
-package rpc
+/*package rpc
 
 import (
 	"fmt"
@@ -177,9 +177,7 @@ func NewClient(decoder RPCMessageDecoder, encoder RPCMessageEncoder, cbEventQueu
 		decoder:      decoder,
 		cbEventQueue: q,
 	}
-}
-
-/*
+}*/
 
 package rpc
 
@@ -196,6 +194,8 @@ import (
 
 var ErrCallTimeout error = fmt.Errorf("rpc call timeout")
 var sequence uint64
+var client_once sync.Once
+var timerMgrs []*timer.TimerMgr
 
 type RPCResponseHandler func(interface{}, error)
 
@@ -229,7 +229,6 @@ type RPCClient struct {
 	encoder      RPCMessageEncoder
 	decoder      RPCMessageDecoder
 	cbEventQueue *event.EventQueue
-	timerMgrs    []*timer.TimerMgr
 }
 
 //收到RPC消息后调用
@@ -238,7 +237,7 @@ func (this *RPCClient) OnRPCMessage(message interface{}) {
 		kendynet.GetLogger().Errorf(util.FormatFileLine("RPCClient rpc message decode err:%s\n", err.Error()))
 	} else {
 		if resp, ok := msg.(*RPCResponse); ok {
-			mgr := this.timerMgrs[msg.GetSeq()%uint64(len(this.timerMgrs))]
+			mgr := timerMgrs[msg.GetSeq()%uint64(len(timerMgrs))]
 			if ok, ctx := mgr.CancelByIndex(resp.GetSeq()); ok {
 				ctx.(*reqContext).callResponseCB(resp.Ret, resp.Err)
 			} else if nil == ctx {
@@ -293,7 +292,7 @@ func (this *RPCClient) AsynCall(channel RPCChannel, method string, arg interface
 	if request, err := this.encoder.Encode(req); err != nil {
 		return err
 	} else {
-		mgr := this.timerMgrs[req.Seq%uint64(len(this.timerMgrs))]
+		mgr := timerMgrs[req.Seq%uint64(len(timerMgrs))]
 		mgr.OnceWithIndex(timeout, nil, context.onTimeout, context, context.seq)
 		if err = channel.SendRequest(request); err == nil {
 			return nil
@@ -329,6 +328,13 @@ func NewClient(decoder RPCMessageDecoder, encoder RPCMessageEncoder, cbEventQueu
 		panic("encoder == nil")
 	}
 
+	client_once.Do(func() {
+		timerMgrs = make([]*timer.TimerMgr, 61)
+		for i, _ := range timerMgrs {
+			timerMgrs[i] = timer.NewTimerMgr(1)
+		}
+	})
+
 	var q *event.EventQueue
 
 	if len(cbEventQueue) > 0 {
@@ -339,12 +345,7 @@ func NewClient(decoder RPCMessageDecoder, encoder RPCMessageEncoder, cbEventQueu
 		encoder:      encoder,
 		decoder:      decoder,
 		cbEventQueue: q,
-		timerMgrs:    make([]*timer.TimerMgr, 61),
-	}
-	for i, _ := range c.timerMgrs {
-		c.timerMgrs[i] = timer.NewTimerMgr(1)
 	}
 
 	return c
 }
-*/
