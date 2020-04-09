@@ -297,4 +297,60 @@ func TestStreamSocket(t *testing.T) {
 		listener.Close()
 	}
 
+	//test eventWaiter
+	{
+		tcpAddr, _ := net.ResolveTCPAddr("tcp", "localhost:8110")
+
+		listener, _ := net.ListenTCP("tcp", tcpAddr)
+
+		go func() {
+			for {
+				conn, err := listener.Accept()
+				if err != nil {
+					return
+				} else {
+					session := NewStreamSocket(conn)
+					session.SetRecvTimeout(time.Second * 1)
+					session.SetWaitMode(true)
+					session.Start(func(event *kendynet.Event) {
+						if event.EventType == kendynet.EventTypeError {
+							event.Session.Close(event.Data.(error).Error(), 0)
+						} else {
+							event.Session.SendMessage(event.Data.(kendynet.Message))
+							event.Session.Close("close", time.Second)
+						}
+
+						if nil != event.EventWaiter {
+							event.EventWaiter.Notify()
+						}
+
+					})
+				}
+			}
+		}()
+
+		dialer := &net.Dialer{}
+		conn, _ := dialer.Dial("tcp", "localhost:8110")
+		session := NewStreamSocket(conn)
+
+		respChan := make(chan kendynet.Message)
+
+		session.Start(func(event *kendynet.Event) {
+			if event.EventType == kendynet.EventTypeError {
+				event.Session.Close(event.Data.(error).Error(), 0)
+			} else {
+				respChan <- event.Data.(kendynet.Message)
+			}
+		})
+
+		session.SendMessage(kendynet.NewByteBuffer("hello"))
+
+		resp := <-respChan
+
+		assert.Equal(t, resp.Bytes(), []byte("hello"))
+
+		listener.Close()
+
+	}
+
 }
