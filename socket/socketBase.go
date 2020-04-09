@@ -242,14 +242,7 @@ func (this *SocketBase) recvThreadFunc() {
 			 * 避免用户遗漏调用Close(不调用Close会持续通告错误)
 			 */
 
-			if this.isWaitMode() {
-				event.EventWaiter = kendynet.NewEventWaiter()
-				this.onEvent(&event)
-				event.EventWaiter.Wait()
-			} else {
-				this.onEvent(&event)
-			}
-
+			this.onEvent(&event)
 		}
 	}
 }
