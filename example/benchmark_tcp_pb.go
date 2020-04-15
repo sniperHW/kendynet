@@ -102,7 +102,6 @@ func main() {
 
 	outLogger := golog.NewOutputLogger("log", "kendynet", 1024*1024*1000)
 	kendynet.InitLogger(golog.New("rpc", outLogger))
-	kendynet.Debugln("start")
 
 	go func() {
 		http.ListenAndServe("0.0.0.0:6060", nil)
