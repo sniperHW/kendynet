@@ -298,7 +298,7 @@ func TestStreamSocket(t *testing.T) {
 	}
 
 	//test eventWaiter
-	{
+	/*{
 		tcpAddr, _ := net.ResolveTCPAddr("tcp", "localhost:8110")
 
 		listener, _ := net.ListenTCP("tcp", tcpAddr)
@@ -351,6 +351,6 @@ func TestStreamSocket(t *testing.T) {
 
 		listener.Close()
 
-	}
+	}*/
 
 }

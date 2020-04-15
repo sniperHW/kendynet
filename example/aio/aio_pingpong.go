@@ -131,7 +131,6 @@ func main() {
 
 	outLogger := golog.NewOutputLogger("log", "kendynet", 1024*1024*1000)
 	kendynet.InitLogger(golog.New("rpc", outLogger))
-	kendynet.Debugln("start")
 
 	_ = runtime.NumCPU() * 2
 

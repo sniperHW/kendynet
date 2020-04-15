@@ -18,7 +18,7 @@ func completeRoutine(completeQueue *aiogo.CompleteQueue) {
 		if !ok {
 			return
 		} else {
-			for ; nil != es; es = es.Next {
+			for ; nil != es; es = es.Next() {
 				if es.Type == aiogo.User {
 					es.Ud.(func())()
 				} else {

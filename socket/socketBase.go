@@ -28,14 +28,14 @@ type SocketImpl interface {
 }
 
 type SocketBase struct {
-	ud            interface{}
-	sendQue       *util.BlockQueue
-	receiver      kendynet.Receiver
-	encoder       *kendynet.EnCoder
-	flag          int32
-	sendTimeout   atomic.Value
-	recvTimeout   atomic.Value //time.Duration
-	waitMode      atomic.Value
+	ud          interface{}
+	sendQue     *util.BlockQueue
+	receiver    kendynet.Receiver
+	encoder     *kendynet.EnCoder
+	flag        int32
+	sendTimeout atomic.Value
+	recvTimeout atomic.Value //time.Duration
+	//waitMode      atomic.Value
 	mutex         sync.Mutex
 	onClose       func(kendynet.StreamSession, string)
 	onEvent       func(*kendynet.Event)
@@ -242,18 +242,19 @@ func (this *SocketBase) recvThreadFunc() {
 			 * 避免用户遗漏调用Close(不调用Close会持续通告错误)
 			 */
 
-			if this.isWaitMode() {
-				event.EventWaiter = kendynet.NewEventWaiter()
-				this.onEvent(&event)
-				event.EventWaiter.Wait()
-			} else {
-				this.onEvent(&event)
-			}
+			//if this.isWaitMode() {
+			//	event.EventWaiter = kendynet.NewEventWaiter()
+			//	this.onEvent(&event)
+			//	event.EventWaiter.Wait()
+			//} else {
+			this.onEvent(&event)
+			//}
 
 		}
 	}
 }
 
+/*
 func (this *SocketBase) SetWaitMode(wait bool) {
 	this.waitMode.Store(wait)
 }
@@ -266,6 +267,7 @@ func (this *SocketBase) isWaitMode() bool {
 		return mode.(bool)
 	}
 }
+*/
 
 func (this *SocketBase) getRecvTimeout() time.Duration {
 	t := this.recvTimeout.Load()
