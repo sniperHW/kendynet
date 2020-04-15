@@ -176,20 +176,8 @@ func (this *AioSocket) Recv(buff []byte) error {
 
 func (this *AioSocket) send() {
 	this.muW.Lock()
-	c := 0
-	totalSize := 0
-	for v := this.pendingSend.Front(); v != nil; v = this.pendingSend.Front() {
-		this.pendingSend.Remove(v)
-		this.sendBuffs[c] = v.Value.(kendynet.Message).Bytes()
-		totalSize += len(this.sendBuffs[c])
-		c++
-		if c >= len(this.sendBuffs) || totalSize >= this.maxPostSendSize {
-			break
-		}
-	}
+	this.sendNoLock()
 	this.muW.Unlock()
-	this.aioConn.SendBuffers(this.sendBuffs[:c], this, this.wcompleteQueue)
-	return
 }
 
 func (this *AioSocket) sendNoLock() {
