@@ -18,6 +18,8 @@ import (
 	"time"
 )
 
+var aioService *aio.AioService
+
 func server(service string) {
 
 	clientcount := int32(0)
@@ -32,7 +34,7 @@ func server(service string) {
 		fmt.Printf("clientcount:%d,transrfer:%d KB/s,packetcount:%d\n", atomic.LoadInt32(&clientcount), tmp1/1024, tmp2)
 	}, nil)
 
-	server, err := listener.New("tcp4", service)
+	server, err := listener.New(aioService, "tcp4", service)
 	if server != nil {
 		fmt.Printf("server running on:%s\n", service)
 		err = server.Serve(func(session kendynet.StreamSession) {
@@ -79,7 +81,7 @@ func server(service string) {
 
 func client(service string, count int) {
 
-	client, err := connector.New("tcp4", service)
+	client, err := connector.New(aioService, "tcp4", service)
 
 	if err != nil {
 		fmt.Printf("NewTcpClient failed:%s\n", err.Error())
@@ -134,7 +136,7 @@ func main() {
 
 	_ = runtime.NumCPU() * 2
 
-	aio.Init(1, 1, 1, nil)
+	aioService = aio.NewAioService(1, 1, 1, nil)
 
 	if len(os.Args) < 3 {
 		fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")

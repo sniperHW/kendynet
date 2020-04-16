@@ -78,13 +78,11 @@ type AioSocket struct {
 	onClearSendQueue func()
 	closeReason      string
 	maxPostSendSize  int
-	totalRecv        int64
-	totalSend        int64
 }
 
-func NewAioSocket(netConn net.Conn) *AioSocket {
+func NewAioSocket(service *AioService, netConn net.Conn) *AioSocket {
 
-	w, rq, wq := getWatcherAndCompleteQueue()
+	w, rq, wq := service.getWatcherAndCompleteQueue()
 
 	c, err := w.Watch(netConn)
 	if err != nil {
@@ -131,7 +129,6 @@ func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 			})
 		}
 	} else {
-		this.totalRecv += int64(r.Size)
 		this.receiver.OnRecvOk(this, r.GetBuff())
 		for {
 			flag := this.getFlag()
@@ -174,13 +171,7 @@ func (this *AioSocket) Recv(buff []byte) error {
 	return this.aioConn.Recv(buff, this, this.rcompleteQueue)
 }
 
-func (this *AioSocket) send() {
-	this.muW.Lock()
-	this.sendNoLock()
-	this.muW.Unlock()
-}
-
-func (this *AioSocket) sendNoLock() {
+func (this *AioSocket) emitSendRequest() {
 	c := 0
 	totalSize := 0
 	for v := this.pendingSend.Front(); v != nil; v = this.pendingSend.Front() {
@@ -198,7 +189,6 @@ func (this *AioSocket) sendNoLock() {
 
 func (this *AioSocket) onSendComplete(r *aiogo.CompleteEvent) {
 	if nil == r.Err {
-		this.totalSend += int64(r.Size)
 		this.muW.Lock()
 		if this.pendingSend.Len() == 0 {
 			this.sendLock = false
@@ -270,11 +260,7 @@ func (this *AioSocket) sendMessage(msg kendynet.Message) error {
 
 	if !this.sendLock {
 		this.sendLock = true
-		this.sendNoLock()
-		/*this.wcompleteQueue.Post(&aiogo.CompleteEvent{
-			Type: aiogo.User,
-			Ud:   this.send,
-		})*/
+		this.emitSendRequest()
 	}
 	return nil
 }

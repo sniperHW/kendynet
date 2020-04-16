@@ -8,9 +8,11 @@ import (
 	"runtime"
 )
 
-var watchers []*aiogo.Watcher
-var readCompleteQueues []*aiogo.CompleteQueue
-var writeCompleteQueues []*aiogo.CompleteQueue
+type AioService struct {
+	watchers            []*aiogo.Watcher
+	readCompleteQueues  []*aiogo.CompleteQueue
+	writeCompleteQueues []*aiogo.CompleteQueue
+}
 
 func completeRoutine(completeQueue *aiogo.CompleteQueue) {
 	for {
@@ -19,27 +21,25 @@ func completeRoutine(completeQueue *aiogo.CompleteQueue) {
 			return
 		} else {
 			for ; nil != es; es = es.Next() {
-				if es.Type == aiogo.User {
-					es.Ud.(func())()
+				c := es.Ud.(*AioSocket)
+				if es.Type == aiogo.Read {
+					c.onRecvComplete(es)
 				} else {
-					c := es.Ud.(*AioSocket)
-					if es.Type == aiogo.Read {
-						c.onRecvComplete(es)
-					} else {
-						c.onSendComplete(es)
-					}
+					c.onSendComplete(es)
 				}
 			}
 		}
 	}
 }
 
-func getWatcherAndCompleteQueue() (*aiogo.Watcher, *aiogo.CompleteQueue, *aiogo.CompleteQueue) {
-	r := rand.Int()
-	return watchers[r%len(watchers)], readCompleteQueues[r%len(readCompleteQueues)], writeCompleteQueues[r%len(writeCompleteQueues)]
-}
+func NewAioService(watcherCount int, completeQueueCount int, workerCount int, buffPool aiogo.BufferPool) *AioService {
 
-func Init(watcherCount int, completeQueueCount int, workerCount int, buffPool aiogo.BufferPool) error {
+	s := &AioService{
+		watchers:            []*aiogo.Watcher{},
+		readCompleteQueues:  []*aiogo.CompleteQueue{},
+		writeCompleteQueues: []*aiogo.CompleteQueue{},
+	}
+
 	if watcherCount <= 0 {
 		watcherCount = 1
 	}
@@ -54,22 +54,27 @@ func Init(watcherCount int, completeQueueCount int, workerCount int, buffPool ai
 			WorkerCount: workerCount,
 		})
 		if nil != err {
-			return err
+			return nil
 		}
-		watchers = append(watchers, watcher)
+		s.watchers = append(s.watchers, watcher)
 	}
 
 	for i := 0; i < completeQueueCount; i++ {
 		queue := aiogo.NewCompleteQueue()
-		readCompleteQueues = append(readCompleteQueues, queue)
+		s.readCompleteQueues = append(s.readCompleteQueues, queue)
 		go completeRoutine(queue)
 	}
 
 	for i := 0; i < completeQueueCount; i++ {
 		queue := aiogo.NewCompleteQueue()
-		writeCompleteQueues = append(writeCompleteQueues, queue)
+		s.writeCompleteQueues = append(s.writeCompleteQueues, queue)
 		go completeRoutine(queue)
 	}
 
-	return nil
+	return s
+}
+
+func (this *AioService) getWatcherAndCompleteQueue() (*aiogo.Watcher, *aiogo.CompleteQueue, *aiogo.CompleteQueue) {
+	r := rand.Int()
+	return this.watchers[r%len(this.watchers)], this.readCompleteQueues[r%len(this.readCompleteQueues)], this.writeCompleteQueues[r%len(this.writeCompleteQueues)]
 }

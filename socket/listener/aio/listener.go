@@ -11,9 +11,10 @@ type Listener struct {
     listener *net.TCPListener
     started  int32
     closed   int32
+    s        *aio.AioService
 }
 
-func New(nettype, service string) (*Listener, error) {
+func New(s *aio.AioService, nettype, service string) (*Listener, error) {
     tcpAddr, err := net.ResolveTCPAddr(nettype, service)
     if err != nil {
         return nil, err
@@ -23,7 +24,7 @@ func New(nettype, service string) (*Listener, error) {
         kendynet.GetLogger().Errorf("ListenTCP service:%s error:%s\n", service, err.Error())
         return nil, err
     }
-    return &Listener{listener: listener}, nil
+    return &Listener{listener: listener, s: s}, nil
 }
 
 func (this *Listener) Close() {
@@ -60,7 +61,7 @@ func (this *Listener) Serve(onNewClient func(kendynet.StreamSession)) error {
 
         } else {
 
-            onNewClient(aio.NewAioSocket(conn))
+            onNewClient(aio.NewAioSocket(this.s, conn))
         }
     }
 }

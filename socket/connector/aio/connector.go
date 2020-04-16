@@ -10,10 +10,11 @@ import (
 type Connector struct {
 	nettype string
 	addr    string
+	s       *aio.AioService
 }
 
-func New(nettype string, addr string) (*Connector, error) {
-	return &Connector{nettype: nettype, addr: addr}, nil
+func New(s *aio.AioService, nettype string, addr string) (*Connector, error) {
+	return &Connector{s: s, nettype: nettype, addr: addr}, nil
 }
 
 func (this *Connector) Dial(timeout time.Duration) (kendynet.StreamSession, error) {
@@ -22,5 +23,5 @@ func (this *Connector) Dial(timeout time.Duration) (kendynet.StreamSession, erro
 	if err != nil {
 		return nil, err
 	}
-	return aio.NewAioSocket(conn), nil
+	return aio.NewAioSocket(this.s, conn), nil
 }
