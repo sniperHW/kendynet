@@ -372,3 +372,28 @@ func TestBlockQueue(t *testing.T) {
 	}
 
 }
+
+func BenchmarkBlockQueue(b *testing.B) {
+
+	b.Log("BenchmarkBlockQueue", b.N, "times")
+
+	queue := NewBlockQueue(b.N)
+
+	for i := 0; i < 10; i++ {
+
+		go func() {
+			for i := 0; i < b.N; i++ {
+				queue.Add(i)
+			}
+			queue.Close()
+		}()
+	}
+
+	for {
+		closed, data := queue.Get()
+		if len(data) == 0 && closed {
+			break
+		}
+	}
+
+}
