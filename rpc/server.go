@@ -17,7 +17,7 @@ type RPCReplyer struct {
 
 func (this *RPCReplyer) Reply(ret interface{}, err error) {
 	if this.req.NeedResp && atomic.CompareAndSwapInt32(&this.fired, 0, 1) {
-		response := &RPCResponse{Seq: this.req.Seq, Ret: ret}
+		response := &RPCResponse{Seq: this.req.Seq, Ret: ret, Err: err}
 		this.reply(response)
 	}
 }
