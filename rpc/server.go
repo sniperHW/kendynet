@@ -48,6 +48,10 @@ type RPCServer struct {
 	lastSeq uint64
 }
 
+func (this *RPCServer) MakeReplyer(channel RPCChannel, req *RPCRequest) *RPCReplyer {
+	return &RPCReplyer{encoder: this.encoder, channel: channel, req: req}
+}
+
 func (this *RPCServer) RegisterMethod(name string, method RPCMethodHandler) error {
 	if name == "" {
 		panic("name == ''")
