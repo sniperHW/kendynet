@@ -42,10 +42,15 @@ type RPCMethodHandler func(*RPCReplyer, interface{})
 
 type RPCServer struct {
 	sync.RWMutex
-	encoder RPCMessageEncoder
-	decoder RPCMessageDecoder
-	methods map[string]RPCMethodHandler
-	lastSeq uint64
+	encoder         RPCMessageEncoder
+	decoder         RPCMessageDecoder
+	methods         map[string]RPCMethodHandler
+	lastSeq         uint64
+	onMissingMethod func(string, *RPCReplyer)
+}
+
+func (this *RPCServer) SetOnMissingMethod(onMissingMethod func(string, *RPCReplyer)) {
+	this.onMissingMethod = onMissingMethod
 }
 
 func (this *RPCServer) MakeReplyer(channel RPCChannel, req *RPCRequest) *RPCReplyer {
@@ -109,7 +114,11 @@ func (this *RPCServer) OnRPCMessage(channel RPCChannel, message interface{}) {
 
 			replyer := &RPCReplyer{encoder: this.encoder, channel: channel, req: req}
 			if nil != err {
-				replyer.reply(&RPCResponse{Seq: req.Seq, Err: err})
+				if nil != this.onMissingMethod {
+					this.onMissingMethod(req.Method, replyer)
+				} else {
+					replyer.reply(&RPCResponse{Seq: req.Seq, Err: err})
+				}
 			} else {
 				this.callMethod(method, replyer, req.Arg)
 			}
