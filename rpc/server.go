@@ -22,13 +22,17 @@ func (this *RPCReplyer) Reply(ret interface{}, err error) {
 			response := &RPCResponse{Seq: this.req.Seq, Ret: ret, Err: err}
 			this.reply(response)
 		}
-		atomic.AddInt32(&this.s.pendingCount, -1)
+		if nil != this.s {
+			atomic.AddInt32(&this.s.pendingCount, -1)
+		}
 	}
 }
 
 func (this *RPCReplyer) DropResponse() {
 	if atomic.CompareAndSwapInt32(&this.fired, 0, 1) {
-		atomic.AddInt32(&this.s.pendingCount, -1)
+		if nil != this.s {
+			atomic.AddInt32(&this.s.pendingCount, -1)
+		}
 	}
 }
 
@@ -68,8 +72,22 @@ func (this *RPCServer) SetOnMissingMethod(onMissingMethod func(string, *RPCReply
 	this.onMissingMethod = onMissingMethod
 }
 
-func (this *RPCServer) MakeReplyer(channel RPCChannel, req *RPCRequest) *RPCReplyer {
-	return &RPCReplyer{encoder: this.encoder, channel: channel, req: req, s: this}
+/*
+ *  在服务停止无需调用OnRPCMessage的情况下使用DirectReplyError直接向对端返回错误响应
+ */
+func (this *RPCServer) DirectReplyError(channel RPCChannel, req *RPCRequest, err error) {
+	response := &RPCResponse{Seq: req.Seq, Err: err}
+
+	msg, err := this.encoder.Encode(response)
+	if nil != err {
+		kendynet.GetLogger().Errorf(util.FormatFileLine("Encode rpc response error:%s\n", err.Error()))
+		return
+	}
+
+	err = channel.SendResponse(msg)
+	if nil != err {
+		kendynet.GetLogger().Errorf(util.FormatFileLine("send rpc response to (%s) error:%s\n", channel.Name(), err.Error()))
+	}
 }
 
 func (this *RPCServer) RegisterMethod(name string, method RPCMethodHandler) error {
