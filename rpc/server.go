@@ -13,12 +13,22 @@ type RPCReplyer struct {
 	channel RPCChannel
 	req     *RPCRequest
 	fired   int32 //防止重复Reply
+	s       *RPCServer
 }
 
 func (this *RPCReplyer) Reply(ret interface{}, err error) {
-	if this.req.NeedResp && atomic.CompareAndSwapInt32(&this.fired, 0, 1) {
-		response := &RPCResponse{Seq: this.req.Seq, Ret: ret, Err: err}
-		this.reply(response)
+	if atomic.CompareAndSwapInt32(&this.fired, 0, 1) {
+		if this.req.NeedResp {
+			response := &RPCResponse{Seq: this.req.Seq, Ret: ret, Err: err}
+			this.reply(response)
+		}
+		atomic.AddInt32(&this.s.pendingCount, -1)
+	}
+}
+
+func (this *RPCReplyer) DropResponse() {
+	if atomic.CompareAndSwapInt32(&this.fired, 0, 1) {
+		atomic.AddInt32(&this.s.pendingCount, -1)
 	}
 }
 
@@ -47,6 +57,11 @@ type RPCServer struct {
 	methods         map[string]RPCMethodHandler
 	lastSeq         uint64
 	onMissingMethod func(string, *RPCReplyer)
+	pendingCount    int32
+}
+
+func (this *RPCServer) PendingCount() int32 {
+	return atomic.LoadInt32(&this.pendingCount)
 }
 
 func (this *RPCServer) SetOnMissingMethod(onMissingMethod func(string, *RPCReplyer)) {
@@ -54,7 +69,7 @@ func (this *RPCServer) SetOnMissingMethod(onMissingMethod func(string, *RPCReply
 }
 
 func (this *RPCServer) MakeReplyer(channel RPCChannel, req *RPCRequest) *RPCReplyer {
-	return &RPCReplyer{encoder: this.encoder, channel: channel, req: req}
+	return &RPCReplyer{encoder: this.encoder, channel: channel, req: req, s: this}
 }
 
 func (this *RPCServer) RegisterMethod(name string, method RPCMethodHandler) error {
@@ -112,7 +127,8 @@ func (this *RPCServer) OnRPCMessage(channel RPCChannel, message interface{}) {
 				kendynet.GetLogger().Errorf(util.FormatFileLine("rpc request from(%s) invaild method %s\n", channel.Name(), req.Method))
 			}
 
-			replyer := &RPCReplyer{encoder: this.encoder, channel: channel, req: req}
+			replyer := &RPCReplyer{encoder: this.encoder, channel: channel, req: req, s: this}
+			atomic.AddInt32(&this.pendingCount, 1)
 			if nil != err {
 				if nil != this.onMissingMethod {
 					this.onMissingMethod(req.Method, replyer)
