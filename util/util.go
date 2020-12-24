@@ -95,36 +95,3 @@ func ProtectCall(fn interface{}, args ...interface{}) (ret []interface{}, err er
 	}
 	return
 }
-
-/*
- *  如果设置了before则只有before返回true才会继续执行被hook函数
- *  如果before返回false,则将before构造的返回值作为被hook函数的返回值
- */
-
-func Hook(fn interface{}, before func() (bool, []reflect.Value), after func()) interface{} {
-	fnType := reflect.TypeOf(fn)
-	hookCB := reflect.MakeFunc(fnType, func(in []reflect.Value) []reflect.Value {
-		if nil != after {
-			defer after()
-		}
-
-		var out []reflect.Value
-
-		if nil != before {
-			ok, out := before()
-			if !ok {
-				return out
-			}
-		}
-
-		if fnType.IsVariadic() {
-			out = reflect.ValueOf(fn).CallSlice(in)
-		} else {
-			out = reflect.ValueOf(fn).Call(in)
-		}
-
-		return out
-	})
-
-	return hookCB.Interface()
-}

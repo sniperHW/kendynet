@@ -4,7 +4,7 @@ package util
 import (
 	"fmt"
 	"github.com/stretchr/testify/assert"
-	"reflect"
+	//"reflect"
 	"testing"
 	"time"
 )
@@ -401,37 +401,16 @@ func BenchmarkBlockQueue(b *testing.B) {
 
 func TestHook(t *testing.T) {
 
-	f1 := func() {
-		fmt.Println("i'm f1")
-	}
-
-	f2 := func(msg string) {
-		fmt.Println("i'm f2", msg)
-	}
-
-	f3 := func() string {
-		fmt.Println("i'm f3")
-		return "f3"
-	}
-
-	f4 := func(msg string) string {
-		fmt.Println("i'm f4", msg)
-		return msg + "f4"
-	}
-
-	f5 := func(msg1, msg2 string) {
-		fmt.Println("f5", msg1, msg2)
-	}
-
-	f6 := func(msgs ...string) {
-		fmt.Println("f6", msgs)
-	}
-
 	{
+
+		f1 := func() {
+			fmt.Println("i'm f1")
+		}
+
 		before := false
 		after := false
 
-		Hook(f1, func() (bool, []reflect.Value) {
+		Hook1(f1, func() (bool, []interface{}) {
 			before = true
 			return true, nil
 		}, func() {
@@ -444,10 +423,15 @@ func TestHook(t *testing.T) {
 	}
 
 	{
+
+		f2 := func(msg string) {
+			fmt.Println("i'm f2", msg)
+		}
+
 		before := false
 		after := false
 
-		Hook(f2, func() (bool, []reflect.Value) {
+		Hook1(f2, func() (bool, []interface{}) {
 			before = true
 			return true, nil
 		}, func() {
@@ -460,10 +444,16 @@ func TestHook(t *testing.T) {
 	}
 
 	{
+
+		f3 := func() string {
+			fmt.Println("i'm f3")
+			return "f3"
+		}
+
 		before := false
 		after := false
 
-		ret := Hook(f3, func() (bool, []reflect.Value) {
+		ret := Hook1(f3, func() (bool, []interface{}) {
 			before = true
 			return true, nil
 		}, func() {
@@ -476,10 +466,16 @@ func TestHook(t *testing.T) {
 	}
 
 	{
+
+		f4 := func(msg string) string {
+			fmt.Println("i'm f4", msg)
+			return msg + "f4"
+		}
+
 		before := false
 		after := false
 
-		ret := Hook(f4, func() (bool, []reflect.Value) {
+		ret := Hook1(f4, func() (bool, []interface{}) {
 			before = true
 			return true, nil
 		}, func() {
@@ -492,10 +488,15 @@ func TestHook(t *testing.T) {
 	}
 
 	{
+
+		f5 := func(msg1, msg2 string) {
+			fmt.Println("f5", msg1, msg2)
+		}
+
 		before := false
 		after := false
 
-		Hook(f5, func() (bool, []reflect.Value) {
+		Hook1(f5, func() (bool, []interface{}) {
 			before = true
 			return true, nil
 		}, func() {
@@ -507,10 +508,15 @@ func TestHook(t *testing.T) {
 	}
 
 	{
+
+		f6 := func(msgs ...string) {
+			fmt.Println("f6", msgs)
+		}
+
 		before := false
 		after := false
 
-		Hook(f6, func() (bool, []reflect.Value) {
+		Hook1(f6, func() (bool, []interface{}) {
 			before = true
 			return true, nil
 		}, func() {
@@ -519,6 +525,81 @@ func TestHook(t *testing.T) {
 
 		assert.Equal(t, true, before)
 		assert.Equal(t, true, after)
+	}
+
+	{
+		f7 := func() string {
+			fmt.Println("f7")
+			return "f7"
+		}
+
+		before := false
+		after := false
+
+		ret := Hook1(f7, func() (bool, []interface{}) {
+			before = true
+			return false, []interface{}{"f7 failed"}
+		}, func() {
+			after = true
+		}).(func() string)()
+
+		assert.Equal(t, true, before)
+		assert.Equal(t, false, after)
+		assert.Equal(t, ret, "f7 failed")
+
+		before = false
+		after = false
+
+		ret = Hook1(f7, func() (bool, []interface{}) {
+			before = true
+			return true, []interface{}{"f7 failed"}
+		}, func() {
+			after = true
+		}).(func() string)()
+
+		assert.Equal(t, true, before)
+		assert.Equal(t, true, after)
+		assert.Equal(t, ret, "f7")
+
+	}
+
+	{
+
+		f := func(v string) {
+			fmt.Println("f", v)
+		}
+
+		Hook2(f, func() {
+			fmt.Println("before f")
+		}, func() {
+			fmt.Println("after f")
+		}).(func(string))("hello")
+
+		Hook2(f, func(v string) {
+			fmt.Println("before f", v)
+		}, func(v string) {
+			fmt.Println("after f", v)
+		}).(func(string))("hello")
+
+	}
+
+	{
+
+		f := func(v int) int {
+			fmt.Println("v", v)
+			return v + 1
+		}
+
+		ret := Hook3(f, func(v int) int {
+			fmt.Println("v", v)
+			return v + 1
+		}, func(v int) int {
+			fmt.Println("v", v)
+			return v + 1
+		}).(func(int) int)(1)
+
+		fmt.Println(ret)
+
 	}
 
 }
