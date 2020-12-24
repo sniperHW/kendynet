@@ -4,6 +4,7 @@ package util
 import (
 	"fmt"
 	"github.com/stretchr/testify/assert"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -394,6 +395,130 @@ func BenchmarkBlockQueue(b *testing.B) {
 		if len(data) == 0 && closed {
 			break
 		}
+	}
+
+}
+
+func TestHook(t *testing.T) {
+
+	f1 := func() {
+		fmt.Println("i'm f1")
+	}
+
+	f2 := func(msg string) {
+		fmt.Println("i'm f2", msg)
+	}
+
+	f3 := func() string {
+		fmt.Println("i'm f3")
+		return "f3"
+	}
+
+	f4 := func(msg string) string {
+		fmt.Println("i'm f4", msg)
+		return msg + "f4"
+	}
+
+	f5 := func(msg1, msg2 string) {
+		fmt.Println("f5", msg1, msg2)
+	}
+
+	f6 := func(msgs ...string) {
+		fmt.Println("f6", msgs)
+	}
+
+	{
+		before := false
+		after := false
+
+		Hook(f1, func() (bool, []reflect.Value) {
+			before = true
+			return true, nil
+		}, func() {
+			after = true
+		}).(func())()
+
+		assert.Equal(t, true, before)
+		assert.Equal(t, true, after)
+
+	}
+
+	{
+		before := false
+		after := false
+
+		Hook(f2, func() (bool, []reflect.Value) {
+			before = true
+			return true, nil
+		}, func() {
+			after = true
+		}).(func(string))("hello")
+
+		assert.Equal(t, true, before)
+		assert.Equal(t, true, after)
+
+	}
+
+	{
+		before := false
+		after := false
+
+		ret := Hook(f3, func() (bool, []reflect.Value) {
+			before = true
+			return true, nil
+		}, func() {
+			after = true
+		}).(func() string)()
+
+		assert.Equal(t, true, before)
+		assert.Equal(t, true, after)
+		assert.Equal(t, "f3", ret)
+	}
+
+	{
+		before := false
+		after := false
+
+		ret := Hook(f4, func() (bool, []reflect.Value) {
+			before = true
+			return true, nil
+		}, func() {
+			after = true
+		}).(func(string) string)("hello")
+
+		assert.Equal(t, true, before)
+		assert.Equal(t, true, after)
+		assert.Equal(t, "hellof4", ret)
+	}
+
+	{
+		before := false
+		after := false
+
+		Hook(f5, func() (bool, []reflect.Value) {
+			before = true
+			return true, nil
+		}, func() {
+			after = true
+		}).(func(string, string))("hello", "world")
+
+		assert.Equal(t, true, before)
+		assert.Equal(t, true, after)
+	}
+
+	{
+		before := false
+		after := false
+
+		Hook(f6, func() (bool, []reflect.Value) {
+			before = true
+			return true, nil
+		}, func() {
+			after = true
+		}).(func(...string))("hello", "world")
+
+		assert.Equal(t, true, before)
+		assert.Equal(t, true, after)
 	}
 
 }
