@@ -116,7 +116,7 @@ func (this *RPCClient) AsynCall(channel RPCChannel, method string, arg interface
 		return err
 	} else {
 		mgr := timerMgrs[req.Seq%uint64(len(timerMgrs))]
-		mgr.OnceWithIndex(timeout, nil, context.onTimeout, context, context.seq)
+		mgr.OnceWithIndex(timeout, context.onTimeout, context, context.seq)
 		if err = channel.SendRequest(request); err == nil {
 			atomic.AddInt32(&this.pendingCount, 1)
 			return nil

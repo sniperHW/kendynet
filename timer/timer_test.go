@@ -14,7 +14,7 @@ func BenchmarkTimer(b *testing.B) {
 	b.ReportAllocs()
 	timers := make([]*Timer, b.N)
 	for i := 0; i < b.N; i++ {
-		t := Once(10*time.Second, nil, func(_ *Timer, ctx interface{}) {
+		t := Once(10*time.Second, func(_ *Timer, ctx interface{}) {
 		}, nil)
 		timers[i] = t
 	}
@@ -46,7 +46,7 @@ func TestTimer(t *testing.T) {
 
 		die := make(chan struct{})
 		i := 0
-		timer_ := Repeat(100*time.Millisecond, nil, func(timer_ *Timer, ctx interface{}) {
+		timer_ := Repeat(100*time.Millisecond, func(timer_ *Timer, ctx interface{}) {
 			i++
 			fmt.Println("Repeat timer", i)
 			if i == 10 {
@@ -74,14 +74,15 @@ func TestTimer(t *testing.T) {
 
 		die := make(chan struct{})
 		i := 0
-		timer_ := Repeat(100*time.Millisecond, queue, func(timer_ *Timer, ctx interface{}) {
-			i++
-			fmt.Println("Repeat timer", i)
-			if i == 10 {
-				//在回调内所以Cancel返回false,但timer不会再继续执行
-				assert.Equal(t, false, timer_.Cancel())
-				close(die)
-			}
+		timer_ := Repeat(100*time.Millisecond, func(timer_ *Timer, ctx interface{}) {
+			queue.PostNoWait(func() {
+				i++
+				fmt.Println("Repeat timer", i)
+				if i == 10 {
+					timer_.Cancel()
+					close(die)
+				}
+			})
 		}, nil)
 
 		<-die
@@ -96,7 +97,7 @@ func TestTimer(t *testing.T) {
 
 	{
 		die := make(chan struct{})
-		timer_ := Once(1*time.Second, nil, func(timer_ *Timer, ctx interface{}) {
+		timer_ := Once(1*time.Second, func(timer_ *Timer, ctx interface{}) {
 			fmt.Println("Once timer")
 			assert.Equal(t, false, timer_.Cancel())
 			close(die)
@@ -109,7 +110,7 @@ func TestTimer(t *testing.T) {
 
 	{
 
-		timer_ := Once(1*time.Second, nil, func(_ *Timer, ctx interface{}) {
+		timer_ := Once(1*time.Second, func(_ *Timer, ctx interface{}) {
 			fmt.Println("Once timer")
 		}, nil)
 
@@ -120,7 +121,7 @@ func TestTimer(t *testing.T) {
 
 	{
 
-		OnceWithIndex(1*time.Second, nil, func(_ *Timer, ctx interface{}) {
+		OnceWithIndex(1*time.Second, func(_ *Timer, ctx interface{}) {
 			fmt.Println("Once timer")
 		}, nil, uint64(1))
 
@@ -135,11 +136,11 @@ func TestTimer(t *testing.T) {
 
 	{
 
-		OnceWithIndex(1*time.Second, nil, func(_ *Timer, ctx interface{}) {
+		OnceWithIndex(1*time.Second, func(_ *Timer, ctx interface{}) {
 			fmt.Println("Once timer")
 		}, 1, uint64(1))
 
-		assert.Nil(t, OnceWithIndex(1*time.Second, nil, func(_ *Timer, ctx interface{}) {
+		assert.Nil(t, OnceWithIndex(1*time.Second, func(_ *Timer, ctx interface{}) {
 			fmt.Println("Once timer")
 		}, 1, uint64(1)))
 
@@ -160,7 +161,7 @@ func TestTimer(t *testing.T) {
 
 		expect_firetime := time.Now().Unix() + 2
 		var firetime int64
-		timer_ := Once(5*time.Second, nil, func(_ *Timer, ctx interface{}) {
+		timer_ := Once(5*time.Second, func(_ *Timer, ctx interface{}) {
 			firetime = time.Now().Unix()
 			fmt.Println("Once timer")
 			close(die)
@@ -180,7 +181,7 @@ func TestTimer(t *testing.T) {
 
 		expect_firetime := time.Now().Unix() + 5
 		var firetime int64
-		timer_ := Once(2*time.Second, nil, func(_ *Timer, ctx interface{}) {
+		timer_ := Once(2*time.Second, func(_ *Timer, ctx interface{}) {
 			firetime = time.Now().Unix()
 			fmt.Println("Once timer")
 			close(die)
@@ -203,7 +204,7 @@ func TestTimer(t *testing.T) {
 
 		expect_firetime := time.Now().Unix() + 2
 
-		timer_ := Repeat(1*time.Second, nil, func(timer_ *Timer, ctx interface{}) {
+		timer_ := Repeat(1*time.Second, func(timer_ *Timer, ctx interface{}) {
 			i++
 			fmt.Println("Repeat timer", i)
 			assert.Equal(t, expect_firetime, time.Now().Unix())

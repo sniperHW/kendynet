@@ -3,6 +3,7 @@ package event
 import (
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/util"
+	"reflect"
 	"sync"
 	"sync/atomic"
 )
@@ -57,11 +58,16 @@ func (this *EventHandler) register(event interface{}, once bool, fn interface{})
 		panic("event == nil")
 	}
 
-	switch fn.(type) {
+	if reflect.TypeOf(fn).Kind() != reflect.Func {
+		panic("fn should be func type")
+
+	}
+
+	/*switch fn.(type) {
 	case func(), func(...interface{}), func(Handle), func(Handle, ...interface{}):
 	default:
 		panic("invaild fn type")
-	}
+	}*/
 
 	h := &handle{
 		fn:    fn,
@@ -162,7 +168,44 @@ func (this *handlerSlot) remove(h *handle) {
 
 func pcall2(h *handle, args []interface{}) {
 	defer util.Recover(kendynet.GetLogger())
-	switch h.fn.(type) {
+
+	fnType := reflect.TypeOf(h.fn)
+	fnValue := reflect.ValueOf(h.fn)
+	numIn := fnType.NumIn()
+	if numIn == 0 {
+		fnValue.Call(nil)
+	} else {
+
+		in := []reflect.Value{}
+
+		if fnType.In(0) == reflect.TypeOf((Handle)(h)) {
+			in = append(in, reflect.ValueOf((Handle)(h)))
+			for i := 1; i < numIn; i++ {
+				if i >= len(args) || args[i] == nil {
+					in = append(in, reflect.Zero(fnType.In(i)))
+				} else {
+					in = append(in, reflect.ValueOf(args[i]))
+				}
+			}
+
+		} else {
+			for i := 0; i < numIn; i++ {
+				if i >= len(args) || args[i] == nil {
+					in = append(in, reflect.Zero(fnType.In(i)))
+				} else {
+					in = append(in, reflect.ValueOf(args[i]))
+				}
+			}
+		}
+
+		if fnType.IsVariadic() {
+			fnValue.CallSlice(in)
+		} else {
+			fnValue.Call(in)
+		}
+	}
+
+	/*switch h.fn.(type) {
 	case func():
 		h.fn.(func())()
 	case func(Handle):
@@ -171,7 +214,7 @@ func pcall2(h *handle, args []interface{}) {
 		h.fn.(func(...interface{}))(args...)
 	case func(Handle, ...interface{}):
 		h.fn.(func(Handle, ...interface{}))((Handle)(h), args...)
-	}
+	}*/
 }
 
 func (this *handlerSlot) emit(args ...interface{}) {
