@@ -27,16 +27,15 @@ type reqContext struct {
 
 func (this *reqContext) callResponseCB(ret interface{}, err error) {
 	if this.cbEventQueue != nil {
-		this.cbEventQueue.PostNoWait(func() {
-			this.callResponseCB_(ret, err)
-		})
+		this.cbEventQueue.PostNoWait(this.callResponseCB_, ret, err)
+
 	} else {
+		defer util.Recover(kendynet.GetLogger())
 		this.callResponseCB_(ret, err)
 	}
 }
 
 func (this *reqContext) callResponseCB_(ret interface{}, err error) {
-	defer util.Recover(kendynet.GetLogger())
 	this.onResponse(ret, err)
 	atomic.AddInt32(&this.c.pendingCount, -1)
 }
