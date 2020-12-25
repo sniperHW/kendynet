@@ -146,12 +146,11 @@ func testQueueOnceMode() {
 
 func testUseEventQueue() {
 	queue := NewEventQueue()
-	go queue.Run()
 
 	handler := NewEventHandler(queue)
 
-	handler.Register("queue", func() {
-		fmt.Println("handler1")
+	handler.Register("queue", func(v int) {
+		fmt.Println("handler1", v)
 
 		queue.Post(func() {
 			fmt.Println("queue fun1")
@@ -168,7 +167,9 @@ func testUseEventQueue() {
 
 	})
 
-	handler.Emit("queue")
+	handler.Emit("queue", 1)
+
+	queue.Run()
 
 }
 

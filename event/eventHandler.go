@@ -63,12 +63,6 @@ func (this *EventHandler) register(event interface{}, once bool, fn interface{})
 
 	}
 
-	/*switch fn.(type) {
-	case func(), func(...interface{}), func(Handle), func(Handle, ...interface{}):
-	default:
-		panic("invaild fn type")
-	}*/
-
 	h := &handle{
 		fn:    fn,
 		once:  once,
@@ -122,7 +116,9 @@ func (this *EventHandler) Emit(event interface{}, args ...interface{}) {
 	this.RUnlock()
 	if ok {
 		if this.processQueue != nil {
-			this.processQueue.PostNoWait(slot.emit, args...)
+			this.processQueue.PostNoWait(func() {
+				slot.emit(args...)
+			})
 		} else {
 			slot.emit(args...)
 		}
@@ -204,17 +200,6 @@ func pcall2(h *handle, args []interface{}) {
 			fnValue.Call(in)
 		}
 	}
-
-	/*switch h.fn.(type) {
-	case func():
-		h.fn.(func())()
-	case func(Handle):
-		h.fn.(func(Handle))((Handle)(h))
-	case func(...interface{}):
-		h.fn.(func(...interface{}))(args...)
-	case func(Handle, ...interface{}):
-		h.fn.(func(Handle, ...interface{}))((Handle)(h), args...)
-	}*/
 }
 
 func (this *handlerSlot) emit(args ...interface{}) {
