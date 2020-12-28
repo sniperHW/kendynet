@@ -145,6 +145,8 @@ func testQueueOnceMode() {
 }
 
 func testUseEventQueue() {
+	fmt.Println("-------------------testUseEventQueue-----------------")
+
 	queue := NewEventQueue()
 
 	handler := NewEventHandler(queue)
@@ -156,9 +158,9 @@ func testUseEventQueue() {
 			fmt.Println("queue fun1")
 		})
 
-		queue.PostFullReturn(func([]interface{}) {
-			fmt.Println("queue fun2")
-		})
+		//queue.PostFullReturn(func([]interface{}) {
+		//	fmt.Println("queue fun2")
+		//})
 
 		queue.PostNoWait(func(...interface{}) {
 			fmt.Println("queue fun3")

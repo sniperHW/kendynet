@@ -117,9 +117,10 @@ func (this *EventHandler) Emit(event interface{}, args ...interface{}) {
 	this.RUnlock()
 	if ok {
 		if this.processQueue != nil {
-			this.processQueue.PostNoWait(func() {
-				slot.emit(args...)
-			})
+			//this.processQueue.PostNoWait(func() {
+			//	slot.emit(args...)
+			//})
+			this.processQueue.PostNoWait(slot.emit, args...)
 		} else {
 			slot.emit(args...)
 		}
