@@ -57,7 +57,7 @@ func (this *EventQueue) Run() {
 			closed, localList := this.eventQueue.Get()
 			for _, v := range localList {
 				e := v.(*element)
-				if _, err := util.ProtectCall(e.fn, e.args); err != nil {
+				if _, err := util.ProtectCall(e.fn, e.args...); err != nil {
 					logger := kendynet.GetLogger()
 					if logger != nil {
 						logger.Errorln(err)
