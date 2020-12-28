@@ -35,6 +35,7 @@ func CallStack(maxStack int) string {
 	return str
 }
 
+/*
 func RecoverAndCall(fn func(), logger ...golog.LoggerI) {
 	if r := recover(); r != nil {
 		if len(logger) > 0 && logger[0] != nil {
@@ -47,6 +48,7 @@ func RecoverAndCall(fn func(), logger ...golog.LoggerI) {
 		}
 	}
 }
+*/
 
 func Recover(logger ...golog.LoggerI) {
 	if r := recover(); r != nil {
@@ -70,7 +72,6 @@ func ProtectCall(fn interface{}, args ...interface{}) (result []interface{}, err
 	fnType := reflect.TypeOf(fn)
 	fnValue := reflect.ValueOf(fn)
 	numIn := fnType.NumIn()
-	//numOut := fnType.NumOut()
 
 	var out []reflect.Value
 	if numIn == 0 {
@@ -81,12 +82,14 @@ func ProtectCall(fn interface{}, args ...interface{}) (result []interface{}, err
 		if fnType.IsVariadic() {
 			argumentIn--
 		}
+
 		if argsLength < argumentIn {
 			panic("ProtectCall with too few input arguments")
 		}
-		if !fnType.IsVariadic() && argsLength > argumentIn {
+
+		/*if !fnType.IsVariadic() && argsLength > argumentIn {
 			panic("ProtectCall with too many input arguments")
-		}
+		}*/
 
 		in := make([]reflect.Value, numIn)
 		for i := 0; i < argumentIn; i++ {

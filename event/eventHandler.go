@@ -1,6 +1,7 @@
 package event
 
 import (
+	//"fmt"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/util"
 	"reflect"
@@ -163,7 +164,20 @@ func (this *handlerSlot) remove(h *handle) {
 }
 
 func pcall2(h *handle, args []interface{}) {
-	if _, err := util.ProtectCall(h.fn, args); err != nil {
+
+	var arguments []interface{}
+
+	fnType := reflect.TypeOf(h.fn)
+
+	if fnType.NumIn() > 0 && fnType.In(0) == reflect.TypeOf((Handle)(h)) {
+		arguments = make([]interface{}, len(args)+1, len(args)+1)
+		arguments[0] = h
+		copy(arguments[1:], args)
+	} else {
+		arguments = args
+	}
+
+	if _, err := util.ProtectCall(h.fn, arguments...); err != nil {
 		logger := kendynet.GetLogger()
 		if logger != nil {
 			logger.Errorln(err)

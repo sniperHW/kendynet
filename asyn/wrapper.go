@@ -29,7 +29,7 @@ func AsynWrap(queue *event.EventQueue, fn interface{}) wrapFunc {
 
 	return func(callback interface{}, args ...interface{}) {
 		f := func() {
-			out, err := util.ProtectCall(fn, args)
+			out, err := util.ProtectCall(fn, args...)
 			if err != nil {
 				logger := kendynet.GetLogger()
 				if logger != nil {
