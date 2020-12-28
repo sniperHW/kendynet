@@ -163,41 +163,10 @@ func (this *handlerSlot) remove(h *handle) {
 }
 
 func pcall2(h *handle, args []interface{}) {
-	defer util.Recover(kendynet.GetLogger())
-
-	fnType := reflect.TypeOf(h.fn)
-	fnValue := reflect.ValueOf(h.fn)
-	numIn := fnType.NumIn()
-	if numIn == 0 {
-		fnValue.Call(nil)
-	} else {
-
-		in := []reflect.Value{}
-
-		if fnType.In(0) == reflect.TypeOf((Handle)(h)) {
-			in = append(in, reflect.ValueOf((Handle)(h)))
-			for i := 1; i < numIn; i++ {
-				if i >= len(args) || args[i] == nil {
-					in = append(in, reflect.Zero(fnType.In(i)))
-				} else {
-					in = append(in, reflect.ValueOf(args[i]))
-				}
-			}
-
-		} else {
-			for i := 0; i < numIn; i++ {
-				if i >= len(args) || args[i] == nil {
-					in = append(in, reflect.Zero(fnType.In(i)))
-				} else {
-					in = append(in, reflect.ValueOf(args[i]))
-				}
-			}
-		}
-
-		if fnType.IsVariadic() {
-			fnValue.CallSlice(in)
-		} else {
-			fnValue.Call(in)
+	if _, err := util.ProtectCall(h.fn, args); err != nil {
+		logger := kendynet.GetLogger()
+		if logger != nil {
+			logger.Errorln(err)
 		}
 	}
 }

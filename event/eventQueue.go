@@ -3,7 +3,6 @@ package event
 import (
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/util"
-	"reflect"
 	"sync/atomic"
 )
 
@@ -52,38 +51,18 @@ func (this *EventQueue) Close() {
 	this.eventQueue.Close()
 }
 
-func pcall1(fn interface{}, args []interface{}) {
-	defer util.Recover(kendynet.GetLogger())
-	fnType := reflect.TypeOf(fn)
-	fnValue := reflect.ValueOf(fn)
-	numIn := fnType.NumIn()
-	if numIn == 0 {
-		fnValue.Call(nil)
-	} else {
-		in := []reflect.Value{}
-		for i := 0; i < numIn; i++ {
-			if i >= len(args) || args[i] == nil {
-				in = append(in, reflect.Zero(fnType.In(i)))
-			} else {
-				in = append(in, reflect.ValueOf(args[i]))
-			}
-		}
-
-		if fnType.IsVariadic() {
-			fnValue.CallSlice(in)
-		} else {
-			fnValue.Call(in)
-		}
-	}
-}
-
 func (this *EventQueue) Run() {
 	if atomic.CompareAndSwapInt32(&this.started, 0, 1) {
 		for {
 			closed, localList := this.eventQueue.Get()
 			for _, v := range localList {
 				e := v.(*element)
-				pcall1(e.fn, e.args)
+				if _, err := util.ProtectCall(e.fn, e.args); err != nil {
+					logger := kendynet.GetLogger()
+					if logger != nil {
+						logger.Errorln(err)
+					}
+				}
 			}
 			if closed {
 				return
