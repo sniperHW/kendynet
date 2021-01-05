@@ -6,10 +6,10 @@ package socket
 
 import (
 	"bufio"
-	//"bytes"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/util"
 	"net"
+	"sync/atomic"
 	"time"
 )
 
@@ -33,28 +33,28 @@ type StreamSocket struct {
 }
 
 func (this *StreamSocket) Close(reason string, delay time.Duration) {
-	this.mutex.Lock()
 
-	if this.testFlag(closed) {
-		this.mutex.Unlock()
-		return
+	for {
+		flag := atomic.LoadInt32(&this.flag)
+
+		if flag|closed > 0 {
+			return
+		}
+
+		if atomic.CompareAndSwapInt32(&this.flag, this.flag, this.flag|closed|rclosed) {
+			break
+		}
 	}
 
 	this.sendQue.Close()
 
 	this.closeReason = reason
 
-	this.setFlag(closed | rclosed)
-
 	if this.testFlag(wclosed) || this.sendQue.Len() == 0 {
 		delay = 0 //写端已经关闭，delay参数没有意义设置为0
 	} else if delay > 0 {
 		delay = delay * time.Second
-	} else {
-		this.sendQue.Clear()
 	}
-
-	this.mutex.Unlock()
 
 	if delay > 0 {
 		this.shutdownRead()
@@ -74,7 +74,6 @@ func (this *StreamSocket) Close(reason string, delay time.Duration) {
 	} else {
 		this.doClose()
 	}
-
 }
 
 func (this *StreamSocket) sendMessage(msg kendynet.Message) error {
@@ -222,20 +221,19 @@ func (this *StreamSocket) sendThreadFunc() {
 						err = writer.Flush()
 					}
 					if err != nil {
-						if this.sendQue.Closed() {
-							return
-						}
 						if kendynet.IsNetTimeout(err) {
 							err = kendynet.ErrSendTimeout
 						} else {
 							kendynet.GetLogger().Errorf("writer.Flush error:%s\n", err.Error())
-							this.mutex.Lock()
-							this.flag |= wclosed
-							this.mutex.Unlock()
+							this.setFlag(wclosed)
 						}
 						event := &kendynet.Event{Session: this, EventType: kendynet.EventTypeError, Data: err}
-						this.onEvent(event)
-						if this.sendQue.Closed() {
+						if !this.IsClosed() {
+							this.onEvent(event)
+							if this.IsClosed() {
+								return
+							}
+						} else {
 							return
 						}
 					}

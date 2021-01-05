@@ -5,17 +5,16 @@ import (
 	"github.com/sniperHW/kendynet/util"
 	"io"
 	"net"
-	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
 )
 
 const (
-	started = (1 << 0)
-	closed  = (1 << 1)
-	wclosed = (1 << 2)
-	rclosed = (1 << 3)
+	started = int32(1 << 0)
+	closed  = int32(1 << 1)
+	wclosed = int32(1 << 2)
+	rclosed = int32(1 << 3)
 )
 
 type SocketImpl interface {
@@ -28,32 +27,30 @@ type SocketImpl interface {
 }
 
 type SocketBase struct {
-	ud            interface{}
+	ud            atomic.Value
 	sendQue       *util.BlockQueue
 	receiver      kendynet.Receiver
 	encoder       *kendynet.EnCoder
-	flag          int
+	flag          int32
 	sendTimeout   atomic.Value
-	recvTimeout   atomic.Value //time.Duration
-	mutex         sync.Mutex
-	onClose       func(kendynet.StreamSession, string)
+	recvTimeout   atomic.Value
+	onClose       atomic.Value
 	onEvent       func(*kendynet.Event)
 	closeReason   string
 	sendCloseChan chan struct{}
 	imp           SocketImpl
 }
 
-func (this *SocketBase) setFlag(flag int) {
-	this.flag |= flag
+func (this *SocketBase) setFlag(flag int32) {
+	for !atomic.CompareAndSwapInt32(&this.flag, this.flag, this.flag|flag) {
+	}
 }
 
-func (this *SocketBase) testFlag(flag int) bool {
-	return this.flag&flag > 0
+func (this *SocketBase) testFlag(flag int32) bool {
+	return atomic.LoadInt32(&this.flag)&flag > 0
 }
 
 func (this *SocketBase) IsClosed() bool {
-	this.mutex.Lock()
-	defer this.mutex.Unlock()
 	return this.testFlag(closed)
 }
 
@@ -66,24 +63,17 @@ func (this *SocketBase) RemoteAddr() net.Addr {
 }
 
 func (this *SocketBase) SetUserData(ud interface{}) {
-	this.mutex.Lock()
-	defer this.mutex.Unlock()
-	this.ud = ud
+	this.ud.Store(ud)
 }
 
-func (this *SocketBase) GetUserData() (ud interface{}) {
-	this.mutex.Lock()
-	defer this.mutex.Unlock()
-	return this.ud
+func (this *SocketBase) GetUserData() interface{} {
+	return this.ud.Load()
 }
 
 func (this *SocketBase) doClose() {
 	this.imp.getNetConn().Close()
-	this.mutex.Lock()
-	onClose := this.onClose
-	this.mutex.Unlock()
-	if nil != onClose {
-		onClose(this.imp.(kendynet.StreamSession), this.closeReason)
+	if onClose := this.onClose.Load(); nil != onClose {
+		onClose.(func(kendynet.StreamSession, string))(this.imp.(kendynet.StreamSession), this.closeReason)
 	}
 }
 
@@ -100,14 +90,10 @@ func (this *SocketBase) shutdownRead() {
 }
 
 func (this *SocketBase) ShutdownRead() {
-	this.mutex.Lock()
-	defer this.mutex.Unlock()
-
-	if this.testFlag(closed) {
-		return
+	if !this.testFlag(closed) {
+		this.setFlag(rclosed)
+		this.shutdownRead()
 	}
-	this.setFlag(rclosed)
-	this.shutdownRead()
 }
 
 func (this *SocketBase) Start(eventCB func(*kendynet.Event)) error {
@@ -116,15 +102,18 @@ func (this *SocketBase) Start(eventCB func(*kendynet.Event)) error {
 		panic("eventCB == nil")
 	}
 
-	this.mutex.Lock()
-	defer this.mutex.Unlock()
+	for {
+		flag := atomic.LoadInt32(&this.flag)
 
-	if this.testFlag(closed) {
-		return kendynet.ErrSocketClose
-	}
+		if flag|started > 0 {
+			return kendynet.ErrStarted
+		} else if flag|closed > 0 {
+			return kendynet.ErrSocketClose
+		}
 
-	if this.testFlag(started) {
-		return kendynet.ErrStarted
+		if atomic.CompareAndSwapInt32(&this.flag, this.flag, this.flag|started) {
+			break
+		}
 	}
 
 	if this.receiver == nil {
@@ -132,7 +121,6 @@ func (this *SocketBase) Start(eventCB func(*kendynet.Event)) error {
 	}
 
 	this.onEvent = eventCB
-	this.setFlag(started)
 
 	go this.imp.sendThreadFunc()
 	go this.imp.recvThreadFunc()
@@ -148,9 +136,7 @@ func (this *SocketBase) SetSendTimeout(timeout time.Duration) {
 }
 
 func (this *SocketBase) SetCloseCallBack(cb func(kendynet.StreamSession, string)) {
-	this.mutex.Lock()
-	defer this.mutex.Unlock()
-	this.onClose = cb
+	this.onClose.Store(cb)
 }
 
 func (this *SocketBase) SetEncoder(encoder kendynet.EnCoder) {
@@ -158,12 +144,9 @@ func (this *SocketBase) SetEncoder(encoder kendynet.EnCoder) {
 }
 
 func (this *SocketBase) SetReceiver(r kendynet.Receiver) {
-	this.mutex.Lock()
-	defer this.mutex.Unlock()
-	if this.testFlag(started) {
-		return
+	if !this.testFlag(started) {
+		this.receiver = r
 	}
-	this.receiver = r
 }
 
 func (this *SocketBase) SetSendQueueSize(size int) {
@@ -187,17 +170,11 @@ func (this *SocketBase) Send(o interface{}) error {
 		return err
 	}
 
-	this.mutex.Lock()
-	err = this.imp.sendMessage(msg)
-	this.mutex.Unlock()
-	return err
+	return this.imp.sendMessage(msg)
 }
 
 func (this *SocketBase) SendMessage(msg kendynet.Message) error {
-	this.mutex.Lock()
-	err := this.imp.sendMessage(msg)
-	this.mutex.Unlock()
-	return err
+	return this.imp.sendMessage(msg)
 }
 
 func (this *SocketBase) recvThreadFunc() {
@@ -222,16 +199,11 @@ func (this *SocketBase) recvThreadFunc() {
 			p, err = this.receiver.ReceiveAndUnpack(this.imp)
 		}
 
-		if this.IsClosed() {
-			//上层已经调用关闭，所有事件都不再传递上去
-			break
-		}
 		if err != nil || p != nil {
 			event.Session = this.imp
 			if err != nil {
 				event.EventType = kendynet.EventTypeError
 				event.Data = err
-				this.mutex.Lock()
 				if err == io.EOF {
 					this.setFlag(rclosed)
 				} else if kendynet.IsNetTimeout(err) {
@@ -240,12 +212,15 @@ func (this *SocketBase) recvThreadFunc() {
 					kendynet.GetLogger().Errorf("ReceiveAndUnpack error:%s\n", err.Error())
 					this.setFlag(rclosed | wclosed)
 				}
-				this.mutex.Unlock()
 			} else {
 				event.EventType = kendynet.EventTypeMessage
 				event.Data = p
 			}
-			this.onEvent(&event)
+
+			if !this.IsClosed() {
+				this.onEvent(&event)
+			}
+
 		}
 	}
 }

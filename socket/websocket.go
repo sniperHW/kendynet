@@ -11,6 +11,7 @@ import (
 	"github.com/sniperHW/kendynet/message"
 	"github.com/sniperHW/kendynet/util"
 	"net"
+	"sync/atomic"
 	"time"
 )
 
@@ -98,35 +99,45 @@ func (this *WebSocket) sendThreadFunc() {
 			}
 
 			if err != nil && msg.Type() != message.WSCloseMessage {
-				if this.sendQue.Closed() {
-					return
-				}
-
 				if kendynet.IsNetTimeout(err) {
 					err = kendynet.ErrSendTimeout
 				} else {
 					kendynet.GetLogger().Errorf("websocket write error:%s\n", err.Error())
-					this.mutex.Lock()
 					this.setFlag(wclosed)
-					this.mutex.Unlock()
 				}
 
 				event := &kendynet.Event{Session: this, EventType: kendynet.EventTypeError, Data: err}
-				this.onEvent(event)
+
+				if !this.IsClosed() {
+					this.onEvent(event)
+					if this.IsClosed() {
+						return
+					}
+				} else {
+					return
+				}
+
 			}
 		}
 	}
 }
 
 func (this *WebSocket) Close(reason string, delay time.Duration) {
-	this.mutex.Lock()
-	if this.testFlag(closed) {
-		this.mutex.Unlock()
-		return
+
+	for {
+		flag := atomic.LoadInt32(&this.flag)
+
+		if flag|closed > 0 {
+			return
+		}
+
+		if atomic.CompareAndSwapInt32(&this.flag, this.flag, this.flag|closed|rclosed) {
+			break
+		}
 	}
 
 	this.closeReason = reason
-	this.setFlag(closed | rclosed)
+
 	if this.testFlag(wclosed) {
 		delay = 0 //写端已经关闭忽略delay参数
 	} else {
@@ -138,11 +149,11 @@ func (this *WebSocket) Close(reason string, delay time.Duration) {
 		msg := gorilla.FormatCloseMessage(1000, reason)
 		this.sendQue.AddNoWait(message.NewWSMessage(message.WSCloseMessage, msg))
 		this.sendQue.Close()
+
 		ticker := time.NewTicker(delay)
 		if !this.testFlag(started) {
 			go this.sendThreadFunc()
 		}
-		this.mutex.Unlock()
 		go func() {
 			select {
 			case <-this.sendCloseChan:
@@ -150,13 +161,10 @@ func (this *WebSocket) Close(reason string, delay time.Duration) {
 			}
 			ticker.Stop()
 			this.doClose()
-			return
 		}()
 	} else {
 		this.sendQue.Close()
-		this.mutex.Unlock()
 		this.doClose()
-		return
 	}
 }
 
