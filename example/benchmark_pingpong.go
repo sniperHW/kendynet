@@ -29,7 +29,7 @@ func server(service string) {
 	bytescount := int32(0)
 	packetcount := int32(0)
 
-	timer.Repeat(time.Second, nil, func(_ *timer.Timer, ctx interface{}) {
+	timer.Repeat(time.Second, func(_ *timer.Timer, ctx interface{}) {
 		tmp1 := atomic.LoadInt32(&bytescount)
 		tmp2 := atomic.LoadInt32(&packetcount)
 		atomic.StoreInt32(&bytescount, 0)
@@ -133,7 +133,6 @@ func main() {
 
 	outLogger := golog.NewOutputLogger("log", "kendynet", 1024*1024*1000)
 	kendynet.InitLogger(golog.New("rpc", outLogger))
-	kendynet.Debugln("start")
 
 	if len(os.Args) < 3 {
 		fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")

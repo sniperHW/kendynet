@@ -1,6 +1,7 @@
 package socket
 
 import (
+	"fmt"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/util"
 	"io"
@@ -98,21 +99,20 @@ func (this *SocketBase) ShutdownRead() {
 
 func (this *SocketBase) Start(eventCB func(*kendynet.Event)) error {
 
-	if eventCB == nil {
-		panic("eventCB == nil")
-	}
-
 	for {
+
 		flag := atomic.LoadInt32(&this.flag)
 
-		if flag|started > 0 {
+		if flag&started > 0 {
 			return kendynet.ErrStarted
-		} else if flag|closed > 0 {
+		} else if flag&closed > 0 {
 			return kendynet.ErrSocketClose
 		}
 
-		if atomic.CompareAndSwapInt32(&this.flag, this.flag, this.flag|started) {
+		if atomic.CompareAndSwapInt32(&this.flag, flag, flag|started) {
 			break
+		} else {
+			fmt.Println(flag, this.flag, this.flag|started)
 		}
 	}
 
@@ -124,6 +124,7 @@ func (this *SocketBase) Start(eventCB func(*kendynet.Event)) error {
 
 	go this.imp.sendThreadFunc()
 	go this.imp.recvThreadFunc()
+
 	return nil
 }
 

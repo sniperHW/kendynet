@@ -37,11 +37,11 @@ func (this *StreamSocket) Close(reason string, delay time.Duration) {
 	for {
 		flag := atomic.LoadInt32(&this.flag)
 
-		if flag|closed > 0 {
+		if flag&closed > 0 {
 			return
 		}
 
-		if atomic.CompareAndSwapInt32(&this.flag, this.flag, this.flag|closed|rclosed) {
+		if atomic.CompareAndSwapInt32(&this.flag, flag, flag|closed|rclosed) {
 			break
 		}
 	}
