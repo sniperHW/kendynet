@@ -139,7 +139,7 @@ func (this *WebSocket) Close(reason string, delay time.Duration) {
 		this.sendQue.AddNoWait(message.NewWSMessage(message.WSCloseMessage, msg))
 		this.sendQue.Close()
 		ticker := time.NewTicker(delay)
-		if this.testFlag(started) {
+		if !this.testFlag(started) {
 			go this.sendThreadFunc()
 		}
 		this.mutex.Unlock()
