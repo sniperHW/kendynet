@@ -34,24 +34,24 @@ type StreamSocket struct {
 
 func (this *StreamSocket) Close(reason string, delay time.Duration) {
 	this.mutex.Lock()
-	if (this.flag & closed) > 0 {
+
+	if this.testFlag(closed) {
 		this.mutex.Unlock()
 		return
 	}
 
-	this.closeReason = reason
-	this.flag |= (closed | rclosed)
-	if this.flag&wclosed > 0 {
-		delay = 0 //写端已经关闭，delay参数没有意义设置为0
-	}
-
 	this.sendQue.Close()
 
-	if this.sendQue.Len() > 0 {
+	this.closeReason = reason
+
+	this.setFlag(closed | rclosed)
+
+	if this.testFlag(wclosed) || this.sendQue.Len() == 0 {
+		delay = 0 //写端已经关闭，delay参数没有意义设置为0
+	} else if delay > 0 {
 		delay = delay * time.Second
-		if delay <= 0 {
-			this.sendQue.Clear()
-		}
+	} else {
+		this.sendQue.Clear()
 	}
 
 	this.mutex.Unlock()
@@ -80,7 +80,7 @@ func (this *StreamSocket) Close(reason string, delay time.Duration) {
 func (this *StreamSocket) sendMessage(msg kendynet.Message) error {
 	if msg == nil {
 		return kendynet.ErrInvaildBuff
-	} else if (this.flag&closed) > 0 || (this.flag&wclosed) > 0 {
+	} else if this.testFlag(closed | wclosed) {
 		return kendynet.ErrSocketClose
 	} else {
 		fullReturn := true

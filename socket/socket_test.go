@@ -177,6 +177,26 @@ func TestWebSocket(t *testing.T) {
 	}
 }
 
+func TestSocketFlag(t *testing.T) {
+
+	{
+		sb := &SocketBase{}
+		sb.setFlag(closed)
+		assert.Equal(t, true, sb.testFlag(closed))
+	}
+
+	{
+		sb := &SocketBase{}
+		sb.setFlag(closed | wclosed | rclosed)
+		assert.Equal(t, true, sb.testFlag(closed))
+		assert.Equal(t, true, sb.testFlag(wclosed))
+		assert.Equal(t, true, sb.testFlag(rclosed))
+		assert.Equal(t, false, sb.testFlag(started))
+		assert.Equal(t, true, sb.testFlag(closed|wclosed|rclosed))
+		assert.Equal(t, true, sb.testFlag(closed|wclosed))
+	}
+}
+
 func TestStreamSocket(t *testing.T) {
 	{
 

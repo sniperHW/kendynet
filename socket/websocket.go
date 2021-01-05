@@ -40,7 +40,7 @@ type WebSocket struct {
 func (this *WebSocket) sendMessage(msg kendynet.Message) error {
 	if msg == nil {
 		return kendynet.ErrInvaildBuff
-	} else if (this.flag&closed) > 0 || (this.flag&wclosed) > 0 {
+	} else if this.testFlag(closed | wclosed) {
 		return kendynet.ErrSocketClose
 	} else {
 		switch msg.(type) {
@@ -107,7 +107,7 @@ func (this *WebSocket) sendThreadFunc() {
 				} else {
 					kendynet.GetLogger().Errorf("websocket write error:%s\n", err.Error())
 					this.mutex.Lock()
-					this.flag |= wclosed
+					this.setFlag(wclosed)
 					this.mutex.Unlock()
 				}
 
@@ -120,14 +120,14 @@ func (this *WebSocket) sendThreadFunc() {
 
 func (this *WebSocket) Close(reason string, delay time.Duration) {
 	this.mutex.Lock()
-	if (this.flag & closed) > 0 {
+	if this.testFlag(closed) {
 		this.mutex.Unlock()
 		return
 	}
 
 	this.closeReason = reason
-	this.flag |= (closed | rclosed)
-	if (this.flag & wclosed) > 0 {
+	this.setFlag(closed | rclosed)
+	if this.testFlag(wclosed) {
 		delay = 0 //写端已经关闭忽略delay参数
 	} else {
 		delay = delay * time.Second
@@ -139,7 +139,7 @@ func (this *WebSocket) Close(reason string, delay time.Duration) {
 		this.sendQue.AddNoWait(message.NewWSMessage(message.WSCloseMessage, msg))
 		this.sendQue.Close()
 		ticker := time.NewTicker(delay)
-		if (this.flag & started) == 0 {
+		if this.testFlag(started) {
 			go this.sendThreadFunc()
 		}
 		this.mutex.Unlock()
