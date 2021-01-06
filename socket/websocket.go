@@ -11,7 +11,7 @@ import (
 	"github.com/sniperHW/kendynet/message"
 	"github.com/sniperHW/kendynet/util"
 	"net"
-	"sync/atomic"
+	//"sync/atomic"
 	"time"
 )
 
@@ -41,8 +41,6 @@ type WebSocket struct {
 func (this *WebSocket) sendMessage(msg kendynet.Message) error {
 	if msg == nil {
 		return kendynet.ErrInvaildBuff
-	} else if this.testFlag(closed | wclosed) {
-		return kendynet.ErrSocketClose
 	} else {
 		switch msg.(type) {
 		case *message.WSMessage:
@@ -68,6 +66,12 @@ func (this *WebSocket) sendThreadFunc() {
 
 	defer func() {
 		close(this.sendCloseChan)
+		this.setFlag(fsendStoped)
+		if this.testFlag(frecvStoped) {
+			if onClose := this.onClose.Load(); nil != onClose {
+				onClose.(func(kendynet.StreamSession, string))(this.imp.(kendynet.StreamSession), this.closeReason)
+			}
+		}
 	}()
 
 	timeout := this.getSendTimeout()
@@ -102,69 +106,14 @@ func (this *WebSocket) sendThreadFunc() {
 				if kendynet.IsNetTimeout(err) {
 					err = kendynet.ErrSendTimeout
 				} else {
-					kendynet.GetLogger().Errorf("websocket write error:%s\n", err.Error())
-					this.setFlag(wclosed)
+					this.sendQue.CloseAndClear()
 				}
 
-				event := &kendynet.Event{Session: this, EventType: kendynet.EventTypeError, Data: err}
-
-				if !this.IsClosed() {
-					this.onEvent(event)
-					if this.IsClosed() {
-						return
-					}
-				} else {
+				if fclosed == this.callEventCB(&kendynet.Event{Session: this, EventType: kendynet.EventTypeError, Data: err}) {
 					return
 				}
-
 			}
 		}
-	}
-}
-
-func (this *WebSocket) Close(reason string, delay time.Duration) {
-
-	for {
-		flag := atomic.LoadInt32(&this.flag)
-
-		if flag&closed > 0 {
-			return
-		}
-
-		if atomic.CompareAndSwapInt32(&this.flag, flag, flag|closed|rclosed) {
-			break
-		}
-	}
-
-	this.closeReason = reason
-
-	if this.testFlag(wclosed) {
-		delay = 0 //写端已经关闭忽略delay参数
-	} else {
-		delay = delay * time.Second
-	}
-
-	if delay > 0 {
-		this.shutdownRead()
-		msg := gorilla.FormatCloseMessage(1000, reason)
-		this.sendQue.AddNoWait(message.NewWSMessage(message.WSCloseMessage, msg))
-		this.sendQue.Close()
-
-		ticker := time.NewTicker(delay)
-		if !this.testFlag(started) {
-			go this.sendThreadFunc()
-		}
-		go func() {
-			select {
-			case <-this.sendCloseChan:
-			case <-ticker.C:
-			}
-			ticker.Stop()
-			this.doClose()
-		}()
-	} else {
-		this.sendQue.Close()
-		this.doClose()
 	}
 }
 
@@ -209,4 +158,8 @@ func (this *WebSocket) Read() (messageType int, p []byte, err error) {
 
 func (this *WebSocket) defaultReceiver() kendynet.Receiver {
 	return &defaultWSReceiver{}
+}
+
+func (this *WebSocket) SendWSClose(reason string) error {
+	return this.sendMessage(message.NewWSMessage(message.WSCloseMessage, gorilla.FormatCloseMessage(1000, reason)))
 }

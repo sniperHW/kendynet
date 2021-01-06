@@ -98,9 +98,6 @@ func TestWebSocket(t *testing.T) {
 			}
 		})
 
-		//启动后设置无效
-		session.SetReceiver(nil)
-
 		session.SetSendQueueSize(100)
 
 		assert.Equal(t, session.Start(func(event *kendynet.Event) {}), kendynet.ErrStarted)
@@ -174,26 +171,6 @@ func TestWebSocket(t *testing.T) {
 		assert.Equal(t, resp.Bytes(), []byte("hello"))
 
 		listener.Close()
-	}
-}
-
-func TestSocketFlag(t *testing.T) {
-
-	{
-		sb := &SocketBase{}
-		sb.setFlag(closed)
-		assert.Equal(t, true, sb.testFlag(closed))
-	}
-
-	{
-		sb := &SocketBase{}
-		sb.setFlag(closed | wclosed | rclosed)
-		assert.Equal(t, true, sb.testFlag(closed))
-		assert.Equal(t, true, sb.testFlag(wclosed))
-		assert.Equal(t, true, sb.testFlag(rclosed))
-		assert.Equal(t, false, sb.testFlag(started))
-		assert.Equal(t, true, sb.testFlag(closed|wclosed|rclosed))
-		assert.Equal(t, true, sb.testFlag(closed|wclosed))
 	}
 }
 

@@ -9,7 +9,6 @@ import (
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/util"
 	"net"
-	"sync/atomic"
 	"time"
 )
 
@@ -32,55 +31,9 @@ type StreamSocket struct {
 	conn net.Conn
 }
 
-func (this *StreamSocket) Close(reason string, delay time.Duration) {
-
-	for {
-		flag := atomic.LoadInt32(&this.flag)
-
-		if flag&closed > 0 {
-			return
-		}
-
-		if atomic.CompareAndSwapInt32(&this.flag, flag, flag|closed|rclosed) {
-			break
-		}
-	}
-
-	this.sendQue.Close()
-
-	this.closeReason = reason
-
-	if this.testFlag(wclosed) || this.sendQue.Len() == 0 {
-		delay = 0 //写端已经关闭，delay参数没有意义设置为0
-	} else if delay > 0 {
-		delay = delay * time.Second
-	}
-
-	if delay > 0 {
-		this.shutdownRead()
-		ticker := time.NewTicker(delay)
-		go func() {
-			/*
-			 *	delay > 0,sendThread最多需要经过delay秒之后才会结束，
-			 *	为了避免阻塞调用Close的goroutine,启动一个新的goroutine在chan上等待事件
-			 */
-			select {
-			case <-this.sendCloseChan:
-			case <-ticker.C:
-			}
-			ticker.Stop()
-			this.doClose()
-		}()
-	} else {
-		this.doClose()
-	}
-}
-
 func (this *StreamSocket) sendMessage(msg kendynet.Message) error {
 	if msg == nil {
 		return kendynet.ErrInvaildBuff
-	} else if this.testFlag(closed | wclosed) {
-		return kendynet.ErrSocketClose
 	} else {
 		fullReturn := true
 		err := this.sendQue.AddNoWait(msg, fullReturn)
@@ -94,6 +47,121 @@ func (this *StreamSocket) sendMessage(msg kendynet.Message) error {
 		}
 	}
 	return nil
+}
+
+func (this *StreamSocket) sendThreadFunc() {
+	defer func() {
+		close(this.sendCloseChan)
+		this.setFlag(fsendStoped)
+		if this.testFlag(frecvStoped) {
+			if onClose := this.onClose.Load(); nil != onClose {
+				onClose.(func(kendynet.StreamSession, string))(this.imp.(kendynet.StreamSession), this.closeReason)
+			}
+		}
+	}()
+
+	var err error
+
+	writer := bufio.NewWriterSize(this.conn, kendynet.SendBufferSize)
+
+	timeout := this.getSendTimeout()
+
+	for {
+		closed, localList := this.sendQue.Get()
+		size := len(localList)
+		if closed && size == 0 {
+			break
+		}
+
+		for i := 0; i < size; i++ {
+			msg := localList[i].(kendynet.Message)
+
+			data := msg.Bytes()
+			for data != nil || (i == (size-1) && writer.Buffered() > 0) {
+				if data != nil {
+					var s int
+					if len(data) > writer.Available() {
+						s = writer.Available()
+					} else {
+						s = len(data)
+					}
+					writer.Write(data[:s])
+
+					if s != len(data) {
+						data = data[s:]
+					} else {
+						data = nil
+					}
+				}
+
+				if writer.Available() == 0 || i == (size-1) {
+					if timeout > 0 {
+						this.conn.SetWriteDeadline(time.Now().Add(timeout))
+						err = writer.Flush()
+						this.conn.SetWriteDeadline(time.Time{})
+					} else {
+						err = writer.Flush()
+					}
+					if err != nil {
+
+						if kendynet.IsNetTimeout(err) {
+							err = kendynet.ErrSendTimeout
+						} else {
+							this.sendQue.CloseAndClear()
+						}
+
+						if fclosed == this.callEventCB(&kendynet.Event{Session: this, EventType: kendynet.EventTypeError, Data: err}) {
+							return
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+func NewStreamSocket(conn net.Conn) kendynet.StreamSession {
+	if nil == conn {
+		return nil
+	} else {
+		switch conn.(type) {
+		case *net.TCPConn:
+			break
+		case *net.UnixConn:
+			break
+		default:
+			kendynet.GetLogger().Errorf("NewStreamSocket() invaild conn type\n")
+			return nil
+		}
+
+		s := &StreamSocket{
+			conn: conn,
+		}
+		s.SocketBase = &SocketBase{
+			sendQue:       util.NewBlockQueue(1024),
+			sendCloseChan: make(chan struct{}),
+			imp:           s,
+		}
+		return s
+	}
+
+	return nil
+}
+
+func (this *StreamSocket) Read(b []byte) (int, error) {
+	return this.conn.Read(b)
+}
+
+func (this *StreamSocket) getNetConn() net.Conn {
+	return this.conn
+}
+
+func (this *StreamSocket) GetUnderConn() interface{} {
+	return this.getNetConn()
+}
+
+func (this *StreamSocket) defaultReceiver() kendynet.Receiver {
+	return &defaultSSReceiver{buffer: make([]byte, 4096)}
 }
 
 /*
@@ -172,76 +240,6 @@ func (this *StreamSocket) sendThreadFunc() {
 	}
 }
 */
-
-func (this *StreamSocket) sendThreadFunc() {
-	defer func() {
-		close(this.sendCloseChan)
-	}()
-
-	var err error
-
-	writer := bufio.NewWriterSize(this.conn, kendynet.SendBufferSize)
-
-	timeout := this.getSendTimeout()
-
-	for {
-		closed, localList := this.sendQue.Get()
-		size := len(localList)
-		if closed && size == 0 {
-			break
-		}
-
-		for i := 0; i < size; i++ {
-			msg := localList[i].(kendynet.Message)
-
-			data := msg.Bytes()
-			for data != nil || (i == (size-1) && writer.Buffered() > 0) {
-				if data != nil {
-					var s int
-					if len(data) > writer.Available() {
-						s = writer.Available()
-					} else {
-						s = len(data)
-					}
-					writer.Write(data[:s])
-
-					if s != len(data) {
-						data = data[s:]
-					} else {
-						data = nil
-					}
-				}
-
-				if writer.Available() == 0 || i == (size-1) {
-					if timeout > 0 {
-						this.conn.SetWriteDeadline(time.Now().Add(timeout))
-						err = writer.Flush()
-						this.conn.SetWriteDeadline(time.Time{})
-					} else {
-						err = writer.Flush()
-					}
-					if err != nil {
-						if kendynet.IsNetTimeout(err) {
-							err = kendynet.ErrSendTimeout
-						} else {
-							kendynet.GetLogger().Errorf("writer.Flush error:%s\n", err.Error())
-							this.setFlag(wclosed)
-						}
-						event := &kendynet.Event{Session: this, EventType: kendynet.EventTypeError, Data: err}
-						if !this.IsClosed() {
-							this.onEvent(event)
-							if this.IsClosed() {
-								return
-							}
-						} else {
-							return
-						}
-					}
-				}
-			}
-		}
-	}
-}
 
 /*
 func (this *StreamSocket) sendThreadFunc() {
@@ -331,47 +329,3 @@ func (this *StreamSocket) sendThreadFunc() {
 		}
 	}
 }*/
-
-func NewStreamSocket(conn net.Conn) kendynet.StreamSession {
-	if nil == conn {
-		return nil
-	} else {
-		switch conn.(type) {
-		case *net.TCPConn:
-			break
-		case *net.UnixConn:
-			break
-		default:
-			kendynet.GetLogger().Errorf("NewStreamSocket() invaild conn type\n")
-			return nil
-		}
-
-		s := &StreamSocket{
-			conn: conn,
-		}
-		s.SocketBase = &SocketBase{
-			sendQue:       util.NewBlockQueue(1024),
-			sendCloseChan: make(chan struct{}),
-			imp:           s,
-		}
-		return s
-	}
-
-	return nil
-}
-
-func (this *StreamSocket) Read(b []byte) (int, error) {
-	return this.conn.Read(b)
-}
-
-func (this *StreamSocket) getNetConn() net.Conn {
-	return this.conn
-}
-
-func (this *StreamSocket) GetUnderConn() interface{} {
-	return this.getNetConn()
-}
-
-func (this *StreamSocket) defaultReceiver() kendynet.Receiver {
-	return &defaultSSReceiver{buffer: make([]byte, 4096)}
-}
