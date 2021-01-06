@@ -1,6 +1,6 @@
 package socket
 
-//go test -covermode=count -v -run=TestStreamSocket
+//go test -covermode=count -v -coverprofile=coverage.out -run=.
 import (
 	"errors"
 	gorilla "github.com/gorilla/websocket"
@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -65,7 +66,6 @@ func TestWebSocket(t *testing.T) {
 			session.Start(func(event *kendynet.Event) {
 				if event.EventType == kendynet.EventTypeError {
 					event.Session.Close(event.Data.(error).Error(), 0)
-					assert.Equal(t, session.Start(func(event *kendynet.Event) {}), kendynet.ErrSocketClose)
 					assert.Equal(t, session.SendMessage(message.NewWSMessage(message.WSTextMessage, "hello")), kendynet.ErrSocketClose)
 				} else {
 					event.Session.SendMessage(event.Data.(kendynet.Message))
@@ -99,8 +99,6 @@ func TestWebSocket(t *testing.T) {
 		})
 
 		session.SetSendQueueSize(100)
-
-		assert.Equal(t, session.Start(func(event *kendynet.Event) {}), kendynet.ErrStarted)
 
 		session.Send("hello")
 
@@ -271,34 +269,74 @@ func TestStreamSocket(t *testing.T) {
 			}
 		}()
 
-		dialer := &net.Dialer{}
-		conn, _ := dialer.Dial("tcp", "localhost:8110")
-		session := NewStreamSocket(conn)
+		{
+			dialer := &net.Dialer{}
+			conn, _ := dialer.Dial("tcp", "localhost:8110")
+			session := NewStreamSocket(conn)
 
-		respChan := make(chan kendynet.Message)
+			respChan := make(chan kendynet.Message)
 
-		session.Start(func(event *kendynet.Event) {
-			if event.EventType == kendynet.EventTypeError {
-				event.Session.Close(event.Data.(error).Error(), 0)
-			} else {
-				respChan <- event.Data.(kendynet.Message)
+			session.Start(func(event *kendynet.Event) {
+				if event.EventType == kendynet.EventTypeError {
+					event.Session.Close(event.Data.(error).Error(), 0)
+				} else {
+					respChan <- event.Data.(kendynet.Message)
+				}
+			})
+
+			session.SendMessage(kendynet.NewByteBuffer("hello"))
+
+			resp := <-respChan
+
+			assert.Equal(t, resp.Bytes(), []byte("hello"))
+		}
+
+		{
+			dialer := &net.Dialer{}
+			conn, _ := dialer.Dial("tcp", "localhost:8110")
+			session := NewStreamSocket(conn)
+
+			assert.Equal(t, kendynet.ErrInvaildObject, session.Send(nil))
+
+			assert.Equal(t, kendynet.ErrInvaildEncoder, session.Send("haha"))
+
+			session.SetEncoder(&encoder{})
+
+			assert.NotNil(t, session.Send("haha"))
+
+			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
+			})
+
+			session.Close("none", 0)
+
+			err := session.Start(func(event *kendynet.Event) {
+
+			})
+
+			assert.Equal(t, kendynet.ErrSocketClose, err)
+		}
+
+		{
+			dialer := &net.Dialer{}
+			conn, _ := dialer.Dial("tcp", "localhost:8110")
+			_ = NewStreamSocket(conn)
+			for i := 0; i < 10; i++ {
+				time.Sleep(time.Second)
+				runtime.GC()
 			}
-		})
-
-		session.SendMessage(kendynet.NewByteBuffer("hello"))
-
-		resp := <-respChan
-
-		assert.Equal(t, resp.Bytes(), []byte("hello"))
+		}
 
 		listener.Close()
 	}
 
-	//test eventWaiter
-	/*{
+	{
+
 		tcpAddr, _ := net.ResolveTCPAddr("tcp", "localhost:8110")
 
 		listener, _ := net.ListenTCP("tcp", tcpAddr)
+
+		die1 := make(chan struct{})
+		die2 := make(chan struct{})
 
 		go func() {
 			for {
@@ -307,20 +345,13 @@ func TestStreamSocket(t *testing.T) {
 					return
 				} else {
 					session := NewStreamSocket(conn)
-					session.SetRecvTimeout(time.Second * 1)
-					session.SetWaitMode(true)
 					session.Start(func(event *kendynet.Event) {
 						if event.EventType == kendynet.EventTypeError {
 							event.Session.Close(event.Data.(error).Error(), 0)
+							close(die1)
 						} else {
-							event.Session.SendMessage(event.Data.(kendynet.Message))
-							event.Session.Close("close", time.Second)
+							close(die2)
 						}
-
-						if nil != event.EventWaiter {
-							event.EventWaiter.Notify()
-						}
-
 					})
 				}
 			}
@@ -330,24 +361,19 @@ func TestStreamSocket(t *testing.T) {
 		conn, _ := dialer.Dial("tcp", "localhost:8110")
 		session := NewStreamSocket(conn)
 
-		respChan := make(chan kendynet.Message)
+		session.SetEncoder(&encoder{})
 
-		session.Start(func(event *kendynet.Event) {
-			if event.EventType == kendynet.EventTypeError {
-				event.Session.Close(event.Data.(error).Error(), 0)
-			} else {
-				respChan <- event.Data.(kendynet.Message)
-			}
-		})
+		session.Send(kendynet.NewByteBuffer("hello"))
 
-		session.SendMessage(kendynet.NewByteBuffer("hello"))
+		session.Close("none", time.Second)
 
-		resp := <-respChan
-
-		assert.Equal(t, resp.Bytes(), []byte("hello"))
+		select {
+		case <-die1:
+			panic("should not go here")
+		case <-die2:
+		}
 
 		listener.Close()
-
-	}*/
+	}
 
 }

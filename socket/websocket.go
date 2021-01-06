@@ -12,6 +12,7 @@ import (
 	"github.com/sniperHW/kendynet/util"
 	"net"
 	//"sync/atomic"
+	"runtime"
 	"time"
 )
 
@@ -103,13 +104,15 @@ func (this *WebSocket) sendThreadFunc() {
 			}
 
 			if err != nil && msg.Type() != message.WSCloseMessage {
+				breakLoop := false
 				if kendynet.IsNetTimeout(err) {
 					err = kendynet.ErrSendTimeout
 				} else {
+					breakLoop = true
 					this.sendQue.CloseAndClear()
 				}
 
-				if fclosed == this.callEventCB(&kendynet.Event{Session: this, EventType: kendynet.EventTypeError, Data: err}) {
+				if this.callEventCB(&kendynet.Event{Session: this, EventType: kendynet.EventTypeError, Data: err}) || breakLoop {
 					return
 				}
 			}
@@ -132,6 +135,11 @@ func NewWSSocket(conn *gorilla.Conn) kendynet.StreamSession {
 			sendCloseChan: make(chan struct{}),
 			imp:           s,
 		}
+
+		runtime.SetFinalizer(s, func(s *WebSocket) {
+			s.Close("gc", 0)
+		})
+
 		return s
 	}
 }

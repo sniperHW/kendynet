@@ -4,6 +4,7 @@ import (
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/util"
 	"net"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -39,6 +40,8 @@ type SocketBase struct {
 	sendCloseChan chan struct{}
 	imp           SocketImpl
 	CBLock        sync.Mutex
+	closeOnce     sync.Once
+	startOnce     sync.Once
 }
 
 func (this *SocketBase) setFlag(flag int32) {
@@ -70,26 +73,8 @@ func (this *SocketBase) GetUserData() interface{} {
 	return this.ud.Load()
 }
 
-func (this *SocketBase) shutdownRead() {
-	underConn := this.imp.getNetConn()
-	switch underConn.(type) {
-	case *net.TCPConn:
-		underConn.(*net.TCPConn).CloseRead()
-		break
-	case *net.UnixConn:
-		underConn.(*net.UnixConn).CloseRead()
-		break
-	}
-}
-
-func (this *SocketBase) ShutdownRead() {
-	if !this.testFlag(fclosed) {
-		this.shutdownRead()
-	}
-}
-
 //保证onEvent在读写线程中按序执行
-func (this *SocketBase) callEventCB(event *kendynet.Event) int32 {
+func (this *SocketBase) callEventCB(event *kendynet.Event) bool {
 	/*
 	 *  这个锁在绝大多数情况下无竞争，只有在sendThreadFunc发生错误需要调用onEvent时才可能发生竞争
 	 */
@@ -97,45 +82,11 @@ func (this *SocketBase) callEventCB(event *kendynet.Event) int32 {
 	defer this.CBLock.Unlock()
 
 	if this.testFlag(fclosed) {
-		return fclosed
-	}
-
-	this.onEvent(event)
-
-	if this.testFlag(fclosed) {
-		return fclosed
+		return true
 	} else {
-		return 0
+		this.onEvent(event)
+		return this.testFlag(fclosed)
 	}
-}
-
-func (this *SocketBase) Start(eventCB func(*kendynet.Event)) error {
-
-	for {
-
-		flag := atomic.LoadInt32(&this.flag)
-
-		if flag&fclosed > 0 {
-			return kendynet.ErrSocketClose
-		} else if flag&fstarted > 0 {
-			return kendynet.ErrStarted
-		}
-
-		if atomic.CompareAndSwapInt32(&this.flag, flag, flag|fstarted) {
-			break
-		}
-	}
-
-	if this.receiver.Load() == nil {
-		this.receiver.Store(this.imp.defaultReceiver())
-	}
-
-	this.onEvent = eventCB
-
-	go this.imp.sendThreadFunc()
-	go this.imp.recvThreadFunc()
-
-	return nil
 }
 
 func (this *SocketBase) SetRecvTimeout(timeout time.Duration) {
@@ -204,9 +155,9 @@ func (this *SocketBase) recvThreadFunc() {
 
 	receiver := this.receiver.Load().(kendynet.Receiver)
 
-	isClosed := this.IsClosed()
+	breakLoop := this.testFlag(fclosed)
 
-	for !isClosed {
+	for !breakLoop {
 
 		var (
 			p     interface{}
@@ -232,45 +183,44 @@ func (this *SocketBase) recvThreadFunc() {
 				if kendynet.IsNetTimeout(err) {
 					event.Data = kendynet.ErrRecvTimeout
 				} else {
-					this.sendQue.CloseAndClear()
+					this.shutdownRead()
+					breakLoop = true
 				}
 			} else {
 				event.EventType = kendynet.EventTypeMessage
 				event.Data = p
 			}
-			isClosed = (this.callEventCB(&event) == fclosed)
+			breakLoop = this.callEventCB(&event) || breakLoop
 		} else {
-			isClosed = this.IsClosed()
+			breakLoop = this.testFlag(fclosed)
 		}
 	}
 }
 
-func (this *SocketBase) Close(reason string, delay time.Duration) {
-	var flag int32
-	for {
-		flag = atomic.LoadInt32(&this.flag)
-
-		if flag&fclosed > 0 {
-			return
-		}
-
-		if atomic.CompareAndSwapInt32(&this.flag, flag, flag|fclosed) {
-			break
-		}
+func (this *SocketBase) shutdownRead() {
+	underConn := this.imp.getNetConn()
+	switch underConn.(type) {
+	case *net.TCPConn:
+		underConn.(*net.TCPConn).CloseRead()
+		break
+	case *net.UnixConn:
+		underConn.(*net.UnixConn).CloseRead()
+		break
 	}
+}
 
-	wclosed := this.sendQue.Closed()
+func (this *SocketBase) Close(reason string, delay time.Duration) {
 
-	this.sendQue.Close()
+	this.closeOnce.Do(func() {
+		runtime.SetFinalizer(this.imp, nil)
 
-	this.closeReason = reason
+		this.setFlag(fclosed)
 
-	if flag&fstarted == 0 {
-		this.imp.getNetConn().Close()
-		if onClose := this.onClose.Load(); nil != onClose {
-			onClose.(func(kendynet.StreamSession, string))(this.imp.(kendynet.StreamSession), this.closeReason)
-		}
-	} else {
+		wclosed := this.sendQue.Closed()
+
+		this.sendQue.Close()
+
+		this.closeReason = reason
 
 		if wclosed || this.sendQue.Len() == 0 {
 			delay = 0 //写端已经关闭，delay参数没有意义设置为0
@@ -280,6 +230,12 @@ func (this *SocketBase) Close(reason string, delay time.Duration) {
 
 		if delay > 0 {
 			this.shutdownRead()
+
+			if !this.testFlag(fstarted) {
+				this.setFlag(frecvStoped)
+				go this.imp.sendThreadFunc()
+			}
+
 			ticker := time.NewTicker(delay)
 			go func() {
 				/*
@@ -293,11 +249,48 @@ func (this *SocketBase) Close(reason string, delay time.Duration) {
 				ticker.Stop()
 				this.imp.getNetConn().Close()
 			}()
+
 		} else {
+
 			this.sendQue.Clear()
 			this.imp.getNetConn().Close()
+			onClose := this.onClose.Load()
+			if !this.testFlag(fstarted) && nil != onClose {
+				onClose.(func(kendynet.StreamSession, string))(this.imp.(kendynet.StreamSession), this.closeReason)
+			}
 		}
-	}
+	})
+
+}
+
+func (this *SocketBase) Start(eventCB func(*kendynet.Event)) error {
+	err := kendynet.ErrStarted
+
+	this.startOnce.Do(func() {
+		for {
+			flag := atomic.LoadInt32(&this.flag)
+			if flag&fclosed > 0 {
+				err = kendynet.ErrSocketClose
+				return
+			} else if atomic.CompareAndSwapInt32(&this.flag, flag, flag|fstarted) {
+				break
+			}
+		}
+
+		if this.receiver.Load() == nil {
+			this.receiver.Store(this.imp.defaultReceiver())
+		}
+
+		this.onEvent = eventCB
+
+		go this.imp.sendThreadFunc()
+		go this.imp.recvThreadFunc()
+
+		err = nil
+
+	})
+
+	return err
 }
 
 func (this *SocketBase) getRecvTimeout() time.Duration {

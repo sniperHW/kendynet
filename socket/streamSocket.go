@@ -6,9 +6,11 @@ package socket
 
 import (
 	"bufio"
+	"fmt"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/util"
 	"net"
+	"runtime"
 	"time"
 )
 
@@ -67,6 +69,7 @@ func (this *StreamSocket) sendThreadFunc() {
 	timeout := this.getSendTimeout()
 
 	for {
+
 		closed, localList := this.sendQue.Get()
 		size := len(localList)
 		if closed && size == 0 {
@@ -104,13 +107,15 @@ func (this *StreamSocket) sendThreadFunc() {
 					}
 					if err != nil {
 
+						breakLoop := false
 						if kendynet.IsNetTimeout(err) {
 							err = kendynet.ErrSendTimeout
 						} else {
+							breakLoop = true
 							this.sendQue.CloseAndClear()
 						}
 
-						if fclosed == this.callEventCB(&kendynet.Event{Session: this, EventType: kendynet.EventTypeError, Data: err}) {
+						if this.callEventCB(&kendynet.Event{Session: this, EventType: kendynet.EventTypeError, Data: err}) || breakLoop {
 							return
 						}
 					}
@@ -121,31 +126,28 @@ func (this *StreamSocket) sendThreadFunc() {
 }
 
 func NewStreamSocket(conn net.Conn) kendynet.StreamSession {
-	if nil == conn {
+	switch conn.(type) {
+	case *net.TCPConn, *net.UnixConn:
+		break
+	default:
 		return nil
-	} else {
-		switch conn.(type) {
-		case *net.TCPConn:
-			break
-		case *net.UnixConn:
-			break
-		default:
-			kendynet.GetLogger().Errorf("NewStreamSocket() invaild conn type\n")
-			return nil
-		}
-
-		s := &StreamSocket{
-			conn: conn,
-		}
-		s.SocketBase = &SocketBase{
-			sendQue:       util.NewBlockQueue(1024),
-			sendCloseChan: make(chan struct{}),
-			imp:           s,
-		}
-		return s
 	}
 
-	return nil
+	s := &StreamSocket{
+		conn: conn,
+	}
+	s.SocketBase = &SocketBase{
+		sendQue:       util.NewBlockQueue(1024),
+		sendCloseChan: make(chan struct{}),
+		imp:           s,
+	}
+
+	runtime.SetFinalizer(s, func(s *StreamSocket) {
+		fmt.Println("gc")
+		s.Close("gc", 0)
+	})
+
+	return s
 }
 
 func (this *StreamSocket) Read(b []byte) (int, error) {
