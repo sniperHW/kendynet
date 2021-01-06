@@ -111,6 +111,20 @@ func NewAioSocket(service *AioService, netConn net.Conn) *AioSocket {
 	return s
 }
 
+func emptyFunc(kendynet.StreamSession, string) {
+
+}
+
+func (this *AioSocket) clearup() {
+	this.receiver.OnClose()
+	//为了防止在闭包中错误的捕获session导致无法gc,这里需要将之前的闭包清除
+	if onClose := this.onClose.Load(); nil != onClose {
+		onClose.(func(kendynet.StreamSession, string))(this, this.closeReason)
+		this.onClose.Store(emptyFunc)
+	}
+	this.onEvent = nil
+}
+
 //保证onEvent在读写线程中按序执行
 func (this *AioSocket) callEventCB(event *kendynet.Event, oflag int32) {
 	/*
@@ -146,10 +160,7 @@ func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 
 	defer func() {
 		if this.testFlag(fclosed|frclosed) && atomic.LoadInt32(&this.recvCount) == 0 && atomic.LoadInt32(&this.sendCount) == 0 {
-			this.receiver.OnClose()
-			if onClose := this.onClose.Load(); nil != onClose {
-				onClose.(func(kendynet.StreamSession, string))(this, this.closeReason)
-			}
+			this.clearup()
 		}
 	}()
 
@@ -232,10 +243,7 @@ func (this *AioSocket) emitSendRequest() {
 func (this *AioSocket) onSendComplete(r *aiogo.CompleteEvent) {
 	defer func() {
 		if this.testFlag(fclosed|fwclosed) && atomic.LoadInt32(&this.recvCount) == 0 && atomic.LoadInt32(&this.sendCount) == 0 {
-			this.receiver.OnClose()
-			if onClose := this.onClose.Load(); nil != onClose {
-				onClose.(func(kendynet.StreamSession, string))(this, this.closeReason)
-			}
+			this.clearup()
 		}
 	}()
 
@@ -397,10 +405,7 @@ func (this *AioSocket) Close(reason string, delay time.Duration) {
 		} else {
 			this.aioConn.Close()
 			if atomic.LoadInt32(&this.recvCount) == 0 && atomic.LoadInt32(&this.sendCount) == 0 {
-				this.receiver.OnClose()
-				if onClose := this.onClose.Load(); nil != onClose {
-					onClose.(func(kendynet.StreamSession, string))(this, this.closeReason)
-				}
+				this.clearup()
 			}
 		}
 	})

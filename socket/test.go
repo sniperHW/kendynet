@@ -1,6 +1,7 @@
 package socket
 
-/*package main
+/*
+package main
 
 import (
         "log"
@@ -8,12 +9,20 @@ import (
         "time"
 )
 
+type I interface {
+        Find()
+}
+
 type Base struct {
-        child interface{}
+        child I
 }
 
 type Road struct {
-        Base
+        *Base
+}
+
+func (*Road) Find() {
+
 }
 
 func findRoad(r *Road) {
@@ -23,7 +32,7 @@ func findRoad(r *Road) {
 func entry() {
         var rd Road = Road{}
         r := &rd
-        rd.child = r
+        rd.Base = &Base{child: r}
         runtime.SetFinalizer(r, findRoad)
 }
 

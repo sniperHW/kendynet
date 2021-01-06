@@ -6,7 +6,7 @@ package socket
 
 import (
 	"bufio"
-	"fmt"
+	//"fmt"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/util"
 	"net"
@@ -29,7 +29,7 @@ func (this *defaultSSReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (in
 }
 
 type StreamSocket struct {
-	*SocketBase
+	SocketBase
 	conn net.Conn
 }
 
@@ -56,9 +56,7 @@ func (this *StreamSocket) sendThreadFunc() {
 		close(this.sendCloseChan)
 		this.setFlag(fsendStoped)
 		if this.testFlag(frecvStoped) {
-			if onClose := this.onClose.Load(); nil != onClose {
-				onClose.(func(kendynet.StreamSession, string))(this.imp.(kendynet.StreamSession), this.closeReason)
-			}
+			this.clearup()
 		}
 	}()
 
@@ -136,14 +134,16 @@ func NewStreamSocket(conn net.Conn) kendynet.StreamSession {
 	s := &StreamSocket{
 		conn: conn,
 	}
-	s.SocketBase = &SocketBase{
+	s.SocketBase = SocketBase{
 		sendQue:       util.NewBlockQueue(1024),
 		sendCloseChan: make(chan struct{}),
 		imp:           s,
 	}
 
+	//fmt.Println("new")
+
 	runtime.SetFinalizer(s, func(s *StreamSocket) {
-		fmt.Println("gc")
+		//fmt.Println("gc")
 		s.Close("gc", 0)
 	})
 

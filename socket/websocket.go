@@ -35,7 +35,7 @@ func (this *defaultWSReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (in
 }
 
 type WebSocket struct {
-	*SocketBase
+	SocketBase
 	conn *gorilla.Conn
 }
 
@@ -130,7 +130,7 @@ func NewWSSocket(conn *gorilla.Conn) kendynet.StreamSession {
 		s := &WebSocket{
 			conn: conn,
 		}
-		s.SocketBase = &SocketBase{
+		s.SocketBase = SocketBase{
 			sendQue:       util.NewBlockQueue(1024),
 			sendCloseChan: make(chan struct{}),
 			imp:           s,

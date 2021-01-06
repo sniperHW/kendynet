@@ -5,6 +5,7 @@ import (
 	"github.com/sniperHW/kendynet/util"
 	"net"
 	"runtime"
+	//"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -42,6 +43,19 @@ type SocketBase struct {
 	CBLock        sync.Mutex
 	closeOnce     sync.Once
 	startOnce     sync.Once
+}
+
+func emptyFunc(kendynet.StreamSession, string) {
+
+}
+
+func (this *SocketBase) clearup() {
+	//为了防止在闭包中错误的捕获session导致无法gc,这里需要将之前的闭包清除
+	if onClose := this.onClose.Load(); nil != onClose {
+		onClose.(func(kendynet.StreamSession, string))(this.imp.(kendynet.StreamSession), this.closeReason)
+		this.onClose.Store(emptyFunc)
+	}
+	this.onEvent = nil
 }
 
 func (this *SocketBase) setFlag(flag int32) {
@@ -145,9 +159,7 @@ func (this *SocketBase) recvThreadFunc() {
 	defer func() {
 		this.setFlag(frecvStoped)
 		if this.testFlag(fsendStoped) {
-			if onClose := this.onClose.Load(); nil != onClose {
-				onClose.(func(kendynet.StreamSession, string))(this.imp.(kendynet.StreamSession), this.closeReason)
-			}
+			this.clearup()
 		}
 	}()
 
@@ -186,6 +198,7 @@ func (this *SocketBase) recvThreadFunc() {
 					this.shutdownRead()
 					breakLoop = true
 				}
+
 			} else {
 				event.EventType = kendynet.EventTypeMessage
 				event.Data = p
@@ -254,9 +267,9 @@ func (this *SocketBase) Close(reason string, delay time.Duration) {
 
 			this.sendQue.Clear()
 			this.imp.getNetConn().Close()
-			onClose := this.onClose.Load()
-			if !this.testFlag(fstarted) && nil != onClose {
-				onClose.(func(kendynet.StreamSession, string))(this.imp.(kendynet.StreamSession), this.closeReason)
+
+			if !this.testFlag(fstarted) {
+				this.clearup()
 			}
 		}
 	})
