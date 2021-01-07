@@ -5,7 +5,6 @@ import (
 	"github.com/sniperHW/kendynet/util"
 	"net"
 	"runtime"
-	//"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -50,12 +49,11 @@ func emptyFunc(kendynet.StreamSession, string) {
 }
 
 func (this *SocketBase) clearup() {
-	//为了防止在闭包中错误的捕获session导致无法gc,这里需要将之前的闭包清除
 	if onClose := this.onClose.Load(); nil != onClose {
 		onClose.(func(kendynet.StreamSession, string))(this.imp.(kendynet.StreamSession), this.closeReason)
-		this.onClose.Store(emptyFunc)
+		//this.onClose.Store(emptyFunc)
 	}
-	this.onEvent = nil
+	//this.onEvent = nil
 }
 
 func (this *SocketBase) setFlag(flag int32) {
@@ -89,16 +87,15 @@ func (this *SocketBase) GetUserData() interface{} {
 
 //保证onEvent在读写线程中按序执行
 func (this *SocketBase) callEventCB(event *kendynet.Event) bool {
-	/*
-	 *  这个锁在绝大多数情况下无竞争，只有在sendThreadFunc发生错误需要调用onEvent时才可能发生竞争
-	 */
-	this.CBLock.Lock()
-	defer this.CBLock.Unlock()
-
 	if this.testFlag(fclosed) {
 		return true
 	} else {
+		/*
+		 *  这个锁在绝大多数情况下无竞争，只有在sendThreadFunc发生错误需要调用onEvent时才可能发生竞争
+		 */
+		this.CBLock.Lock()
 		this.onEvent(event)
+		this.CBLock.Unlock()
 		return this.testFlag(fclosed)
 	}
 }
@@ -198,7 +195,6 @@ func (this *SocketBase) recvThreadFunc() {
 					this.shutdownRead()
 					breakLoop = true
 				}
-
 			} else {
 				event.EventType = kendynet.EventTypeMessage
 				event.Data = p
@@ -211,15 +207,7 @@ func (this *SocketBase) recvThreadFunc() {
 }
 
 func (this *SocketBase) shutdownRead() {
-	underConn := this.imp.getNetConn()
-	switch underConn.(type) {
-	case *net.TCPConn:
-		underConn.(*net.TCPConn).CloseRead()
-		break
-	case *net.UnixConn:
-		underConn.(*net.UnixConn).CloseRead()
-		break
-	}
+	this.imp.getNetConn().(interface{ CloseRead() error }).CloseRead()
 }
 
 func (this *SocketBase) Close(reason string, delay time.Duration) {

@@ -86,21 +86,13 @@ func (this *WebSocket) sendThreadFunc() {
 		for i := 0; i < size; i++ {
 			var err error
 			msg := localList[i].(*message.WSMessage)
-			if msg.Type() == message.WSBinaryMessage || msg.Type() == message.WSTextMessage {
-				if timeout > 0 {
-					this.conn.SetWriteDeadline(time.Now().Add(timeout))
-					err = this.conn.WriteMessage(msg.Type(), msg.Bytes())
-					this.conn.SetWriteDeadline(time.Time{})
-				} else {
-					err = this.conn.WriteMessage(msg.Type(), msg.Bytes())
-				}
 
-			} else if msg.Type() == message.WSCloseMessage || msg.Type() == message.WSPingMessage || msg.Type() == message.WSPingMessage {
-				var deadline time.Time
-				if timeout > 0 {
-					deadline = time.Now().Add(timeout)
-				}
-				err = this.conn.WriteControl(msg.Type(), msg.Bytes(), deadline)
+			if timeout > 0 {
+				this.conn.SetWriteDeadline(time.Now().Add(timeout))
+				err = this.conn.WriteMessage(msg.Type(), msg.Bytes())
+				this.conn.SetWriteDeadline(time.Time{})
+			} else {
+				err = this.conn.WriteMessage(msg.Type(), msg.Bytes())
 			}
 
 			if err != nil && msg.Type() != message.WSCloseMessage {
@@ -124,9 +116,12 @@ func NewWSSocket(conn *gorilla.Conn) kendynet.StreamSession {
 	if nil == conn {
 		return nil
 	} else {
+
 		conn.SetCloseHandler(func(code int, text string) error {
-			return fmt.Errorf("peer close reason[%s]", text)
+			conn.UnderlyingConn().Close()
+			return nil
 		})
+
 		s := &WebSocket{
 			conn: conn,
 		}

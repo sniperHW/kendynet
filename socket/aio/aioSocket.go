@@ -4,8 +4,10 @@ package aio
 
 import (
 	"container/list"
+	//"fmt"
 	"github.com/sniperHW/aiogo"
 	"github.com/sniperHW/kendynet"
+	//"github.com/sniperHW/kendynet/util"
 	"io"
 	"net"
 	"runtime"
@@ -84,7 +86,7 @@ type AioSocket struct {
 	recvCount        int32
 }
 
-func NewAioSocket(service *AioService, netConn net.Conn) *AioSocket {
+func NewAioSocket(service *AioService, netConn net.Conn) kendynet.StreamSession {
 
 	w, rq, wq := service.getWatcherAndCompleteQueue()
 
@@ -116,23 +118,19 @@ func emptyFunc(kendynet.StreamSession, string) {
 }
 
 func (this *AioSocket) clearup() {
-	this.receiver.OnClose()
-	//为了防止在闭包中错误的捕获session导致无法gc,这里需要将之前的闭包清除
+	if nil != this.receiver {
+		this.receiver.OnClose()
+	}
+
 	if onClose := this.onClose.Load(); nil != onClose {
 		onClose.(func(kendynet.StreamSession, string))(this, this.closeReason)
-		this.onClose.Store(emptyFunc)
+		//this.onClose.Store(emptyFunc)
 	}
-	this.onEvent = nil
+	//this.onEvent = nil
 }
 
 //保证onEvent在读写线程中按序执行
 func (this *AioSocket) callEventCB(event *kendynet.Event, oflag int32) {
-	/*
-	 *  这个锁在绝大多数情况下无竞争，只有在sendThreadFunc发生错误需要调用onEvent时才可能发生竞争
-	 */
-	this.CBLock.Lock()
-	defer this.CBLock.Unlock()
-
 	for {
 		flag := atomic.LoadInt32(&this.flag)
 		if flag&(fclosed|fwclosed) > 0 {
@@ -141,8 +139,12 @@ func (this *AioSocket) callEventCB(event *kendynet.Event, oflag int32) {
 			break
 		}
 	}
-
+	/*
+	 *  这个锁在绝大多数情况下无竞争，只有在sendThreadFunc发生错误需要调用onEvent时才可能发生竞争
+	 */
+	this.CBLock.Lock()
 	this.onEvent(event)
+	this.CBLock.Unlock()
 }
 
 func (this *AioSocket) setFlag(flag int32) {
@@ -156,10 +158,8 @@ func (this *AioSocket) testFlag(flag int32) bool {
 
 func (this *AioSocket) onRecvComplete(r *aiogo.CompleteEvent) {
 
-	atomic.AddInt32(&this.recvCount, -1)
-
 	defer func() {
-		if this.testFlag(fclosed|frclosed) && atomic.LoadInt32(&this.recvCount) == 0 && atomic.LoadInt32(&this.sendCount) == 0 {
+		if atomic.AddInt32(&this.recvCount, -1) == 0 && this.testFlag(fclosed|frclosed) && atomic.LoadInt32(&this.sendCount) == 0 {
 			this.clearup()
 		}
 	}()
@@ -241,8 +241,9 @@ func (this *AioSocket) emitSendRequest() {
 }
 
 func (this *AioSocket) onSendComplete(r *aiogo.CompleteEvent) {
+
 	defer func() {
-		if this.testFlag(fclosed|fwclosed) && atomic.LoadInt32(&this.recvCount) == 0 && atomic.LoadInt32(&this.sendCount) == 0 {
+		if 0 == atomic.AddInt32(&this.sendCount, -1) && this.testFlag(fclosed|fwclosed) && atomic.LoadInt32(&this.recvCount) == 0 {
 			this.clearup()
 		}
 	}()
@@ -251,7 +252,6 @@ func (this *AioSocket) onSendComplete(r *aiogo.CompleteEvent) {
 		this.muW.Lock()
 		if this.pendingSend.Len() == 0 {
 			this.sendLock = false
-			atomic.AddInt32(&this.sendCount, -1)
 			this.muW.Unlock()
 			if onClearSendQueue := this.onClearSendQueue.Load(); nil != onClearSendQueue {
 				onClearSendQueue.(func())()
@@ -269,10 +269,10 @@ func (this *AioSocket) onSendComplete(r *aiogo.CompleteEvent) {
 				}
 			}
 			this.muW.Unlock()
+			atomic.AddInt32(&this.sendCount, 1)
 			this.aioConn.SendBuffers(this.sendBuffs[:c], this, this.wcompleteQueue)
 		}
 	} else {
-		atomic.AddInt32(&this.sendCount, -1)
 
 		flag := int32(0)
 
@@ -338,26 +338,17 @@ func (this *AioSocket) sendMessage(msg kendynet.Message) error {
 
 func (this *AioSocket) SendMessage(msg kendynet.Message) error {
 	if msg == nil {
-		return kendynet.ErrInvaildObject
+		return kendynet.ErrInvaildBuff
 	}
 
 	return this.sendMessage(msg)
 }
 
 func (this *AioSocket) shutdownRead() {
-	underConn := this.GetUnderConn()
-	switch underConn.(type) {
-	case *net.TCPConn:
-		underConn.(*net.TCPConn).CloseRead()
-		break
-	case *net.UnixConn:
-		underConn.(*net.UnixConn).CloseRead()
-		break
-	}
+	this.aioConn.GetRowConn().(interface{ CloseRead() error }).CloseRead()
 }
 
 func (this *AioSocket) Close(reason string, delay time.Duration) {
-
 	this.closeOnce.Do(func() {
 		runtime.SetFinalizer(this, nil)
 
