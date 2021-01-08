@@ -191,7 +191,7 @@ func (this *Caller) Dial(service string, timeout time.Duration, queue *event.Eve
 		return err
 	}
 	this.channel = NewTcpStreamChannel(session)
-	this.client = NewClient(&TestDecoder{}, &TestEncoder{}, queue)
+	this.client = NewClient(&TestDecoder{}, &TestEncoder{})
 	session.SetEncoder(codec.NewPbEncoder(65535))
 	session.SetReceiver(codec.NewPBReceiver(65535))
 	session.SetRecvTimeout(5 * time.Second)
@@ -229,7 +229,7 @@ func init() {
 
 func TestRPC(t *testing.T) {
 
-	assert.Nil(t, NewClient(nil, nil, nil))
+	assert.Nil(t, NewClient(nil, nil))
 
 	assert.Nil(t, NewRPCServer(nil, nil))
 
@@ -269,8 +269,6 @@ func TestRPC(t *testing.T) {
 		assert.Nil(t, caller.Dial("localhost:8110", 10*time.Second, nil))
 
 		caller.client.OnRPCMessage("hello")
-
-		caller.client.PendingCount()
 
 		assert.Nil(t, caller.Post("hello", &testproto.Hello{Hello: proto.String("hello")}))
 
@@ -325,8 +323,6 @@ func TestRPC(t *testing.T) {
 			}
 		}
 
-		assert.Equal(t, int32(0), caller.client.PendingCount())
-
 	}
 
 	{
@@ -343,37 +339,6 @@ func TestRPC(t *testing.T) {
 
 		<-ok
 
-		assert.Equal(t, int32(0), caller.client.PendingCount())
-	}
-
-	{
-		//with eventqueue
-		queue := event.NewEventQueue()
-		go queue.Run()
-
-		caller := NewCaller()
-		assert.Nil(t, caller.Dial("localhost:8110", 10*time.Second, queue))
-		{
-			r, err := caller.Call("hello", &testproto.Hello{Hello: proto.String("hello")}, time.Second*2)
-			assert.Nil(t, err)
-			assert.Equal(t, r.(*testproto.World).GetWorld(), "world")
-		}
-
-		{
-			_, err := caller.Call("world", &testproto.Hello{Hello: proto.String("hello")}, time.Second*2)
-			assert.Equal(t, err.Error(), "invaild method:world")
-		}
-
-		{
-			_, err := caller.Call("hello", &testproto.Hello{Hello: proto.String("testtimeout")}, time.Second*2)
-			assert.Equal(t, err, ErrCallTimeout)
-		}
-
-		time.Sleep(time.Second * 4)
-
-		queue.Close()
-
-		assert.Equal(t, int32(0), caller.client.PendingCount())
 	}
 
 	{
@@ -387,7 +352,6 @@ func TestRPC(t *testing.T) {
 		_, err := caller.Call("hello", &testproto.Hello{Hello: proto.String("hello")}, time.Second)
 		assert.Equal(t, err, errHalt)
 
-		assert.Equal(t, int32(0), caller.client.PendingCount())
 	}
 
 	assert.Equal(t, int32(0), server.server.PendingCount())
