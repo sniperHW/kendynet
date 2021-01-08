@@ -1,6 +1,7 @@
 package rpc
 
-//go test -covermode=count -v -run=.
+//go test -covermode=count -v -coverprofile=coverage.out -run=.
+//go tool cover -html=coverage.out
 
 import (
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	listener "github.com/sniperHW/kendynet/socket/listener/tcp"
 	"github.com/stretchr/testify/assert"
 	"reflect"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -123,9 +125,12 @@ func (this *TestDecoder) Decode(o interface{}) (RPCMessage, error) {
 	}
 }
 
+var errHalt error = fmt.Errorf("halt")
+
 type TestRPCServer struct {
 	server   *RPCServer
 	listener *listener.Listener
+	halt     atomic.Value
 }
 
 func NewTestRPCServer() *TestRPCServer {
@@ -154,7 +159,12 @@ func (this *TestRPCServer) Serve(service string) error {
 			if event.EventType == kendynet.EventTypeError {
 				session.Close(event.Data.(error).Error(), 0)
 			} else {
-				this.server.OnRPCMessage(channel, event.Data)
+				if this.halt.Load() != nil {
+					req, _ := this.server.decoder.Decode(event.Data)
+					this.server.DirectReplyError(channel, req.(*RPCRequest), errHalt)
+				} else {
+					this.server.OnRPCMessage(channel, event.Data)
+				}
 			}
 		})
 	})
@@ -219,44 +229,103 @@ func init() {
 
 func TestRPC(t *testing.T) {
 
+	assert.Nil(t, NewClient(nil, nil, nil))
+
+	assert.Nil(t, NewRPCServer(nil, nil))
+
 	server := NewTestRPCServer()
 
 	assert.Nil(t, server.RegisterMethod("hello", func(replyer *RPCReplyer, arg interface{}) {}))
 	assert.NotNil(t, server.RegisterMethod("hello", func(replyer *RPCReplyer, arg interface{}) {}))
 	server.server.UnRegisterMethod("hello")
 
+	server.RegisterMethod("", nil)
+	server.RegisterMethod("bad", nil)
+
+	server.RegisterMethod("panic", func(replyer *RPCReplyer, arg interface{}) {
+		panic("panic")
+	})
+
 	//注册服务
 	assert.Nil(t, server.RegisterMethod("hello", func(replyer *RPCReplyer, arg interface{}) {
 		world := &testproto.World{World: proto.String("world")}
-		if arg.(*testproto.Hello).GetHello() == "testtimeout" {
+		str := arg.(*testproto.Hello).GetHello()
+		if str == "testtimeout" {
 			time.Sleep(time.Second * 2)
+		} else if str == "testdrop" {
+			replyer.DropResponse()
+			return
 		}
 		replyer.Reply(world, nil)
 	}))
 
 	go server.Serve("localhost:8110")
 
+	server.server.PendingCount()
+
 	{
 		caller := NewCaller()
+
 		assert.Nil(t, caller.Dial("localhost:8110", 10*time.Second, nil))
+
+		caller.client.OnRPCMessage("hello")
+
+		caller.client.PendingCount()
 
 		assert.Nil(t, caller.Post("hello", &testproto.Hello{Hello: proto.String("hello")}))
 
 		{
-			r, err := caller.Call("hello", &testproto.Hello{Hello: proto.String("hello")}, time.Second)
+			caller.Call("panic", &testproto.Hello{Hello: proto.String("hello")}, time.Second*2)
+		}
+
+		{
+			r, err := caller.Call("hello", &testproto.Hello{Hello: proto.String("hello")}, time.Second*2)
 			assert.Nil(t, err)
 			assert.Equal(t, r.(*testproto.World).GetWorld(), "world")
 		}
 
 		{
-			_, err := caller.Call("world", &testproto.Hello{Hello: proto.String("hello")}, time.Second)
+			_, err := caller.Call("world", &testproto.Hello{Hello: proto.String("hello")}, time.Second*2)
 			assert.Equal(t, err.Error(), "invaild method:world")
 		}
 
 		{
-			_, err := caller.Call("hello", &testproto.Hello{Hello: proto.String("testtimeout")}, time.Second)
+			_, err := caller.Call("hello", &testproto.Hello{Hello: proto.String("testtimeout")}, time.Second*2)
 			assert.Equal(t, err, ErrCallTimeout)
 		}
+
+		server.server.SetOnMissingMethod(func(method string, replyer *RPCReplyer) {
+			fmt.Println("OnMissingMethod", method, time.Now())
+			replyer.Reply(nil, fmt.Errorf("invaild method:%s", method))
+		})
+
+		{
+			fmt.Println("5 begin", time.Now())
+			_, err := caller.Call("world", &testproto.Hello{Hello: proto.String("hello")}, time.Second*2)
+			assert.Equal(t, err.Error(), "invaild method:world")
+		}
+
+		{
+			_, err := caller.Call("hello", &testproto.Hello{Hello: proto.String("testdrop")}, time.Second*2)
+			assert.Equal(t, err, ErrCallTimeout)
+		}
+
+		time.Sleep(time.Second * 4)
+
+		{
+			caller.channel.(*TcpStreamChannel).session.Close("none", 0)
+			{
+				err := caller.Post("hello", &testproto.Hello{Hello: proto.String("hello")})
+				assert.Equal(t, err, kendynet.ErrSocketClose)
+			}
+
+			{
+				_, err := caller.Call("hello", &testproto.Hello{Hello: proto.String("testtimeout")}, time.Second*2)
+				assert.Equal(t, err, kendynet.ErrSocketClose)
+			}
+		}
+
+		assert.Equal(t, int32(0), caller.client.PendingCount())
 
 	}
 
@@ -273,6 +342,8 @@ func TestRPC(t *testing.T) {
 		})
 
 		<-ok
+
+		assert.Equal(t, int32(0), caller.client.PendingCount())
 	}
 
 	{
@@ -283,22 +354,42 @@ func TestRPC(t *testing.T) {
 		caller := NewCaller()
 		assert.Nil(t, caller.Dial("localhost:8110", 10*time.Second, queue))
 		{
-			r, err := caller.Call("hello", &testproto.Hello{Hello: proto.String("hello")}, time.Second)
+			r, err := caller.Call("hello", &testproto.Hello{Hello: proto.String("hello")}, time.Second*2)
 			assert.Nil(t, err)
 			assert.Equal(t, r.(*testproto.World).GetWorld(), "world")
 		}
 
 		{
-			_, err := caller.Call("world", &testproto.Hello{Hello: proto.String("hello")}, time.Second)
+			_, err := caller.Call("world", &testproto.Hello{Hello: proto.String("hello")}, time.Second*2)
 			assert.Equal(t, err.Error(), "invaild method:world")
 		}
 
 		{
-			_, err := caller.Call("hello", &testproto.Hello{Hello: proto.String("testtimeout")}, time.Second)
+			_, err := caller.Call("hello", &testproto.Hello{Hello: proto.String("testtimeout")}, time.Second*2)
 			assert.Equal(t, err, ErrCallTimeout)
 		}
 
+		time.Sleep(time.Second * 4)
+
 		queue.Close()
+
+		assert.Equal(t, int32(0), caller.client.PendingCount())
 	}
+
+	{
+
+		caller := NewCaller()
+
+		assert.Nil(t, caller.Dial("localhost:8110", 10*time.Second, nil))
+
+		server.halt.Store(true)
+
+		_, err := caller.Call("hello", &testproto.Hello{Hello: proto.String("hello")}, time.Second)
+		assert.Equal(t, err, errHalt)
+
+		assert.Equal(t, int32(0), caller.client.PendingCount())
+	}
+
+	assert.Equal(t, int32(0), server.server.PendingCount())
 
 }
