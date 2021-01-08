@@ -42,7 +42,153 @@ func (this *wsencoder) EnCode(o interface{}) (kendynet.Message, error) {
 	}
 }
 
+func TestSendTimeout(t *testing.T) {
+
+	//web socket
+
+	fmt.Println("websocket")
+
+	{
+
+		tcpAddr, _ := net.ResolveTCPAddr("tcp", "localhost:8110")
+
+		listener, _ := net.ListenTCP("tcp", tcpAddr)
+
+		upgrader := &gorilla.Upgrader{
+			CheckOrigin: func(r *http.Request) bool {
+				return true
+			},
+		}
+
+		var holdSession kendynet.StreamSession
+
+		die := make(chan struct{})
+
+		http.HandleFunc("/echo2", func(w http.ResponseWriter, r *http.Request) {
+			conn, _ := upgrader.Upgrade(w, r, nil)
+			assert.NotNil(t, conn)
+			holdSession = NewWSSocket(conn)
+			conn.UnderlyingConn().(*net.TCPConn).SetReadBuffer(0)
+		})
+
+		go func() {
+			http.Serve(listener, nil)
+		}()
+
+		u := url.URL{Scheme: "ws", Host: "localhost:8110", Path: "/echo2"}
+		dialer := gorilla.DefaultDialer
+
+		conn, _, _ := dialer.Dial(u.String(), nil)
+		assert.NotNil(t, conn)
+		session := NewWSSocket(conn)
+
+		session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
+			close(die)
+		})
+
+		conn.UnderlyingConn().(*net.TCPConn).SetWriteBuffer(0)
+
+		session.SetReceiver(session.(*WebSocket).defaultReceiver())
+
+		session.SetEncoder(&wsencoder{})
+
+		session.SetSendTimeout(time.Second)
+
+		session.SetSendQueueSize(1)
+
+		session.Start(func(event *kendynet.Event) {
+			if event.EventType == kendynet.EventTypeError {
+				assert.Equal(t, kendynet.ErrSendTimeout, event.Data.(error))
+				event.Session.Close(event.Data.(error).Error(), 0)
+			} else {
+
+			}
+		})
+
+		for i := 0; i < 20; i++ {
+			err := session.SendMessage(message.NewWSMessage(message.WSTextMessage, strings.Repeat("a", 65536)))
+			if nil != err {
+				assert.Equal(t, kendynet.ErrSendQueFull, err)
+			}
+		}
+		<-die
+
+		holdSession.Close("none", 0)
+
+		<-die
+
+		listener.Close()
+	}
+
+	//test send timeout
+	fmt.Println("StreamSocket")
+	{
+
+		tcpAddr, _ := net.ResolveTCPAddr("tcp", "localhost:8110")
+
+		listener, _ := net.ListenTCP("tcp", tcpAddr)
+
+		var holdSession kendynet.StreamSession
+
+		go func() {
+			for {
+				conn, err := listener.Accept()
+				if err != nil {
+					return
+				} else {
+					conn.(*net.TCPConn).SetReadBuffer(0)
+					holdSession = NewStreamSocket(conn)
+					//不启动接收
+				}
+			}
+		}()
+
+		dialer := &net.Dialer{}
+		conn, _ := dialer.Dial("tcp", "localhost:8110")
+		conn.(*net.TCPConn).SetWriteBuffer(0)
+		session := NewStreamSocket(conn)
+
+		die := make(chan struct{})
+
+		session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
+			close(die)
+		})
+
+		session.SetReceiver(session.(*StreamSocket).defaultReceiver())
+
+		session.SetEncoder(&encoder{})
+
+		session.SetSendTimeout(time.Second)
+
+		session.SetSendQueueSize(1)
+
+		session.Start(func(event *kendynet.Event) {
+			if event.EventType == kendynet.EventTypeError {
+				assert.Equal(t, kendynet.ErrSendTimeout, event.Data.(error))
+				event.Session.Close(event.Data.(error).Error(), 0)
+			} else {
+
+			}
+		})
+
+		for i := 0; i < 20; i++ {
+			err := session.Send(kendynet.NewByteBuffer(strings.Repeat("a", 65536)))
+			if nil != err {
+				assert.Equal(t, kendynet.ErrSendQueFull, err)
+			}
+		}
+		<-die
+
+		holdSession.Close("none", 0)
+
+		listener.Close()
+	}
+
+}
+
 func TestWebSocket(t *testing.T) {
+
+	assert.Nil(t, NewWSSocket(nil))
 	{
 
 		tcpAddr, _ := net.ResolveTCPAddr("tcp", "localhost:8110")
@@ -61,6 +207,7 @@ func TestWebSocket(t *testing.T) {
 			conn, _ := upgrader.Upgrade(w, r, nil)
 			assert.NotNil(t, conn)
 			session := NewWSSocket(conn)
+			session.GetUnderConn()
 			session.SetRecvTimeout(time.Second * 1)
 			session.SetSendTimeout(time.Second * 1)
 			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
@@ -74,6 +221,9 @@ func TestWebSocket(t *testing.T) {
 					event.Session.SendMessage(event.Data.(kendynet.Message))
 				}
 			})
+
+			assert.Equal(t, ErrInvaildWSMessage, session.SendMessage(kendynet.NewByteBuffer("hello")))
+
 		})
 
 		go func() {
@@ -305,6 +455,9 @@ func TestWebSocket(t *testing.T) {
 }
 
 func TestStreamSocket(t *testing.T) {
+
+	assert.Nil(t, NewStreamSocket(nil))
+
 	{
 
 		tcpAddr, _ := net.ResolveTCPAddr("tcp", "localhost:8110")
@@ -320,6 +473,7 @@ func TestStreamSocket(t *testing.T) {
 					return
 				} else {
 					session := NewStreamSocket(conn)
+					session.GetUnderConn()
 					session.SetRecvTimeout(time.Second * 1)
 					session.SetSendTimeout(time.Second * 1)
 					session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
@@ -510,11 +664,6 @@ func TestStreamSocket(t *testing.T) {
 
 		listener.Close()
 	}
-}
-
-func TestSendTimeout(t *testing.T) {
-
-	//web socket
 
 	{
 
@@ -522,80 +671,8 @@ func TestSendTimeout(t *testing.T) {
 
 		listener, _ := net.ListenTCP("tcp", tcpAddr)
 
-		upgrader := &gorilla.Upgrader{
-			CheckOrigin: func(r *http.Request) bool {
-				return true
-			},
-		}
-
-		var holdSession kendynet.StreamSession
-
-		die := make(chan struct{})
-
-		http.HandleFunc("/echo2", func(w http.ResponseWriter, r *http.Request) {
-			conn, _ := upgrader.Upgrade(w, r, nil)
-			assert.NotNil(t, conn)
-			holdSession = NewWSSocket(conn)
-			conn.UnderlyingConn().(*net.TCPConn).SetReadBuffer(0)
-		})
-
-		go func() {
-			http.Serve(listener, nil)
-		}()
-
-		u := url.URL{Scheme: "ws", Host: "localhost:8110", Path: "/echo2"}
-		dialer := gorilla.DefaultDialer
-
-		conn, _, _ := dialer.Dial(u.String(), nil)
-		assert.NotNil(t, conn)
-		session := NewWSSocket(conn)
-
-		session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
-			close(die)
-		})
-
-		conn.UnderlyingConn().(*net.TCPConn).SetWriteBuffer(0)
-
-		session.SetReceiver(session.(*WebSocket).defaultReceiver())
-
-		session.SetEncoder(&wsencoder{})
-
-		session.SetSendTimeout(time.Second)
-
-		session.SetSendQueueSize(1)
-
-		session.Start(func(event *kendynet.Event) {
-			if event.EventType == kendynet.EventTypeError {
-				assert.Equal(t, kendynet.ErrSendTimeout, event.Data.(error))
-				event.Session.Close(event.Data.(error).Error(), 0)
-			} else {
-
-			}
-		})
-
-		for i := 0; i < 20; i++ {
-			err := session.SendMessage(message.NewWSMessage(message.WSTextMessage, strings.Repeat("a", 65536)))
-			if nil != err {
-				assert.Equal(t, kendynet.ErrSendQueFull, err)
-			}
-		}
-		<-die
-
-		holdSession.Close("none", 0)
-
-		<-die
-
-		listener.Close()
-	}
-
-	//test send timeout
-	{
-
-		tcpAddr, _ := net.ResolveTCPAddr("tcp", "localhost:8110")
-
-		listener, _ := net.ListenTCP("tcp", tcpAddr)
-
-		var holdSession kendynet.StreamSession
+		serverdie := make(chan struct{})
+		clientdie := make(chan struct{})
 
 		go func() {
 			for {
@@ -603,50 +680,58 @@ func TestSendTimeout(t *testing.T) {
 				if err != nil {
 					return
 				} else {
-					conn.(*net.TCPConn).SetReadBuffer(0)
-					holdSession = NewStreamSocket(conn)
-					//不启动接收
+					session := NewStreamSocket(conn)
+					session.SetRecvTimeout(time.Second * 1)
+					session.SetSendTimeout(time.Second * 1)
+					session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
+						close(serverdie)
+					})
+					session.Start(func(event *kendynet.Event) {
+						if event.EventType == kendynet.EventTypeError {
+							event.Session.Close(event.Data.(error).Error(), 0)
+						} else {
+						}
+					})
 				}
 			}
 		}()
 
 		dialer := &net.Dialer{}
 		conn, _ := dialer.Dial("tcp", "localhost:8110")
-		conn.(*net.TCPConn).SetWriteBuffer(0)
 		session := NewStreamSocket(conn)
-
-		die := make(chan struct{})
-
-		session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
-			close(die)
-		})
 
 		session.SetReceiver(session.(*StreamSocket).defaultReceiver())
 
 		session.SetEncoder(&encoder{})
 
-		session.SetSendTimeout(time.Second)
-
-		session.SetSendQueueSize(1)
+		session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
+			close(clientdie)
+		})
 
 		session.Start(func(event *kendynet.Event) {
 			if event.EventType == kendynet.EventTypeError {
-				assert.Equal(t, kendynet.ErrSendTimeout, event.Data.(error))
 				event.Session.Close(event.Data.(error).Error(), 0)
 			} else {
-
 			}
 		})
 
-		for i := 0; i < 20; i++ {
-			err := session.Send(kendynet.NewByteBuffer(strings.Repeat("a", 65536)))
-			if nil != err {
-				assert.Equal(t, kendynet.ErrSendQueFull, err)
+		go func() {
+			for {
+				if err := session.Send(kendynet.NewByteBuffer("hello")); nil != err {
+					if err == kendynet.ErrSocketClose {
+						break
+					}
+				}
 			}
-		}
-		<-die
+		}()
 
-		holdSession.Close("none", 0)
+		go func() {
+			time.Sleep(time.Second * 5)
+			session.Close("none", 1)
+		}()
+
+		<-clientdie
+		<-serverdie
 
 		listener.Close()
 	}
