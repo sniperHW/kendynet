@@ -251,10 +251,10 @@ func TestRPC(t *testing.T) {
 		str := arg.(*testproto.Hello).GetHello()
 		if str == "testtimeout" {
 			time.Sleep(time.Second * 2)
-		} else if str == "testdrop" {
+		} /* else if str == "testdrop" {
 			replyer.DropResponse()
 			return
-		}
+		}*/
 		replyer.Reply(world, nil)
 	}))
 
@@ -291,10 +291,7 @@ func TestRPC(t *testing.T) {
 			assert.Equal(t, err, ErrCallTimeout)
 		}
 
-		server.server.SetOnMissingMethod(func(method string, replyer *RPCReplyer) {
-			fmt.Println("OnMissingMethod", method, time.Now())
-			replyer.Reply(nil, fmt.Errorf("invaild method:%s", method))
-		})
+		server.server.SetErrorCodeOnMissingMethod(fmt.Errorf("invaild method:world"))
 
 		{
 			fmt.Println("5 begin", time.Now())
@@ -302,10 +299,10 @@ func TestRPC(t *testing.T) {
 			assert.Equal(t, err.Error(), "invaild method:world")
 		}
 
-		{
+		/*{
 			_, err := caller.Call("hello", &testproto.Hello{Hello: proto.String("testdrop")}, time.Second*2)
 			assert.Equal(t, err, ErrCallTimeout)
-		}
+		}*/
 
 		time.Sleep(time.Second * 4)
 
