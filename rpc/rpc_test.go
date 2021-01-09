@@ -160,8 +160,7 @@ func (this *TestRPCServer) Serve(service string) error {
 				session.Close(event.Data.(error).Error(), 0)
 			} else {
 				if this.halt.Load() != nil {
-					req, _ := this.server.decoder.Decode(event.Data)
-					this.server.DirectReplyError(channel, req.(*RPCRequest), errHalt)
+					this.server.OnServiceStop(channel, event.Data, errHalt)
 				} else {
 					this.server.OnRPCMessage(channel, event.Data)
 				}
