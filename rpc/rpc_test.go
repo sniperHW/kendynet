@@ -196,6 +196,7 @@ func (this *Caller) Dial(service string, timeout time.Duration, queue *event.Eve
 	session.SetRecvTimeout(5 * time.Second)
 	session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
 		fmt.Printf("channel close:%s\n", reason)
+		this.client.OnChannelDisconnect(this.channel)
 	})
 	session.Start(func(event *kendynet.Event) {
 		if event.EventType == kendynet.EventTypeError {
@@ -334,6 +335,29 @@ func TestRPC(t *testing.T) {
 		})
 
 		<-ok
+
+	}
+
+	{
+		//test channel disconnected
+		caller := NewCaller()
+
+		assert.Nil(t, caller.Dial("localhost:8110", 10*time.Second, nil))
+
+		ok := make(chan struct{})
+
+		caller.AsynCall("hello", &testproto.Hello{Hello: proto.String("testtimeout")}, 2*time.Second, func(r interface{}, err error) {
+			assert.Equal(t, ErrChannelDisconnected, err)
+			close(ok)
+		})
+
+		time.Sleep(time.Second)
+
+		caller.channel.(*TcpStreamChannel).session.Close("none", 0)
+
+		<-ok
+
+		time.Sleep(time.Second)
 
 	}
 
