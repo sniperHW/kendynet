@@ -252,10 +252,10 @@ func TestRPC(t *testing.T) {
 		str := arg.(*testproto.Hello).GetHello()
 		if str == "testtimeout" {
 			time.Sleep(time.Second * 2)
-		} /* else if str == "testdrop" {
+		} else if str == "testdrop" {
 			replyer.DropResponse()
 			return
-		}*/
+		}
 		replyer.Reply(world, nil)
 	}))
 
@@ -300,10 +300,10 @@ func TestRPC(t *testing.T) {
 			assert.Equal(t, err.Error(), "invaild method:world")
 		}
 
-		/*{
+		{
 			_, err := caller.Call("hello", &testproto.Hello{Hello: proto.String("testdrop")}, time.Second*2)
 			assert.Equal(t, err, ErrCallTimeout)
-		}*/
+		}
 
 		time.Sleep(time.Second * 4)
 
