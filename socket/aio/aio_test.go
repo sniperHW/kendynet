@@ -381,10 +381,10 @@ func TestSendTimeout(t *testing.T) {
 			}
 		})
 
-		for i := 0; i < 20; i++ {
+		for {
 			err := session.Send(kendynet.NewByteBuffer(strings.Repeat("a", 65536)))
-			if nil != err {
-				assert.Equal(t, kendynet.ErrSendQueFull, err)
+			if nil != err && err != kendynet.ErrSendQueFull {
+				break
 			}
 		}
 		<-die
@@ -393,6 +393,72 @@ func TestSendTimeout(t *testing.T) {
 
 		listener.Close()
 	}
+
+}
+
+func TestShutDownRead(t *testing.T) {
+	tcpAddr, _ := net.ResolveTCPAddr("tcp", "localhost:8110")
+
+	listener, _ := net.ListenTCP("tcp", tcpAddr)
+
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			} else {
+				session := NewAioSocket(aioService, conn)
+				session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
+					fmt.Println("server close")
+				})
+				session.Start(func(event *kendynet.Event) {
+					if event.EventType == kendynet.EventTypeError {
+						fmt.Println(event.Data.(error))
+						event.Session.Close(event.Data.(error).Error(), 0)
+					} else {
+						//event.Session.SendMessage(event.Data.(kendynet.Message))
+					}
+				})
+			}
+		}
+	}()
+
+	dialer := &net.Dialer{}
+	conn, _ := dialer.Dial("tcp", "localhost:8110")
+	session := NewAioSocket(aioService, conn)
+
+	die := make(chan struct{})
+
+	session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
+		fmt.Println("client close", reason)
+		close(die)
+	})
+
+	session.SetEncoder(&encoder{})
+
+	session.SetRecvTimeout(time.Second * 1)
+
+	session.Start(func(event *kendynet.Event) {
+		if event.EventType == kendynet.EventTypeError {
+			event.Session.Close(event.Data.(error).Error(), 0)
+		} else {
+
+		}
+	})
+
+	fmt.Println("ShutdownRead")
+
+	session.(*AioSocket).ShutdownRead()
+
+	time.Sleep(time.Second * 2)
+
+	session.Close("none", 0)
+
+	//session.Send(kendynet.NewByteBuffer("hello"))
+
+	<-die
+
+	listener.Close()
 
 }
 
