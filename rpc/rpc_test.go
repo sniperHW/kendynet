@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unsafe"
 )
 
 type TcpStreamChannel struct {
@@ -41,6 +42,10 @@ func (this *TcpStreamChannel) SendResponse(message interface{}) error {
 
 func (this *TcpStreamChannel) Name() string {
 	return this.name
+}
+
+func (this *TcpStreamChannel) UID() uint64 {
+	return uint64(uintptr(unsafe.Pointer(this)))
 }
 
 func (this *TcpStreamChannel) GetSession() kendynet.StreamSession {
