@@ -45,19 +45,6 @@ func (this *channelReqContexts) remove(req *reqContext) bool {
 	}
 }
 
-func (this *channelReqContexts) onChannelDisconnect() {
-	for {
-		if v := this.reqs.Front(); nil != v {
-			mgr := timerMgrs[v.Value.(*reqContext).seq%uint64(len(timerMgrs))]
-			if ok, _ := mgr.CancelByIndex(v.Value.(*reqContext).seq); ok {
-				v.Value.(*reqContext).onResponse(nil, ErrChannelDisconnected)
-			}
-		} else {
-			break
-		}
-	}
-}
-
 func (this *reqContext) onTimeout(_ *timer.Timer, _ interface{}) {
 	kendynet.GetLogger().Infoln("req timeout", this.seq, time.Now())
 	if this.c.removeChannelReq(this) {
@@ -115,11 +102,36 @@ func (this *RPCClient) OnChannelDisconnect(channel RPCChannel) {
 	uid := channel.UID()
 	m := this.channelReqMaps[int(uid)%len(this.channelReqMaps)]
 
+	var tmp []*reqContext
+
 	m.Lock()
-	defer m.Unlock()
 	c, ok := m.m[uid]
 	if ok {
-		c.onChannelDisconnect()
+		delete(m.m, uid)
+		tmp = make([]*reqContext, 0, c.reqs.Len())
+		for {
+			if v := c.reqs.Front(); nil != v {
+				v.Value.(*reqContext).listEle = nil
+				tmp = append(tmp, v.Value.(*reqContext))
+				c.reqs.Remove(v)
+			} else {
+				break
+			}
+		}
+	}
+	m.Unlock()
+
+	for _, v := range tmp {
+		/*
+		 * 不管CancelByIndex是否返回true都应该调用onResponse
+		 * 考虑如下onResponse调用丢失的场景
+		 * A线程执行OnChannelDisconnect,走到m.Unlock()之后的代码
+		 * B线程执行onTimeout的removeChannelReq,此时removeChannelReq必然返回false,因此onResponse不会执行。
+		 * A线程继续执行,如果像OnRPCMessage一样判断CancelByIndex为true才执行onResponse,那么对于这个请求的onResponse将丢失
+		 * 因为这个req的onTimeout已经被执行，CancelByIndex必定返回false
+		 */
+		timerMgrs[v.seq%uint64(len(timerMgrs))].CancelByIndex(v.seq)
+		v.onResponse(nil, ErrChannelDisconnected)
 	}
 }
 

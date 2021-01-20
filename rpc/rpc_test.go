@@ -256,7 +256,7 @@ func TestRPC(t *testing.T) {
 		world := &testproto.World{World: proto.String("world")}
 		str := arg.(*testproto.Hello).GetHello()
 		if str == "testtimeout" {
-			time.Sleep(time.Second * 2)
+			time.Sleep(time.Second * 3)
 		} else if str == "testdrop" {
 			replyer.DropResponse()
 			return
@@ -378,6 +378,8 @@ func TestRPC(t *testing.T) {
 		assert.Equal(t, err, errHalt)
 
 	}
+
+	time.Sleep(time.Second * 3)
 
 	assert.Equal(t, int32(0), server.server.PendingCount())
 
