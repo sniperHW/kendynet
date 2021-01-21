@@ -214,15 +214,15 @@ func (this *RPCClient) AsynCall(channel RPCChannel, method string, arg interface
 
 //同步调用
 func (this *RPCClient) Call(channel RPCChannel, method string, arg interface{}, timeout time.Duration) (ret interface{}, err error) {
-	respChan := make(chan interface{})
+	waitC := make(chan struct{})
 	f := func(ret_ interface{}, err_ error) {
 		ret = ret_
 		err = err_
-		respChan <- nil
+		close(waitC)
 	}
 
 	if err = this.AsynCall(channel, method, arg, timeout, f); nil == err {
-		_ = <-respChan
+		<-waitC
 	}
 
 	return
