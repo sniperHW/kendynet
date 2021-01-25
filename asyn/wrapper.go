@@ -11,16 +11,27 @@ import (
 	"reflect"
 )
 
-var routinePool_ *routinePool
-
 type wrapFunc func(callback interface{}, args ...interface{})
 
-func AsynWrap(priority int, queue *event.EventQueue, fn interface{}) wrapFunc {
+type AsynWraper struct {
+	priority     int
+	queue        *event.EventQueue
+	routinePool_ *routinePool
+}
 
+func NewAsynWraper(priority int, queue *event.EventQueue, routinePool_ *routinePool) *AsynWraper {
 	if nil == queue {
 		return nil
+	} else {
+		return &AsynWraper{
+			priority:     priority,
+			queue:        queue,
+			routinePool_: routinePool_,
+		}
 	}
+}
 
+func (this *AsynWraper) Wrap(fn interface{}) wrapFunc {
 	oriF := reflect.ValueOf(fn)
 
 	if oriF.Kind() != reflect.Func {
@@ -40,24 +51,20 @@ func AsynWrap(priority int, queue *event.EventQueue, fn interface{}) wrapFunc {
 
 			if len(out) > 0 {
 				if nil != callback {
-					queue.PostNoWait(priority, callback, out...)
+					this.queue.PostNoWait(this.priority, callback, out...)
 				}
 			} else {
 				if nil != callback {
-					queue.PostNoWait(priority, callback)
+					this.queue.PostNoWait(this.priority, callback)
 				}
 			}
 		}
 
-		if nil == routinePool_ {
+		if nil == this.routinePool_ {
 			go f()
 		} else {
 			//设置了go程池，交给go程池执行
-			routinePool_.AddTask(f)
+			this.routinePool_.AddTask(f)
 		}
 	}
-}
-
-func SetRoutinePool(pool *routinePool) {
-	routinePool_ = pool
 }

@@ -176,9 +176,11 @@ func TestAsyn(t *testing.T) {
 		queue := event.NewEventQueue()
 		s := st{data: 100}
 
-		wrap1 := AsynWrap(0, queue, mySleep1)
-		wrap2 := AsynWrap(0, queue, mySleep2)
-		wrap3 := AsynWrap(0, queue, s.fun)
+		wraper := NewAsynWraper(0, queue, nil)
+
+		wrap1 := wraper.Wrap(mySleep1)
+		wrap2 := wraper.Wrap(mySleep2)
+		wrap3 := wraper.Wrap(s.fun)
 
 		wrap1(func(ret []interface{}) {
 			fmt.Println(ret[0].(int))
