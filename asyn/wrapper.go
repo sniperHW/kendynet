@@ -15,7 +15,7 @@ var routinePool_ *routinePool
 
 type wrapFunc func(callback interface{}, args ...interface{})
 
-func AsynWrap(queue *event.EventQueue, fn interface{}) wrapFunc {
+func AsynWrap(priority int, queue *event.EventQueue, fn interface{}) wrapFunc {
 
 	if nil == queue {
 		return nil
@@ -40,11 +40,11 @@ func AsynWrap(queue *event.EventQueue, fn interface{}) wrapFunc {
 
 			if len(out) > 0 {
 				if nil != callback {
-					queue.PostNoWait(callback, out...)
+					queue.PostNoWait(priority, callback, out...)
 				}
 			} else {
 				if nil != callback {
-					queue.PostNoWait(callback)
+					queue.PostNoWait(priority, callback)
 				}
 			}
 		}

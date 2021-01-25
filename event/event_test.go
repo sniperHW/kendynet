@@ -154,7 +154,7 @@ func testUseEventQueue() {
 	handler.Register("queue", func(v int) {
 		fmt.Println("handler1", v)
 
-		queue.Post(func() {
+		queue.Post(1, func() {
 			fmt.Println("queue fun1")
 		})
 
@@ -162,7 +162,7 @@ func testUseEventQueue() {
 		//	fmt.Println("queue fun2")
 		//})
 
-		queue.PostNoWait(func(...interface{}) {
+		queue.PostNoWait(1, func(...interface{}) {
 			fmt.Println("queue fun3")
 			queue.Close()
 		})
