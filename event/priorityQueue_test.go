@@ -4,10 +4,108 @@ package event
 //go tool cover -html=coverage.out
 import (
 	"fmt"
+	"github.com/sniperHW/kendynet/util"
 	"github.com/stretchr/testify/assert"
+	"math/rand"
 	"testing"
 	"time"
 )
+
+func TestPushPop1(t *testing.T) {
+	q := NewPriorityQueue(3)
+	var pushBegin time.Time
+
+	die := make(chan struct{})
+
+	go func() {
+		for {
+			closed, _ := q.Get()
+			if closed {
+				break
+			}
+		}
+		close(die)
+	}()
+
+	go func() {
+		pushBegin = time.Now()
+		for i := 0; i < 1000000; i++ {
+			q.Add(rand.Int()%3, i)
+		}
+		q.Close()
+	}()
+
+	<-die
+
+	elapse := time.Now().Sub(pushBegin)
+
+	fmt.Println((1000000 * int64(time.Second)) / int64(elapse))
+
+}
+
+func TestPushPop2(t *testing.T) {
+	q := make(chan int, 10000)
+	var pushBegin time.Time
+
+	die := make(chan struct{})
+
+	go func() {
+		for {
+			_, ok := <-q
+			if !ok {
+				break
+			}
+		}
+		close(die)
+	}()
+
+	go func() {
+		pushBegin = time.Now()
+		for i := 0; i < 1000000; i++ {
+			q <- rand.Int() % 3
+		}
+		close(q)
+	}()
+
+	<-die
+
+	elapse := time.Now().Sub(pushBegin)
+
+	fmt.Println((1000000 * int64(time.Second)) / int64(elapse))
+
+}
+
+func TestPushPop3(t *testing.T) {
+	q := util.NewBlockQueue(10000)
+	var pushBegin time.Time
+
+	die := make(chan struct{})
+
+	go func() {
+		for {
+			closed, _ := q.Get()
+			if closed {
+				break
+			}
+		}
+		close(die)
+	}()
+
+	go func() {
+		pushBegin = time.Now()
+		for i := 0; i < 1000000; i++ {
+			q.Add(i)
+		}
+		q.Close()
+	}()
+
+	<-die
+
+	elapse := time.Now().Sub(pushBegin)
+
+	fmt.Println((1000000 * int64(time.Second)) / int64(elapse))
+
+}
 
 func TestPriorityQueue(t *testing.T) {
 	{
