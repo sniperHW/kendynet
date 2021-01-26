@@ -147,7 +147,7 @@ func testQueueOnceMode() {
 func testUseEventQueue() {
 	fmt.Println("-------------------testUseEventQueue-----------------")
 
-	queue := NewEventQueue()
+	queue := NewEventQueue(1)
 
 	handler := NewEventHandler(queue)
 
