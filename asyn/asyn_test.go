@@ -5,7 +5,7 @@ package asyn
 import (
 	"context"
 	"fmt"
-	"github.com/sniperHW/kendynet/event"
+	//"github.com/sniperHW/kendynet/event"
 	"github.com/stretchr/testify/assert"
 	"sync"
 	"testing"
@@ -270,52 +270,37 @@ func TestAsyn(t *testing.T) {
 
 	{
 
-		doCallBack1 := func(callback interface{}, args ...interface{}) {
-			callback.(func(...interface{}))(args...)
-		}
-
 		c1 := make(chan struct{})
 		c2 := make(chan struct{})
 
-		wrap1 := AsynWrap(mySleep1, doCallBack1)
-		wrap2 := AsynWrap(mySleep2, doCallBack1)
-
-		wrap1(func(ret ...interface{}) {
+		NewAsynWraper(mySleep1, func(ret ...interface{}) {
 			fmt.Println("wrap11", ret[0].(int))
 			close(c1)
-		}, 1)
+		}, nil).Call(1)
 
-		wrap2(func(ret ...interface{}) {
+		NewAsynWraper(mySleep2, func(ret ...interface{}) {
 			fmt.Println("wrap21", ret[0].(int))
 			close(c2)
-		}, 2)
+		}, nil).Call(2)
 
 		<-c1
 		<-c2
-
 	}
 
 	{
 
-		doCallBack1 := func(callback interface{}, args ...interface{}) {
-			callback.(func(...interface{}))(args...)
-		}
-
 		c1 := make(chan struct{})
 		c2 := make(chan struct{})
 
-		wrap1 := AsynWrap(mySleep1, doCallBack1)
-		wrap2 := AsynWrap(mySleep2, doCallBack1)
-
-		wrap1(func(ret ...interface{}) {
+		NewAsynWraper(mySleep1, func(ret ...interface{}) {
 			fmt.Println("wrap12", ret[0].(int))
 			close(c1)
-		}, 1)
+		}, nil).Call(1)
 
-		wrap2(func(ret ...interface{}) {
+		NewAsynWraper(mySleep2, func(ret ...interface{}) {
 			fmt.Println("wrap22", ret[0].(int))
 			close(c2)
-		}, 2)
+		}, nil).Call(2)
 
 		<-c1
 		<-c2
@@ -323,55 +308,17 @@ func TestAsyn(t *testing.T) {
 	}
 
 	{
-
-		queue := event.NewEventQueue()
-
-		doCallBack1 := func(callback interface{}, args ...interface{}) {
-			queue.Post(0, callback, args...)
-		}
-
-		c1 := make(chan struct{})
-		c2 := make(chan struct{})
-
-		wrap1 := AsynWrap(mySleep1, doCallBack1)
-		wrap2 := AsynWrap(mySleep2, doCallBack1)
-
-		wrap1(func(ret int) {
-			fmt.Println("wrap13", ret)
-			close(c1)
-		}, 1)
-
-		wrap2(func(ret int) {
-			fmt.Println("wrap23", ret)
-			close(c2)
-		}, 2)
-
-		go func() {
-			<-c1
-			<-c2
-			queue.Close()
-		}()
-
-		queue.Run()
-
-	}
-
-	{
-
-		doCallBack1 := func(callback interface{}, args ...interface{}) {
-			callback.(func())()
-		}
 
 		c1 := make(chan struct{})
 
 		pool := NewRoutinePool(10)
 
-		wrap1 := AsynWrap(mySleep3, doCallBack1, pool)
-
-		wrap1(func() {
+		NewAsynWraper(mySleep3, func() {
 			fmt.Println("wrap14")
 			close(c1)
-		})
+		}, func(f func()) {
+			pool.AddTask(f)
+		}).Call()
 
 		<-c1
 

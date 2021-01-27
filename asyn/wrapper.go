@@ -10,30 +10,46 @@ import (
 	"reflect"
 )
 
-type asynfunc func(callback interface{}, args ...interface{})
+type AsynWraper struct {
+	fn       interface{}
+	callback interface{}
+	fnRuner  func(func())
+}
 
-func AsynWrap(fn interface{}, doCallBack asynfunc, pool ...*routinePool) (wrapFunc asynfunc) {
-	if reflect.ValueOf(fn).Kind() == reflect.Func {
-		wrapFunc = func(callback interface{}, args ...interface{}) {
-			f := func() {
-				if out, err := util.ProtectCall(fn, args...); err != nil {
-					logger := kendynet.GetLogger()
-					if logger != nil {
-						logger.Errorln(err)
-					} else {
-						panic(err)
-					}
-				} else {
-					doCallBack(callback, out...)
-				}
-			}
+func NewAsynWraper(fn interface{}, callback interface{}, fnRuner func(func())) AsynWraper {
+	if reflect.ValueOf(fn).Kind() != reflect.Func || reflect.ValueOf(callback).Kind() != reflect.Func {
+		panic("invaild fn or callback")
+	} else {
+		return AsynWraper{
+			fn:       fn,
+			callback: callback,
+			fnRuner:  fnRuner,
+		}
+	}
+}
 
-			if len(pool) > 0 && nil != pool[0] {
-				pool[0].AddTask(f)
+func (this AsynWraper) Call(args ...interface{}) {
+	f := func() {
+		if out, err := util.ProtectCall(this.fn, args...); err != nil {
+			logger := kendynet.GetLogger()
+			if logger != nil {
+				logger.Errorln(err)
 			} else {
-				go f()
+				panic(err)
+			}
+		} else if _, err = util.ProtectCall(this.callback, out...); err != nil {
+			logger := kendynet.GetLogger()
+			if logger != nil {
+				logger.Errorln(err)
+			} else {
+				panic(err)
 			}
 		}
 	}
-	return
+
+	if nil != this.fnRuner {
+		this.fnRuner(f)
+	} else {
+		go f()
+	}
 }
