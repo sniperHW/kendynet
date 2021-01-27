@@ -4,6 +4,7 @@ import (
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/util"
 	"sync"
+	"time"
 )
 
 type task struct {
@@ -18,6 +19,7 @@ type routinePool struct {
 	taskCount int //待处理任务数量
 	taskQue   chan *task
 	mtx       sync.Mutex
+	closed    bool
 }
 
 /*
@@ -80,15 +82,44 @@ func (this *routinePool) newRoutine() {
 	}()
 }
 
-func (this *routinePool) AddTask(fn interface{}, args ...interface{}) {
+func (this *routinePool) AddTask(fn interface{}, args ...interface{}) bool {
 	t := &task{fn: fn, args: args}
 	this.mtx.Lock()
-	this.taskCount++
-	if this.freeCount < this.taskCount && this.count < this.max {
-		this.count++
-		//没有空闲go程，且go程数量尚未达到上限
-		this.newRoutine()
+	if this.closed {
+		this.mtx.Unlock()
+		return false
+	} else {
+		this.taskCount++
+		if this.freeCount < this.taskCount && this.count < this.max {
+			this.count++
+			//没有空闲go程，且go程数量尚未达到上限
+			this.newRoutine()
+		}
+		this.mtx.Unlock()
+		this.taskQue <- t
+		return true
 	}
-	this.mtx.Unlock()
-	this.taskQue <- t
+}
+
+func (this *routinePool) Close() {
+	this.mtx.Lock()
+	if this.closed {
+		this.mtx.Unlock()
+		return
+	} else {
+		this.closed = true
+		close(this.taskQue)
+		this.mtx.Unlock()
+
+		check := func() bool {
+			this.mtx.Lock()
+			defer this.mtx.Unlock()
+			return this.count == 0
+		}
+
+		for !check() {
+			time.Sleep(time.Millisecond * 10)
+		}
+	}
+
 }

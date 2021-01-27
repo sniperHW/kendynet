@@ -28,8 +28,7 @@ func (this *Future) Wait(timeout ...time.Duration) ([]interface{}, error) {
 		deadline := time.Now().Add(timeout[0])
 		for {
 			now := time.Now()
-			if now.Equal(deadline) || now.After(deadline) {
-				this.cancel()
+			if deadline.Before(now) {
 				return nil, ErrTimeout
 			}
 

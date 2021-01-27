@@ -12,7 +12,7 @@ import (
 )
 
 func TestPushPop1(t *testing.T) {
-	q := NewPriorityQueue(3)
+	q := NewPriorityQueue(1)
 	var pushBegin time.Time
 
 	die := make(chan struct{})

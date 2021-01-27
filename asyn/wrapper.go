@@ -6,65 +6,34 @@ package asyn
 
 import (
 	"github.com/sniperHW/kendynet"
-	"github.com/sniperHW/kendynet/event"
 	"github.com/sniperHW/kendynet/util"
 	"reflect"
 )
 
-type wrapFunc func(callback interface{}, args ...interface{})
+type asynfunc func(callback interface{}, args ...interface{})
 
-type AsynWraper struct {
-	priority     int
-	queue        *event.EventQueue
-	routinePool_ *routinePool
-}
-
-func NewAsynWraper(priority int, queue *event.EventQueue, routinePool_ *routinePool) *AsynWraper {
-	if nil == queue {
-		return nil
-	} else {
-		return &AsynWraper{
-			priority:     priority,
-			queue:        queue,
-			routinePool_: routinePool_,
-		}
-	}
-}
-
-func (this *AsynWraper) Wrap(fn interface{}) wrapFunc {
-	oriF := reflect.ValueOf(fn)
-
-	if oriF.Kind() != reflect.Func {
-		return nil
-	}
-
-	return func(callback interface{}, args ...interface{}) {
-		f := func() {
-			out, err := util.ProtectCall(fn, args...)
-			if err != nil {
-				logger := kendynet.GetLogger()
-				if logger != nil {
-					logger.Errorln(err)
+func AsynWrap(fn interface{}, doCallBack asynfunc, pool ...*routinePool) (wrapFunc asynfunc) {
+	if reflect.ValueOf(fn).Kind() == reflect.Func {
+		wrapFunc = func(callback interface{}, args ...interface{}) {
+			f := func() {
+				if out, err := util.ProtectCall(fn, args...); err != nil {
+					logger := kendynet.GetLogger()
+					if logger != nil {
+						logger.Errorln(err)
+					} else {
+						panic(err)
+					}
+				} else {
+					doCallBack(callback, out...)
 				}
-				return
 			}
 
-			if len(out) > 0 {
-				if nil != callback {
-					this.queue.PostNoWait(this.priority, callback, out...)
-				}
+			if len(pool) > 0 && nil != pool[0] {
+				pool[0].AddTask(f)
 			} else {
-				if nil != callback {
-					this.queue.PostNoWait(this.priority, callback)
-				}
+				go f()
 			}
 		}
-
-		if nil == this.routinePool_ {
-			go f()
-		} else {
-			//设置了go程池，交给go程池执行
-			this.routinePool_.AddTask(f)
-		}
 	}
+	return
 }
