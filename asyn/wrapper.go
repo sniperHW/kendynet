@@ -5,7 +5,6 @@ package asyn
  */
 
 import (
-	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/util"
 	"reflect"
 )
@@ -29,22 +28,10 @@ func NewAsynWraper(fn interface{}, callback interface{}, fnRuner func(func())) A
 }
 
 func (this AsynWraper) Call(args ...interface{}) {
+
 	f := func() {
-		if out, err := util.ProtectCall(this.fn, args...); err != nil {
-			logger := kendynet.GetLogger()
-			if logger != nil {
-				logger.Errorln(err)
-			} else {
-				panic(err)
-			}
-		} else if _, err = util.ProtectCall(this.callback, out...); err != nil {
-			logger := kendynet.GetLogger()
-			if logger != nil {
-				logger.Errorln(err)
-			} else {
-				panic(err)
-			}
-		}
+		out := util.Call(this.fn, args...)
+		util.Call(this.callback, out...)
 	}
 
 	if nil != this.fnRuner {

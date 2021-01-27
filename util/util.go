@@ -72,15 +72,7 @@ func Recover(logger ...golog.LoggerI) {
 	}
 }
 
-func ProtectCall(fn interface{}, args ...interface{}) (result []interface{}, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			buf := make([]byte, 65535)
-			l := runtime.Stack(buf, false)
-			err = fmt.Errorf(fmt.Sprintf("%v: %s", r, buf[:l]))
-		}
-	}()
-
+func Call(fn interface{}, args ...interface{}) (result []interface{}) {
 	fnType := reflect.TypeOf(fn)
 	fnValue := reflect.ValueOf(fn)
 	numIn := fnType.NumIn()
@@ -96,7 +88,7 @@ func ProtectCall(fn interface{}, args ...interface{}) (result []interface{}, err
 		}
 
 		if argsLength < argumentIn {
-			panic("ProtectCall with too few input arguments")
+			panic("with too few input arguments")
 		}
 
 		/*if !fnType.IsVariadic() && argsLength > argumentIn {
@@ -134,6 +126,17 @@ func ProtectCall(fn interface{}, args ...interface{}) (result []interface{}, err
 			result[i] = v.Interface()
 		}
 	}
+	return
+}
 
+func ProtectCall(fn interface{}, args ...interface{}) (result []interface{}, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			buf := make([]byte, 65535)
+			l := runtime.Stack(buf, false)
+			err = fmt.Errorf(fmt.Sprintf("%v: %s", r, buf[:l]))
+		}
+	}()
+	result = Call(fn, args...)
 	return
 }
