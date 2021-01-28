@@ -200,11 +200,13 @@ func (this *handlerSlot) register(h *handle) {
 }
 
 func (this *handlerSlot) doRemove(h *handle) {
-	h.pprev.nnext = h.nnext
-	h.nnext.pprev = h.pprev
-	h.nnext = nil
-	h.pprev = nil
-	h.version = 0
+	if h.version == this.version {
+		h.pprev.nnext = h.nnext
+		h.nnext.pprev = h.pprev
+		h.nnext = nil
+		h.pprev = nil
+		h.version = 0
+	}
 }
 
 func (this *handlerSlot) remove(h *handle) {
@@ -242,18 +244,6 @@ func pcall2(h *handle, args []interface{}) {
 	}
 }
 
-func (this *handlerSlot) doEmit(args []interface{}) {
-	cur := this.l.head.nnext
-	for cur != &this.l.tail {
-		pcall2(cur, args)
-		next := cur.nnext
-		if cur.once {
-			this.doRemove(cur)
-		}
-		cur = next
-	}
-}
-
 func (this *handlerSlot) emit(args ...interface{}) {
 	this.Lock()
 	this.push(&op{
@@ -279,19 +269,17 @@ func (this *handlerSlot) emit(args ...interface{}) {
 				case opRegister:
 					this.doRegister(o.h)
 				case opEmit:
-					this.Unlock()
-					/*
-					 * 这里无需也不能加锁
-					 * 不能加:pcall2里可能调用remove或register，将导致死锁
-					 *
-					 * 不需要加:doEmit操作this.l,在没有emit执行的情况下,remove和register对this.l的访问互斥的（有锁保护）
-					 * 在有一个go程序正在执行doEmit的情况下,对this.l的访问也是互斥的。因为正在执行doEmit的go程序已经将this.emiting设置为true。
-					 * 其它go程序要访问this.l必须等到正在执行doEmit的go程执行完毕将this.emiting设置为false。
-					 * 如果此时别的go程请求访问this.l,这个请求将被push到pendingOP，由正在执行doEmit的go程序代为执行。
-					 *
-					 */
-					this.doEmit(o.args)
-					this.Lock()
+					cur := this.l.head.nnext
+					for cur != &this.l.tail {
+						this.Unlock()
+						pcall2(cur, o.args)
+						this.Lock()
+						next := cur.nnext
+						if cur.once {
+							this.doRemove(cur)
+						}
+						cur = next
+					}
 				}
 			}
 		}

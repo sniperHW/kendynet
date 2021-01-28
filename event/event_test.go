@@ -48,6 +48,7 @@ func TestEvent(t *testing.T) {
 		handler := NewEventHandler()
 		handler.RegisterOnce("queue", func(h Handle, msg ...interface{}) {
 			fmt.Println("handler1", msg[0])
+			handler.Remove(h)
 		})
 		handler.Emit("queue", 1)
 
