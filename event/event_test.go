@@ -4,6 +4,7 @@ package event
 //go tool cover -html=coverage.out
 import (
 	"fmt"
+	"github.com/stretchr/testify/assert"
 	"testing"
 )
 
@@ -42,6 +43,40 @@ func TestEventQueue(t *testing.T) {
 }
 
 func TestEvent(t *testing.T) {
+
+	{
+		handler := NewEventHandler()
+		handler.RegisterOnce("queue", func(h Handle, msg ...interface{}) {
+			fmt.Println("handler1", msg[0])
+		})
+		handler.Emit("queue", 1)
+
+		handler.Lock()
+		slot, _ := handler.slots["queue"]
+		handler.Unlock()
+
+		assert.Equal(t, slot.l.head.nnext, &slot.l.tail)
+		assert.Equal(t, &slot.l.head, slot.l.tail.pprev)
+
+		h2 := handler.Register("queue", func(h Handle, msg ...interface{}) {
+			fmt.Println("handler2", msg[0])
+		})
+
+		handler.RegisterOnce("queue", func(h Handle, msg ...interface{}) {
+			fmt.Println("handler3", msg[0])
+		})
+
+		h4 := handler.Register("queue", func(h Handle, msg ...interface{}) {
+			fmt.Println("handler4", msg[0])
+		})
+
+		handler.Emit("queue", 1)
+
+		assert.Equal(t, h2.nnext, (*handle)(h4))
+		assert.Equal(t, h4.pprev, (*handle)(h2))
+
+	}
+
 	{
 		fmt.Println("test1-----------------")
 		handler := NewEventHandler()
@@ -99,6 +134,9 @@ func TestEvent(t *testing.T) {
 			fmt.Println("handler2", msg[0])
 			handler.Register("queue", func(h Handle, msg ...interface{}) {
 				fmt.Println("handler4", msg[0])
+			})
+			handler.Register("queue", func(h Handle, msg ...interface{}) {
+				fmt.Println("handler6", msg[0])
 			})
 
 		})

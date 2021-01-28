@@ -31,6 +31,7 @@ const (
 )
 
 type op struct {
+	ppnext *op
 	opType int
 	args   []interface{}
 	h      *handle
@@ -42,7 +43,7 @@ type handlerSlot struct {
 	emiting   bool
 	current   int
 	version   int64
-	pendingOP []op
+	pendingOP *op
 }
 
 type EventHandler struct {
@@ -149,6 +150,34 @@ func (this *EventHandler) Clear(event interface{}) {
 	delete(this.slots, event)
 }
 
+func (this *handlerSlot) push(item *op) {
+	var head *op
+	if this.pendingOP == nil {
+		head = item
+	} else {
+		head = this.pendingOP.ppnext
+		this.pendingOP.ppnext = item
+	}
+	item.ppnext = head
+	this.pendingOP = item
+}
+
+func (this *handlerSlot) pop() *op {
+	if this.pendingOP == nil {
+		return nil
+	} else {
+		item := this.pendingOP.ppnext
+		if item == this.pendingOP {
+			this.pendingOP = nil
+		} else {
+			this.pendingOP.ppnext = item.ppnext
+		}
+
+		item.ppnext = nil
+		return item
+	}
+}
+
 func (this *handlerSlot) doRegister(h *handle) {
 	h.version = this.version
 	this.l.tail.pprev.nnext = h
@@ -161,7 +190,7 @@ func (this *handlerSlot) register(h *handle) {
 	this.Lock()
 	defer this.Unlock()
 	if this.emiting {
-		this.pendingOP = append(this.pendingOP, op{
+		this.push(&op{
 			opType: opRegister,
 			h:      h,
 		})
@@ -173,6 +202,8 @@ func (this *handlerSlot) register(h *handle) {
 func (this *handlerSlot) doRemove(h *handle) {
 	h.pprev.nnext = h.nnext
 	h.nnext.pprev = h.pprev
+	h.nnext = nil
+	h.pprev = nil
 	h.version = 0
 }
 
@@ -180,7 +211,7 @@ func (this *handlerSlot) remove(h *handle) {
 	this.Lock()
 	defer this.Unlock()
 	if this.emiting {
-		this.pendingOP = append(this.pendingOP, op{
+		this.push(&op{
 			opType: opDelete,
 			h:      h,
 		})
@@ -212,25 +243,20 @@ func pcall2(h *handle, args []interface{}) {
 }
 
 func (this *handlerSlot) doEmit(args []interface{}) {
-	pre := &this.l.head
 	cur := this.l.head.nnext
 	for cur != &this.l.tail {
 		pcall2(cur, args)
+		next := cur.nnext
 		if cur.once {
-			pre.nnext = cur.nnext
-			cur.nnext = nil
-			cur.version = 0
-			cur = pre.nnext
-		} else {
-			pre = cur
-			cur = cur.nnext
+			this.doRemove(cur)
 		}
+		cur = next
 	}
 }
 
 func (this *handlerSlot) emit(args ...interface{}) {
 	this.Lock()
-	this.pendingOP = append(this.pendingOP, op{
+	this.push(&op{
 		opType: opEmit,
 		args:   args,
 	})
@@ -239,39 +265,37 @@ func (this *handlerSlot) emit(args ...interface{}) {
 		this.Unlock()
 	} else {
 		this.emiting = true
-		size := len(this.pendingOP)
-
 		/*
 		 *  在执行doEmit的时候，其它go程或事件处理器可能会往pendingOP中添加请求
 		 *  因此当前的执行者必须把这些pendingOP全部执行完毕。
 		 */
-
-		for i := 0; i < size; i++ {
-			op := this.pendingOP[i]
-			switch op.opType {
-			case opDelete:
-				this.doRemove(op.h)
-			case opRegister:
-				this.doRegister(op.h)
-			case opEmit:
-				this.Unlock()
-				/*
-				 * 这里无需也不能加锁
-				 * 不能加:pcall2里可能调用remove或register，将导致死锁
-				 *
-				 * 不需要加:doEmit操作this.l,在没有emit执行的情况下,remove和register对this.l的访问互斥的（有锁保护）
-				 * 在有一个go程序正在执行doEmit的情况下,对this.l的访问也是互斥的。因为正在执行doEmit的go程序已经将this.emiting设置为true。
-				 * 其它go程序要访问this.l必须等到正在执行doEmit的go程执行完毕将this.emiting设置为false。
-				 * 如果此时别的go程请求访问this.l,这个请求将被push到pendingOP，由正在执行doEmit的go程序代为执行。
-				 *
-				 */
-				this.doEmit(op.args)
-				this.Lock()
+		for {
+			if o := this.pop(); nil == o {
+				break
+			} else {
+				switch o.opType {
+				case opDelete:
+					this.doRemove(o.h)
+				case opRegister:
+					this.doRegister(o.h)
+				case opEmit:
+					this.Unlock()
+					/*
+					 * 这里无需也不能加锁
+					 * 不能加:pcall2里可能调用remove或register，将导致死锁
+					 *
+					 * 不需要加:doEmit操作this.l,在没有emit执行的情况下,remove和register对this.l的访问互斥的（有锁保护）
+					 * 在有一个go程序正在执行doEmit的情况下,对this.l的访问也是互斥的。因为正在执行doEmit的go程序已经将this.emiting设置为true。
+					 * 其它go程序要访问this.l必须等到正在执行doEmit的go程执行完毕将this.emiting设置为false。
+					 * 如果此时别的go程请求访问this.l,这个请求将被push到pendingOP，由正在执行doEmit的go程序代为执行。
+					 *
+					 */
+					this.doEmit(o.args)
+					this.Lock()
+				}
 			}
-			size = len(this.pendingOP)
 		}
 		this.emiting = false
-		this.pendingOP = []op{}
 		this.Unlock()
 	}
 }
