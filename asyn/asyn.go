@@ -28,21 +28,23 @@ func (this *Future) Wait(timeout ...time.Duration) ([]interface{}, error) {
 		deadline := time.Now().Add(timeout[0])
 		for {
 			now := time.Now()
-			if deadline.Before(now) {
-				return nil, ErrTimeout
-			}
-
-			remain := deadline.Sub(now)
-			select {
-			case ret := <-this.channel: //拿到锁
-				this.c++
-				idx := ret.([2]interface{})[0].(int)
-				this.ret[idx] = ret.([2]interface{})[1]
-				if this.c == len(this.ret) {
-					//只有接收到所有结果才返回
-					return this.ret, nil
+			if deadline.After(now) {
+				remain := deadline.Sub(now)
+				ticker := time.NewTicker(remain)
+				select {
+				case ret := <-this.channel: //拿到锁
+					ticker.Stop()
+					this.c++
+					idx := ret.([2]interface{})[0].(int)
+					this.ret[idx] = ret.([2]interface{})[1]
+					if this.c == len(this.ret) {
+						//只有接收到所有结果才返回
+						return this.ret, nil
+					}
+				case <-ticker.C:
+					return nil, ErrTimeout
 				}
-			case <-time.After(remain):
+			} else {
 				return nil, ErrTimeout
 			}
 		}
@@ -67,10 +69,12 @@ func (this *Future) Wait(timeout ...time.Duration) ([]interface{}, error) {
 func (this *Future) WaitAny(timeout ...time.Duration) (interface{}, error) {
 	defer this.cancel()
 	if len(timeout) > 0 {
+		ticker := time.NewTicker(timeout[0])
 		select {
 		case ret := <-this.channel: //拿到锁
+			ticker.Stop()
 			return ret.([2]interface{})[1], nil
-		case <-time.After(timeout[0]):
+		case <-ticker.C:
 			return nil, ErrTimeout
 		}
 	} else {

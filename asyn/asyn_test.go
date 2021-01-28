@@ -5,7 +5,8 @@ package asyn
 import (
 	"context"
 	"fmt"
-	//"github.com/sniperHW/kendynet/event"
+	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/util"
 	"github.com/stretchr/testify/assert"
 	"sync"
 	"testing"
@@ -42,6 +43,7 @@ func (this *st) fun() {
 }
 
 func TestAsyn(t *testing.T) {
+	kendynet.InitLogger(&kendynet.EmptyLogger{})
 	{
 		//all
 		begUnix := time.Now().Unix()
@@ -89,6 +91,8 @@ func TestAsyn(t *testing.T) {
 		assert.Nil(t, err)
 		assert.Equal(t, time.Now().Unix()-begUnix, int64(1))
 		assert.Equal(t, 1, ret.(int))
+
+		assert.Nil(t, Paralell())
 	}
 
 	{
@@ -250,7 +254,7 @@ func TestAsyn(t *testing.T) {
 		fmt.Println("---------------")
 		future := Paralell(
 			func(_ context.Context) interface{} {
-				time.Sleep(time.Second * 1)
+				time.Sleep(time.Second - time.Nanosecond)
 				return 1
 			},
 			func(_ context.Context) interface{} {
@@ -266,6 +270,14 @@ func TestAsyn(t *testing.T) {
 		_, err := future.Wait(time.Second)
 
 		assert.Equal(t, err, ErrTimeout)
+	}
+
+	{
+		_, err := util.ProtectCall(func() {
+			NewAsynWraper(nil, nil, nil)
+		})
+		assert.NotNil(t, err)
+		fmt.Println(err)
 	}
 
 	{
@@ -311,7 +323,11 @@ func TestAsyn(t *testing.T) {
 
 		c1 := make(chan struct{})
 
-		pool := NewRoutinePool(10)
+		pool := NewRoutinePool(0)
+
+		pool.AddTask(func() {
+			panic("test")
+		})
 
 		NewAsynWraper(mySleep3, func() {
 			fmt.Println("wrap14")

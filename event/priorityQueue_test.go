@@ -108,6 +108,9 @@ func TestPushPop3(t *testing.T) {
 }
 
 func TestPriorityQueue(t *testing.T) {
+
+	poolSize = 5
+
 	{
 		q := NewPriorityQueue(3)
 
@@ -121,8 +124,6 @@ func TestPriorityQueue(t *testing.T) {
 			_, v := q.Get()
 			fmt.Println(v.(int))
 		}
-
-		fmt.Println("--------------------------------------")
 
 		q.Add(0, 1)
 		q.Add(2, 5)
@@ -192,6 +193,8 @@ func TestPriorityQueue(t *testing.T) {
 		<-c
 
 	}
+
+	fmt.Println("--------------------------------------")
 
 	{
 		q := NewPriorityQueue(2, 5)

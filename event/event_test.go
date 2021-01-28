@@ -4,45 +4,95 @@ package event
 //go tool cover -html=coverage.out
 import (
 	"fmt"
+	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/util"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
 
 func TestEventQueue(t *testing.T) {
 	fmt.Println("-------------------testUseEventQueue-----------------")
+	{
+		queue := NewEventQueue(1)
 
-	queue := NewEventQueue(1)
+		handler := NewEventHandler()
 
-	handler := NewEventHandler()
+		handler.Register("queue", func(v int) {
+			fmt.Println("handler1", v)
+			if v == 4 {
+				queue.Close()
+			}
+		})
 
-	handler.Register("queue", func(v int) {
-		fmt.Println("handler1", v)
-	})
+		handler.EmitToEventQueue(EventQueueParam{
+			Q:         queue,
+			BlockMode: true,
+		}, "queue", 1)
 
-	handler.EmitToEventQueue(EventQueueParam{
-		Q:         queue,
-		BlockMode: true,
-	}, "queue", 1)
+		handler.EmitToEventQueue(EventQueueParam{
+			Q: queue,
+		}, "queue", 2)
 
-	handler.EmitToEventQueue(EventQueueParam{
-		Q: queue,
-	}, "queue", 1)
+		err := handler.EmitToEventQueue(EventQueueParam{
+			Q:          queue,
+			FullReturn: true,
+		}, "queue", 3)
 
-	handler.EmitToEventQueue(EventQueueParam{
-		Q:          queue,
-		FullReturn: true,
-	}, "queue", 1)
+		assert.Equal(t, err, ErrQueueFull)
 
-	queue.PostNoWait(1, func(...interface{}) {
-		fmt.Println("queue fun3")
-		queue.Close()
-	})
+		queue.PostNoWait(0, func() {
+			err = handler.EmitToEventQueue(EventQueueParam{
+				Q:          queue,
+				FullReturn: true,
+			}, "queue", 4)
 
-	queue.Run()
+			assert.Nil(t, err)
+		})
+
+		queue.Run()
+	}
+
+	kendynet.InitLogger(&kendynet.EmptyLogger{})
+
+	{
+		queue := NewEventQueueWithPriority(2)
+
+		queue.PostNoWait(1, func() {
+			queue.Close()
+			panic("test")
+		})
+
+		queue.Run()
+	}
 
 }
 
 func TestEvent(t *testing.T) {
+	kendynet.InitLogger(&kendynet.EmptyLogger{})
+
+	{
+		_, err := util.ProtectCall(func() {
+			NewEventHandler().RegisterOnce("queue", 1)
+		})
+		assert.NotNil(t, err)
+		fmt.Println(err)
+	}
+
+	{
+		_, err := util.ProtectCall(func() {
+			NewEventHandler().RegisterOnce(nil, 1)
+		})
+		assert.NotNil(t, err)
+		fmt.Println(err)
+	}
+
+	{
+		handler := NewEventHandler()
+		handler.RegisterOnce("queue", func(h Handle, msg ...interface{}) {
+			fmt.Println(msg[1])
+		})
+		handler.Emit("queue", 1)
+	}
 
 	{
 		handler := NewEventHandler()
