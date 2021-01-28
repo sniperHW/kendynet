@@ -1,7 +1,6 @@
 package event
 
 import (
-	//"fmt"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/util"
 	"reflect"
@@ -22,7 +21,6 @@ type handle struct {
 	fn      interface{}
 	once    bool
 	event   interface{}
-	removed int32
 	version int64
 }
 
@@ -49,19 +47,13 @@ type handlerSlot struct {
 
 type EventHandler struct {
 	sync.RWMutex
-	slots        map[interface{}]*handlerSlot
-	processQueue *EventQueue
-	version      int64
+	slots   map[interface{}]*handlerSlot
+	version int64
 }
 
-func NewEventHandler(processQueue ...*EventQueue) *EventHandler {
-	var q *EventQueue
-	if len(processQueue) > 0 {
-		q = processQueue[0]
-	}
+func NewEventHandler() *EventHandler {
 	return &EventHandler{
-		slots:        map[interface{}]*handlerSlot{},
-		processQueue: q,
+		slots: map[interface{}]*handlerSlot{},
 	}
 }
 
@@ -123,24 +115,31 @@ func (this *EventHandler) Emit(event interface{}, args ...interface{}) {
 	slot, ok := this.slots[event]
 	this.RUnlock()
 	if ok {
-		if this.processQueue != nil {
-			this.processQueue.PostNoWait(0, slot.emit, args...)
-		} else {
-			slot.emit(args...)
-		}
+		slot.emit(args...)
 	}
 }
 
-func (this *EventHandler) EmitWithPriority(priority int, event interface{}, args ...interface{}) {
-	this.RLock()
-	slot, ok := this.slots[event]
-	this.RUnlock()
-	if ok {
-		if this.processQueue != nil {
-			this.processQueue.PostNoWait(priority, slot.emit, args...)
-		} else {
-			slot.emit(args...)
-		}
+/*
+ * 通过事件队列来执行emit
+ */
+
+type EventQueueParam struct {
+	Priority   int
+	Q          *EventQueue
+	BlockMode  bool //阻塞模式，如果Q满阻塞调用方
+	FullReturn bool //BlockMode==false时,如果FullReturn==true,则当Q满时返回ErrQueueFull,否则不管Q是否满都将emit投递过去
+}
+
+func (this *EventHandler) EmitToEventQueue(param EventQueueParam, event interface{}, args ...interface{}) error {
+	a := make([]interface{}, 0, len(args)+1)
+	a = append(a, event)
+	a = append(a, args...)
+	if param.BlockMode {
+		return param.Q.Post(param.Priority, this.Emit, a...)
+	} else if param.FullReturn {
+		return param.Q.PostFullReturn(param.Priority, this.Emit, a...)
+	} else {
+		return param.Q.PostNoWait(param.Priority, this.Emit, a...)
 	}
 }
 
@@ -241,6 +240,12 @@ func (this *handlerSlot) emit(args ...interface{}) {
 	} else {
 		this.emiting = true
 		size := len(this.pendingOP)
+
+		/*
+		 *  在执行doEmit的时候，其它go程或事件处理器可能会往pendingOP中添加请求
+		 *  因此当前的执行者必须把这些pendingOP全部执行完毕。
+		 */
+
 		for i := 0; i < size; i++ {
 			op := this.pendingOP[i]
 			switch op.opType {
@@ -250,6 +255,16 @@ func (this *handlerSlot) emit(args ...interface{}) {
 				this.doRegister(op.h)
 			case opEmit:
 				this.Unlock()
+				/*
+				 * 这里无需也不能加锁
+				 * 不能加:pcall2里可能调用remove或register，将导致死锁
+				 *
+				 * 不需要加:doEmit操作this.l,在没有emit执行的情况下,remove和register对this.l的访问互斥的（有锁保护）
+				 * 在有一个go程序正在执行doEmit的情况下,对this.l的访问也是互斥的。因为正在执行doEmit的go程序已经将this.emiting设置为true。
+				 * 其它go程序要访问this.l必须等到正在执行doEmit的go程执行完毕将this.emiting设置为false。
+				 * 如果此时别的go程请求访问this.l,这个请求将被push到pendingOP，由正在执行doEmit的go程序代为执行。
+				 *
+				 */
 				this.doEmit(op.args)
 				this.Lock()
 			}
