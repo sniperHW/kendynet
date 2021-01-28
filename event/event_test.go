@@ -1,11 +1,13 @@
 package event
 
-//go test -covermode=count -v -run=.
+//go test -covermode=count -v -coverprofile=coverage.out -run=TestEvent
+//go tool cover -html=coverage.out
 import (
 	"fmt"
 	"testing"
 )
 
+/*
 func testQueueMode() {
 
 	fmt.Println("-------------------testQueueMode-----------------")
@@ -47,7 +49,7 @@ func testQueueMode() {
 
 		/*
 		 * 所有注册的处理器将按注册顺序依次执行
-		 */
+		 * /
 
 		handler.Emit("queue")
 
@@ -80,7 +82,7 @@ func testQueueMode() {
 
 		/*
 		 * 所有注册的处理器将按注册顺序依次执行
-		 */
+		 * /
 
 		handler.Emit("queue")
 
@@ -126,7 +128,7 @@ func testQueueOnceMode() {
 
 	/*
 	 * 所有注册的处理器将按注册顺序依次执行
-	 */
+	 * /
 
 	handler.Emit("queue", "hello")
 
@@ -173,12 +175,159 @@ func testUseEventQueue() {
 
 	queue.Run()
 
+}*/
+
+func testUseEventQueue() {
+	fmt.Println("-------------------testUseEventQueue-----------------")
+
+	queue := NewEventQueue(1)
+
+	handler := NewEventHandler(queue)
+
+	handler.Register("queue", func(v int) {
+		fmt.Println("handler1", v)
+
+		queue.Post(1, func() {
+			fmt.Println("queue fun1")
+		})
+
+		//queue.PostFullReturn(func([]interface{}) {
+		//	fmt.Println("queue fun2")
+		//})
+
+		queue.PostNoWait(1, func(...interface{}) {
+			fmt.Println("queue fun3")
+			queue.Close()
+		})
+
+	})
+
+	handler.Emit("queue", 1)
+
+	queue.Run()
+
 }
 
 func TestEvent(t *testing.T) {
-	testQueueMode()
+	{
+		fmt.Println("test1-----------------")
+		handler := NewEventHandler()
+		handler.Register("queue", func(h Handle, msg ...interface{}) {
+			fmt.Println("handler1", msg[0])
+		})
 
-	testQueueOnceMode()
+		handler.RegisterOnce("queue", func(h Handle, msg ...interface{}) {
+			fmt.Println("handler2", msg[0])
+		})
+
+		handler.Register("queue", func(h Handle, msg ...interface{}) {
+			fmt.Println("handler3", msg[0])
+		})
+
+		handler.Emit("queue", 1)
+		fmt.Println("again")
+		handler.Emit("queue", 1)
+
+	}
+
+	{
+		fmt.Println("test2-----------------")
+		handler := NewEventHandler()
+		handler.Register("queue", func(h Handle, msg ...interface{}) {
+			fmt.Println("handler1", msg[1])
+		})
+
+		h2 := handler.Register("queue", func(h Handle, msg ...interface{}) {
+			fmt.Println("handler2", msg[1])
+			handler.Remove(h)
+		})
+
+		h3 := handler.Register("queue", func(h Handle, msg ...interface{}) {
+			fmt.Println("handler3", msg[1])
+		})
+
+		handler.Emit("queue", h2, 1)
+		fmt.Println("again")
+		handler.Emit("queue", h2, 1)
+		fmt.Println("again")
+		handler.Remove(h3)
+		handler.Emit("queue", h2, 1)
+
+	}
+
+	{
+		fmt.Println("test3-----------------")
+		handler := NewEventHandler()
+		handler.Register("queue", func(h Handle, msg ...interface{}) {
+			fmt.Println("handler1", msg[0])
+		})
+
+		handler.RegisterOnce("queue", func(h Handle, msg ...interface{}) {
+			fmt.Println("handler2", msg[0])
+			handler.Register("queue", func(h Handle, msg ...interface{}) {
+				fmt.Println("handler4", msg[0])
+			})
+
+		})
+
+		handler.Register("queue", func(h Handle, msg ...interface{}) {
+			fmt.Println("handler3", msg[0])
+		})
+
+		handler.Emit("queue", 1)
+		fmt.Println("again")
+		handler.Emit("queue", 1)
+
+		handler.Register("queue", func(h Handle, msg ...interface{}) {
+			fmt.Println("handler5", msg[0])
+		})
+		fmt.Println("again")
+		handler.Emit("queue", 1)
+
+	}
+
+	{
+		fmt.Println("test4-----------------")
+		handler := NewEventHandler()
+
+		c := 0
+
+		handler.Register("queue", func(h Handle, msg ...interface{}) {
+			c++
+			fmt.Println("handler1", msg[0], c)
+			if c < 3 {
+				handler.Emit("queue", 1)
+			}
+		})
+
+		handler.Emit("queue", 1)
+	}
+
+	{
+		fmt.Println("test5-----------------")
+		handler := NewEventHandler()
+
+		handler.Register("queue", func(h Handle, msg ...interface{}) {
+			fmt.Println("handler1", msg[0])
+		})
+
+		handler.Register("queue", func(h Handle, msg ...interface{}) {
+			fmt.Println("handler2", msg[0])
+			handler.Clear("queue")
+		})
+
+		handler.Register("queue", func(h Handle, msg ...interface{}) {
+			fmt.Println("handler3", msg[0])
+		})
+
+		handler.Emit("queue", 1)
+		fmt.Println("again")
+		handler.Emit("queue", 1)
+	}
+
+	//testQueueMode()
+
+	//testQueueOnceMode()
 
 	testUseEventQueue()
 }
