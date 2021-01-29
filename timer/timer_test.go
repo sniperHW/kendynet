@@ -1,7 +1,8 @@
 package timer
 
-//go test -covermode=count -v -run=.
+//go test -covermode=count -v -coverprofile=coverage.out -run=.
 //go test -v -run=^$ -bench Benchmark -count 10
+//go tool cover -html=coverage.out
 import (
 	"fmt"
 	"github.com/sniperHW/kendynet/event"
@@ -44,6 +45,26 @@ func TestTimer(t *testing.T) {
 
 	{
 
+		assert.Nil(t, Once(100*time.Millisecond, nil, nil))
+
+		tt := Once(100*time.Millisecond, func(timer_ *Timer, ctx interface{}) {
+			fmt.Println(ctx.(int))
+		}, nil)
+
+		assert.Nil(t, tt.GetCTX())
+
+		assert.Nil(t, GetTimerByIndex(0))
+
+		index := uint64(1)
+
+		OnceWithIndex(time.Second, func(timer_ *Timer, ctx interface{}) {
+			CancelByIndex(index)
+		}, nil, index)
+
+	}
+
+	{
+
 		die := make(chan struct{})
 		i := 0
 		timer_ := Repeat(100*time.Millisecond, func(timer_ *Timer, ctx interface{}) {
@@ -62,8 +83,6 @@ func TestTimer(t *testing.T) {
 
 		assert.Equal(t, false, timer_.Cancel())
 
-		assert.Equal(t, false, timer_.ResetDuration(time.Second))
-
 	}
 
 	{
@@ -75,7 +94,7 @@ func TestTimer(t *testing.T) {
 		die := make(chan struct{})
 		i := 0
 		timer_ := Repeat(100*time.Millisecond, func(timer_ *Timer, ctx interface{}) {
-			queue.PostNoWait(func() {
+			queue.PostNoWait(0, func() {
 				i++
 				fmt.Println("Repeat timer", i)
 				if i == 10 {
@@ -195,33 +214,6 @@ func TestTimer(t *testing.T) {
 
 		assert.Equal(t, false, timer_.ResetFireTime(5*time.Second))
 
-	}
-
-	{
-
-		die := make(chan struct{})
-		i := 0
-
-		expect_firetime := time.Now().Unix() + 2
-
-		timer_ := Repeat(1*time.Second, func(timer_ *Timer, ctx interface{}) {
-			i++
-			fmt.Println("Repeat timer", i)
-			assert.Equal(t, expect_firetime, time.Now().Unix())
-			if i == 2 {
-				assert.Equal(t, false, timer_.Cancel())
-				close(die)
-			} else {
-				expect_firetime = time.Now().Unix() + 1
-				timer_.ResetDuration(1 * time.Second)
-			}
-		}, nil)
-
-		timer_.ResetDuration(2 * time.Second)
-
-		<-die
-
-		assert.Equal(t, false, timer_.ResetDuration(2*time.Second))
 	}
 
 }
