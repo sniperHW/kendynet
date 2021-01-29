@@ -149,8 +149,6 @@ func (this *RPCClient) OnRPCMessage(message interface{}) {
 			} else if nil == ctx {
 				kendynet.GetLogger().Infoln("onResponse with no reqContext", resp.GetSeq())
 			}
-		} else {
-			panic("RPCClient.OnRPCMessage() invaild msg type")
 		}
 	}
 }

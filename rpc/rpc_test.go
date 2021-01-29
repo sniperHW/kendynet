@@ -13,6 +13,7 @@ import (
 	"github.com/sniperHW/kendynet/example/testproto"
 	connector "github.com/sniperHW/kendynet/socket/connector/tcp"
 	listener "github.com/sniperHW/kendynet/socket/listener/tcp"
+	"github.com/sniperHW/kendynet/util"
 	"github.com/stretchr/testify/assert"
 	"reflect"
 	"sync/atomic"
@@ -52,12 +53,20 @@ func (this *TcpStreamChannel) GetSession() kendynet.StreamSession {
 	return this.session
 }
 
+type ErrorEncoder struct {
+}
+
+func (this *ErrorEncoder) Encode(message RPCMessage) (interface{}, error) {
+	return nil, fmt.Errorf("error")
+}
+
 type TestEncoder struct {
 }
 
 func (this *TestEncoder) Encode(message RPCMessage) (interface{}, error) {
 	if message.Type() == RPC_REQUEST {
 		req := message.(*RPCRequest)
+		req.GetSeq()
 		request := &testproto.RPCRequest{
 			Seq:      proto.Uint64(req.Seq),
 			Method:   proto.String(req.Method),
@@ -88,6 +97,13 @@ func (this *TestEncoder) Encode(message RPCMessage) (interface{}, error) {
 		}
 		return response, nil
 	}
+}
+
+type ErrorDecoder struct {
+}
+
+func (this *ErrorDecoder) Decode(o interface{}) (RPCMessage, error) {
+	return nil, fmt.Errorf("error")
 }
 
 type TestDecoder struct {
@@ -138,9 +154,9 @@ type TestRPCServer struct {
 	halt     atomic.Value
 }
 
-func NewTestRPCServer() *TestRPCServer {
+func NewTestRPCServer(decoder RPCMessageDecoder, encoder RPCMessageEncoder) *TestRPCServer {
 	return &TestRPCServer{
-		server: NewRPCServer(&TestDecoder{}, &TestEncoder{}),
+		server: NewRPCServer(decoder, encoder),
 	}
 }
 
@@ -182,10 +198,16 @@ func (this *TestRPCServer) Stop() {
 type Caller struct {
 	client  *RPCClient
 	channel RPCChannel
+	decoder RPCMessageDecoder
+	encoder RPCMessageEncoder
 }
 
-func NewCaller() *Caller {
-	return &Caller{}
+func NewCaller(decoder RPCMessageDecoder, encoder RPCMessageEncoder) *Caller {
+	c := &Caller{
+		decoder: decoder,
+		encoder: encoder,
+	}
+	return c
 }
 
 func (this *Caller) Dial(service string, timeout time.Duration, queue *event.EventQueue) error {
@@ -195,7 +217,7 @@ func (this *Caller) Dial(service string, timeout time.Duration, queue *event.Eve
 		return err
 	}
 	this.channel = NewTcpStreamChannel(session)
-	this.client = NewClient(&TestDecoder{}, &TestEncoder{})
+	this.client = NewClient(this.decoder, this.encoder)
 	session.SetEncoder(codec.NewPbEncoder(65535))
 	session.SetReceiver(codec.NewPBReceiver(65535))
 	session.SetRecvTimeout(5 * time.Second)
@@ -217,8 +239,8 @@ func (this *Caller) Post(method string, arg interface{}) error {
 	return this.client.Post(this.channel, method, arg)
 }
 
-func (this *Caller) AsynCall(method string, arg interface{}, timeout time.Duration, cb RPCResponseHandler) {
-	this.client.AsynCall(this.channel, method, arg, timeout, cb)
+func (this *Caller) AsynCall(method string, arg interface{}, timeout time.Duration, cb RPCResponseHandler) error {
+	return this.client.AsynCall(this.channel, method, arg, timeout, cb)
 }
 
 func (this *Caller) Call(method string, arg interface{}, timeout time.Duration) (interface{}, error) {
@@ -232,13 +254,96 @@ func init() {
 	pb.Register(&testproto.RPCRequest{}, 4)
 }
 
+func TestRPC2(t *testing.T) {
+
+	{
+
+		server := NewTestRPCServer(&ErrorDecoder{}, &ErrorEncoder{})
+
+		server.RegisterMethod("hello", func(replyer *RPCReplyer, arg interface{}) {
+			world := &testproto.World{World: proto.String("world")}
+			replyer.Reply(world, nil)
+		})
+
+		go server.Serve("localhost:8111")
+
+		caller := NewCaller(&TestDecoder{}, &TestEncoder{})
+		caller.Dial("localhost:8111", 10*time.Second, nil)
+		caller.Post("hello", &testproto.Hello{Hello: proto.String("hello")})
+		time.Sleep(time.Second)
+		server.halt.Store(true)
+		caller.Post("hello", &testproto.Hello{Hello: proto.String("hello")})
+		time.Sleep(time.Second)
+
+	}
+
+	{
+
+		server := NewTestRPCServer(&TestDecoder{}, &ErrorEncoder{})
+
+		server.RegisterMethod("hello", func(replyer *RPCReplyer, arg interface{}) {
+
+			str := arg.(*testproto.Hello).GetHello()
+			fmt.Println(str)
+			if str == "hello2" {
+				replyer.GetChannel().(*TcpStreamChannel).session.Close("", 0)
+			}
+			world := &testproto.World{World: proto.String("world")}
+			replyer.Reply(world, nil)
+		})
+
+		go server.Serve("localhost:8112")
+
+		caller := NewCaller(&TestDecoder{}, &TestEncoder{})
+		caller.Dial("localhost:8112", 10*time.Second, nil)
+
+		caller.AsynCall("hello", &testproto.Hello{Hello: proto.String("hello")}, time.Second, func(r interface{}, err error) {
+		})
+
+		time.Sleep(time.Second)
+
+		server.halt.Store(true)
+
+		caller.AsynCall("hello", &testproto.Hello{Hello: proto.String("hello")}, time.Second, func(r interface{}, err error) {
+		})
+
+		time.Sleep(time.Second)
+
+		server.halt.Store(false)
+
+	}
+
+	{
+
+		server := NewTestRPCServer(&TestDecoder{}, &TestEncoder{})
+
+		server.RegisterMethod("hello", func(replyer *RPCReplyer, arg interface{}) {
+			replyer.GetChannel().(*TcpStreamChannel).session.Close("", 0)
+			world := &testproto.World{World: proto.String("world")}
+			replyer.Reply(world, nil)
+		})
+
+		go server.Serve("localhost:8113")
+
+		caller := NewCaller(&TestDecoder{}, &TestEncoder{})
+		caller.Dial("localhost:8113", 10*time.Second, nil)
+
+		caller.AsynCall("hello", &testproto.Hello{Hello: proto.String("hello")}, time.Second, func(r interface{}, err error) {
+		})
+
+		time.Sleep(time.Second)
+
+	}
+
+}
+
 func TestRPC(t *testing.T) {
 
 	assert.Nil(t, NewClient(nil, nil))
 
 	assert.Nil(t, NewRPCServer(nil, nil))
 
-	server := NewTestRPCServer()
+	server := NewTestRPCServer(&TestDecoder{}, &TestEncoder{})
 
 	assert.Nil(t, server.RegisterMethod("hello", func(replyer *RPCReplyer, arg interface{}) {}))
 	assert.NotNil(t, server.RegisterMethod("hello", func(replyer *RPCReplyer, arg interface{}) {}))
@@ -269,7 +374,7 @@ func TestRPC(t *testing.T) {
 	server.server.PendingCount()
 
 	{
-		caller := NewCaller()
+		caller := NewCaller(&TestDecoder{}, &TestEncoder{})
 
 		assert.Nil(t, caller.Dial("localhost:8110", 10*time.Second, nil))
 
@@ -329,7 +434,7 @@ func TestRPC(t *testing.T) {
 
 	{
 		//asyncall
-		caller := NewCaller()
+		caller := NewCaller(&TestDecoder{}, &TestEncoder{})
 		assert.Nil(t, caller.Dial("localhost:8110", 10*time.Second, nil))
 		ok := make(chan struct{})
 
@@ -344,8 +449,25 @@ func TestRPC(t *testing.T) {
 	}
 
 	{
+
+		caller := NewCaller(&ErrorDecoder{}, &ErrorEncoder{})
+		assert.Nil(t, caller.Dial("localhost:8110", 10*time.Second, nil))
+
+		assert.NotNil(t, caller.AsynCall("hello", &testproto.Hello{Hello: proto.String("hello")}, time.Second, func(r interface{}, err error) {
+
+		}))
+
+		assert.NotNil(t, caller.Post("hello", &testproto.Hello{Hello: proto.String("hello")}))
+
+		_, err := util.ProtectCall(func() {
+			caller.AsynCall("hello", &testproto.Hello{Hello: proto.String("hello")}, time.Second, nil)
+		})
+		assert.NotNil(t, err)
+	}
+
+	{
 		//test channel disconnected
-		caller := NewCaller()
+		caller := NewCaller(&TestDecoder{}, &TestEncoder{})
 
 		assert.Nil(t, caller.Dial("localhost:8110", 10*time.Second, nil))
 
@@ -368,7 +490,7 @@ func TestRPC(t *testing.T) {
 
 	{
 
-		caller := NewCaller()
+		caller := NewCaller(&TestDecoder{}, &TestEncoder{})
 
 		assert.Nil(t, caller.Dial("localhost:8110", 10*time.Second, nil))
 

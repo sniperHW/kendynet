@@ -99,9 +99,6 @@ func (this *RPCServer) OnServiceStop(channel RPCChannel, message interface{}, er
 		if nil != err {
 			kendynet.GetLogger().Errorf(util.FormatFileLine("send rpc response to (%s) error:%s\n", channel.Name(), err.Error()))
 		}
-
-	default:
-		kendynet.GetLogger().Errorln("RPCServer.OnRPCMessage() invaild msg type")
 	}
 }
 
@@ -169,8 +166,6 @@ func (this *RPCServer) OnRPCMessage(channel RPCChannel, message interface{}) {
 				this.callMethod(method, replyer, req.Arg)
 			}
 		}
-	default:
-		kendynet.GetLogger().Errorln("RPCServer.OnRPCMessage() invaild msg type")
 	}
 
 }
