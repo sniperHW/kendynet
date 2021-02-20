@@ -55,18 +55,7 @@ func server(service string) {
 					var e error
 					atomic.AddInt32(&bytescount, int32(len(event.Data.(kendynet.Message).Bytes())))
 					atomic.AddInt32(&packetcount, int32(1))
-					for {
-						e = event.Session.SendMessage(event.Data.(kendynet.Message))
-						if e == nil {
-							return
-						} else if e != kendynet.ErrSendQueFull {
-							break
-						}
-						runtime.Gosched()
-					}
-					if e != nil {
-						fmt.Println("send error", e, session.GetUnderConn())
-					}
+					event.Session.SendMessage(event.Data.(kendynet.Message))
 				}
 			})
 		})
