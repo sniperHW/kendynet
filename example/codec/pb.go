@@ -90,18 +90,11 @@ func (this *PBReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface
 					copy(this.buffer, this.buffer[this.unpackIdx:this.unpackIdx+this.unpackSize])
 				}
 				this.recvBuff = this.buffer[this.unpackSize:]
-				//for k, _ := range this.recvBuff {
-				//	this.recvBuff[k] = 0
-				//}
 				this.unpackIdx = 0
 			}
 
-			//buff := make([]byte, len(this.recvBuff))
-
 			n, err := sess.(*socket.StreamSocket).Read(this.recvBuff)
 			if n > 0 {
-				//this.check(buff[:n])
-				//copy(this.recvBuff, buff[:n])
 				this.lastUnpackIdx = this.unpackIdx
 				this.unpackSize += uint64(n) //增加待解包数据
 				this.recvBuff = this.recvBuff[n:]
@@ -120,15 +113,30 @@ func (this *PBReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface
 }
 
 func (this *PBReceiver) GetRecvBuff() []byte {
-	return nil
+	return this.recvBuff
 }
 
-func (this *PBReceiver) OnData([]byte) {
-
+func (this *PBReceiver) OnData(data []byte) {
+	this.unpackSize += uint64(len(data))
+	this.recvBuff = this.recvBuff[len(data):]
 }
 
-func (this *PBReceiver) Unpack() (interface{}, error) {
-	return nil, nil
+func (this *PBReceiver) Unpack() (msg interface{}, err error) {
+	msg, err = this.unPack()
+	if msg == nil && err == nil {
+		if this.unpackSize == 0 {
+			this.unpackIdx = 0
+			this.recvBuff = this.buffer
+		} else if uint64(len(this.recvBuff)) < this.totalMaxPacket/4 {
+			if this.unpackSize > 0 {
+				//有数据尚未解包，需要移动到buffer前部
+				copy(this.buffer, this.buffer[this.unpackIdx:this.unpackIdx+this.unpackSize])
+			}
+			this.recvBuff = this.buffer[this.unpackSize:]
+			this.unpackIdx = 0
+		}
+	}
+	return
 }
 
 func (this *PBReceiver) OnSocketClose() {

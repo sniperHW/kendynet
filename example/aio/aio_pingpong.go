@@ -18,7 +18,7 @@ import (
 	"time"
 )
 
-var aioService *aio.AioService
+var aioService *aio.SocketSerice
 
 func server(service string) {
 
@@ -26,7 +26,7 @@ func server(service string) {
 	bytescount := int32(0)
 	packetcount := int32(0)
 
-	timer.Repeat(time.Second, nil, func(_ *timer.Timer, ctx interface{}) {
+	timer.Repeat(time.Second, func(_ *timer.Timer, ctx interface{}) {
 		tmp1 := atomic.LoadInt32(&bytescount)
 		tmp2 := atomic.LoadInt32(&packetcount)
 		atomic.StoreInt32(&bytescount, 0)
@@ -42,31 +42,15 @@ func server(service string) {
 
 			session.SetRecvTimeout(time.Second * 5)
 
-			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
+			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
 				atomic.AddInt32(&clientcount, -1)
 				fmt.Println("client close:", reason, sess.GetUnderConn(), atomic.LoadInt32(&clientcount))
 			})
 
-			session.Start(func(msg *kendynet.Event) {
-				if msg.EventType == kendynet.EventTypeError {
-					msg.Session.Close(msg.Data.(error).Error(), 0)
-				} else {
-					var e error
-					atomic.AddInt32(&bytescount, int32(len(msg.Data.(kendynet.Message).Bytes())))
-					atomic.AddInt32(&packetcount, int32(1))
-					for {
-						e = msg.Session.SendMessage(msg.Data.(kendynet.Message))
-						if e == nil {
-							return
-						} else if e != kendynet.ErrSendQueFull {
-							break
-						}
-						runtime.Gosched()
-					}
-					if e != nil {
-						fmt.Println("send error", e, msg.Session.GetUnderConn())
-					}
-				}
+			session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
+				atomic.AddInt32(&bytescount, int32(len(msg.(kendynet.Message).Bytes())))
+				atomic.AddInt32(&packetcount, int32(1))
+				s.SendMessage(msg.(kendynet.Message))
 			})
 		})
 
@@ -93,28 +77,12 @@ func client(service string, count int) {
 		if err != nil {
 			fmt.Printf("Dial error:%s\n", err.Error())
 		} else {
-			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
+			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
 				fmt.Printf("client close:%s\n", reason)
 			})
-			session.Start(func(event *kendynet.Event) {
-				if event.EventType == kendynet.EventTypeError {
-					event.Session.Close(event.Data.(error).Error(), 0)
-				} else {
-					//event.Session.SendMessage(event.Data.(kendynet.Message))
-					var e error
-					for {
-						e = event.Session.SendMessage(event.Data.(kendynet.Message))
-						if e == nil {
-							return
-						} else if e != kendynet.ErrSendQueFull {
-							break
-						}
-						runtime.Gosched()
-					}
-					if e != nil {
-						fmt.Println("send error", e, event.Session.GetUnderConn())
-					}
-				}
+
+			session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
+				s.SendMessage(msg.(kendynet.Message))
 			})
 			//send the first messge
 			msg := kendynet.NewByteBuffer("hello")
@@ -136,7 +104,7 @@ func main() {
 
 	_ = runtime.NumCPU() * 2
 
-	aioService = aio.NewAioService(1, 1, 1, nil)
+	aioService = aio.NewSocketSerice(nil)
 
 	if len(os.Args) < 3 {
 		fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")
