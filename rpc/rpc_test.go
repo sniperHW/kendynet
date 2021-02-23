@@ -173,18 +173,12 @@ func (this *TestRPCServer) Serve(service string) error {
 
 	err = this.listener.Serve(func(session kendynet.StreamSession) {
 		channel := NewTcpStreamChannel(session)
-		session.SetEncoder(codec.NewPbEncoder(65535))
-		session.SetReceiver(codec.NewPBReceiver(65535))
-		session.SetRecvTimeout(5 * time.Second)
-		session.Start(func(event *kendynet.Event) {
-			if event.EventType == kendynet.EventTypeError {
-				session.Close(event.Data.(error).Error(), 0)
+		session.SetEncoder(codec.NewPbEncoder(65535)).SetInBoundProcessor(codec.NewPBReceiver(65535)).SetRecvTimeout(5 * time.Second)
+		session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
+			if this.halt.Load() != nil {
+				this.server.OnServiceStop(channel, msg, errHalt)
 			} else {
-				if this.halt.Load() != nil {
-					this.server.OnServiceStop(channel, event.Data, errHalt)
-				} else {
-					this.server.OnRPCMessage(channel, event.Data)
-				}
+				this.server.OnRPCMessage(channel, msg)
 			}
 		})
 	})
@@ -218,19 +212,12 @@ func (this *Caller) Dial(service string, timeout time.Duration, queue *event.Eve
 	}
 	this.channel = NewTcpStreamChannel(session)
 	this.client = NewClient(this.decoder, this.encoder)
-	session.SetEncoder(codec.NewPbEncoder(65535))
-	session.SetReceiver(codec.NewPBReceiver(65535))
-	session.SetRecvTimeout(5 * time.Second)
-	session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
-		fmt.Printf("channel close:%s\n", reason)
+	session.SetEncoder(codec.NewPbEncoder(65535)).SetInBoundProcessor(codec.NewPBReceiver(65535)).SetRecvTimeout(5 * time.Second)
+	session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
+		fmt.Println("channel close", reason)
 		this.client.OnChannelDisconnect(this.channel)
-	})
-	session.Start(func(event *kendynet.Event) {
-		if event.EventType == kendynet.EventTypeError {
-			session.Close(event.Data.(error).Error(), 0)
-		} else {
-			this.client.OnRPCMessage(event.Data)
-		}
+	}).BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
+		this.client.OnRPCMessage(msg)
 	})
 	return nil
 }
@@ -255,7 +242,7 @@ func init() {
 }
 
 func TestRPC2(t *testing.T) {
-
+	fmt.Println("0000000000000")
 	{
 
 		server := NewTestRPCServer(&ErrorDecoder{}, &ErrorEncoder{})
@@ -277,6 +264,8 @@ func TestRPC2(t *testing.T) {
 
 	}
 
+	fmt.Println("11111111111")
+
 	{
 
 		server := NewTestRPCServer(&TestDecoder{}, &ErrorEncoder{})
@@ -286,7 +275,7 @@ func TestRPC2(t *testing.T) {
 			str := arg.(*testproto.Hello).GetHello()
 			fmt.Println(str)
 			if str == "hello2" {
-				replyer.GetChannel().(*TcpStreamChannel).session.Close("", 0)
+				replyer.GetChannel().(*TcpStreamChannel).session.Close(nil, 0)
 			}
 			world := &testproto.World{World: proto.String("world")}
 			replyer.Reply(world, nil)
@@ -313,12 +302,14 @@ func TestRPC2(t *testing.T) {
 
 	}
 
+	fmt.Println("222222222222222")
+
 	{
 
 		server := NewTestRPCServer(&TestDecoder{}, &TestEncoder{})
 
 		server.RegisterMethod("hello", func(replyer *RPCReplyer, arg interface{}) {
-			replyer.GetChannel().(*TcpStreamChannel).session.Close("", 0)
+			replyer.GetChannel().(*TcpStreamChannel).session.Close(nil, 0)
 			world := &testproto.World{World: proto.String("world")}
 			replyer.Reply(world, nil)
 		})
@@ -418,7 +409,7 @@ func TestRPC(t *testing.T) {
 		time.Sleep(time.Second * 4)
 
 		{
-			caller.channel.(*TcpStreamChannel).session.Close("none", 0)
+			caller.channel.(*TcpStreamChannel).session.Close(nil, 0)
 			{
 				err := caller.Post("hello", &testproto.Hello{Hello: proto.String("hello")})
 				assert.Equal(t, err, kendynet.ErrSocketClose)
@@ -480,7 +471,7 @@ func TestRPC(t *testing.T) {
 
 		time.Sleep(time.Second)
 
-		caller.channel.(*TcpStreamChannel).session.Close("none", 0)
+		caller.channel.(*TcpStreamChannel).session.Close(nil, 0)
 
 		<-ok
 

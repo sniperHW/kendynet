@@ -118,3 +118,19 @@ func (this *PBReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface
 
 	return msg, err
 }
+
+func (this *PBReceiver) GetRecvBuff() []byte {
+	return nil
+}
+
+func (this *PBReceiver) OnData([]byte) {
+
+}
+
+func (this *PBReceiver) Unpack() (interface{}, error) {
+	return nil, nil
+}
+
+func (this *PBReceiver) OnSocketClose() {
+
+}

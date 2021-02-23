@@ -92,12 +92,12 @@ func (this *RPCServer) OnServiceStop(channel RPCChannel, message interface{}, er
 		msg, err := this.encoder.Encode(response)
 		if nil != err {
 			kendynet.GetLogger().Errorf(util.FormatFileLine("Encode rpc response error:%s\n", err.Error()))
-		}
+		} else {
+			err = channel.SendResponse(msg)
 
-		err = channel.SendResponse(msg)
-
-		if nil != err {
-			kendynet.GetLogger().Errorf(util.FormatFileLine("send rpc response to (%s) error:%s\n", channel.Name(), err.Error()))
+			if nil != err {
+				kendynet.GetLogger().Errorf(util.FormatFileLine("send rpc response to (%s) error:%s\n", channel.Name(), err.Error()))
+			}
 		}
 	}
 }
