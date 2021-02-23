@@ -9,7 +9,7 @@ import (
 	"github.com/sniperHW/kendynet/timer"
 	"os"
 	"os/signal"
-	"runtime"
+	//"runtime"
 	//"runtime/pprof"
 	"net/http"
 	_ "net/http/pprof"
@@ -43,21 +43,17 @@ func server(service string) {
 		err = server.Serve(func(session kendynet.StreamSession) {
 			atomic.AddInt32(&clientcount, 1)
 			session.SetRecvTimeout(time.Second * 5)
-			//session.SetSendQueueSize(2048)
-			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
+			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
 				atomic.AddInt32(&clientcount, -1)
 				fmt.Println("client close:", reason, session.GetUnderConn(), atomic.LoadInt32(&clientcount))
 			})
-			session.Start(func(event *kendynet.Event) {
-				if event.EventType == kendynet.EventTypeError {
-					event.Session.Close(event.Data.(error).Error(), 0)
-				} else {
-					var e error
-					atomic.AddInt32(&bytescount, int32(len(event.Data.(kendynet.Message).Bytes())))
-					atomic.AddInt32(&packetcount, int32(1))
-					event.Session.SendMessage(event.Data.(kendynet.Message))
-				}
+
+			session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
+				atomic.AddInt32(&bytescount, int32(len(msg.(kendynet.Message).Bytes())))
+				atomic.AddInt32(&packetcount, int32(1))
+				s.SendMessage(msg.(kendynet.Message))
 			})
+
 		})
 
 		if nil != err {
@@ -83,28 +79,14 @@ func client(service string, count int) {
 		if err != nil {
 			fmt.Printf("Dial error:%s\n", err.Error())
 		} else {
-			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
+			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
 				fmt.Printf("client close:%s\n", reason)
 			})
-			session.Start(func(event *kendynet.Event) {
-				if event.EventType == kendynet.EventTypeError {
-					event.Session.Close(event.Data.(error).Error(), 0)
-				} else {
-					var e error
-					for {
-						e = event.Session.SendMessage(event.Data.(kendynet.Message))
-						if e == nil {
-							return
-						} else if e != kendynet.ErrSendQueFull {
-							break
-						}
-						runtime.Gosched()
-					}
-					if e != nil {
-						fmt.Println("send error", e, session.GetUnderConn())
-					}
-				}
+
+			session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
+				s.SendMessage(msg.(kendynet.Message))
 			})
+
 			//send the first messge
 			msg := kendynet.NewByteBuffer("hello")
 			session.SendMessage(msg)

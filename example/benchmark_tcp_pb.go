@@ -23,7 +23,7 @@ func server(service string) {
 	clientcount := int32(0)
 	packetcount := int32(0)
 
-	timer.Repeat(time.Second, nil, func(_ *timer.Timer, ctx interface{}) {
+	timer.Repeat(time.Second, func(_ *timer.Timer, ctx interface{}) {
 		tmp := atomic.LoadInt32(&packetcount)
 		atomic.StoreInt32(&packetcount, 0)
 		fmt.Printf("clientcount:%d,packetcount:%d\n", clientcount, tmp)
@@ -35,19 +35,15 @@ func server(service string) {
 		err = server.Serve(func(session kendynet.StreamSession) {
 			atomic.AddInt32(&clientcount, 1)
 			session.SetEncoder(codec.NewPbEncoder(4096))
-			session.SetReceiver(codec.NewPBReceiver(4096))
-			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
-				fmt.Printf("server client close:%s\n", reason)
+			session.SetInBoundProcessor(codec.NewPBReceiver(65535))
+			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
+				fmt.Println("server client close:", reason)
 				atomic.AddInt32(&clientcount, -1)
 			})
-			session.Start(func(event *kendynet.Event) {
-				if event.EventType == kendynet.EventTypeError {
-					event.Session.Close(event.Data.(error).Error(), 0)
-				} else {
-					//fmt.Printf("server on msg\n")
-					atomic.AddInt32(&packetcount, int32(1))
-					event.Session.Send(event.Data.(proto.Message))
-				}
+
+			session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
+				atomic.AddInt32(&packetcount, int32(1))
+				s.Send(msg.(proto.Message))
 			})
 		})
 
@@ -75,18 +71,15 @@ func client(service string, count int) {
 			fmt.Printf("Dial error:%s\n", err.Error())
 		} else {
 			session.SetEncoder(codec.NewPbEncoder(4096))
-			session.SetReceiver(codec.NewPBReceiver(4096))
-			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
+			session.SetInBoundProcessor(codec.NewPBReceiver(65535))
+			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
 				fmt.Printf("client client close:%s\n", reason)
 			})
-			session.Start(func(event *kendynet.Event) {
-				if event.EventType == kendynet.EventTypeError {
-					event.Session.Close(event.Data.(error).Error(), 0)
-				} else {
-					//fmt.Printf("client on msg\n")
-					event.Session.Send(event.Data.(proto.Message))
-				}
+
+			session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
+				s.Send(msg.(proto.Message))
 			})
+
 			//send the first messge
 			o := &testproto.Test{}
 			o.A = proto.String("hello")

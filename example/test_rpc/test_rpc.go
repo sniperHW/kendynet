@@ -149,14 +149,10 @@ func (this *RPCServer) Serve(service string) error {
 	err = this.listener.Serve(func(session kendynet.StreamSession) {
 		channel := NewTcpStreamChannel(session)
 		session.SetEncoder(codec.NewPbEncoder(65535))
-		session.SetReceiver(codec.NewPBReceiver(65535))
+		session.SetInBoundProcessor(codec.NewPBReceiver(65535))
 		session.SetRecvTimeout(5 * time.Second)
-		session.Start(func(event *kendynet.Event) {
-			if event.EventType == kendynet.EventTypeError {
-				session.Close(event.Data.(error).Error(), 0)
-			} else {
-				this.server.OnRPCMessage(channel, event.Data)
-			}
+		session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
+			this.server.OnRPCMessage(channel, msg)
 		})
 	})
 	return err
@@ -180,18 +176,17 @@ func (this *Caller) Dial(service string, timeout time.Duration) error {
 	this.channel = NewTcpStreamChannel(session)
 	this.client = rpc.NewClient(&TestDecoder{}, &TestEncoder{})
 	session.SetEncoder(codec.NewPbEncoder(65535))
-	session.SetReceiver(codec.NewPBReceiver(65535))
+	session.SetInBoundProcessor(codec.NewPBReceiver(65535))
+
 	session.SetRecvTimeout(5 * time.Second)
-	session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
-		fmt.Printf("channel close:%s\n", reason)
+	session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
+		fmt.Println("channel close:", reason)
 	})
-	session.Start(func(event *kendynet.Event) {
-		if event.EventType == kendynet.EventTypeError {
-			session.Close(event.Data.(error).Error(), 0)
-		} else {
-			this.client.OnRPCMessage(event.Data)
-		}
+
+	session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
+		this.client.OnRPCMessage(msg)
 	})
+
 	return nil
 }
 

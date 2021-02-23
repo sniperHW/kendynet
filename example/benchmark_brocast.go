@@ -30,7 +30,7 @@ func server(service string) {
 	//clientMap只被单个goroutine访问，不需要任何保护
 	clientMap := make(map[kendynet.StreamSession]bool)
 
-	timer.Repeat(time.Second, nil, func(_ *timer.Timer, ctx interface{}) {
+	timer.Repeat(time.Second, func(_ *timer.Timer, ctx interface{}) {
 		tmp := atomic.LoadInt32(&packetcount)
 		atomic.StoreInt32(&packetcount, 0)
 		fmt.Printf("clientcount:%d,packetcount:%d\n", clientcount, tmp)
@@ -46,28 +46,24 @@ func server(service string) {
 			fmt.Printf("server running on:%s\n", service)
 			err = server.Serve(func(session kendynet.StreamSession) {
 				session.SetEncoder(codec.NewPbEncoder(4096))
-				session.SetReceiver(codec.NewPBReceiver(4096))
-				session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
-					evQueue.PostNoWait(func() {
+				session.SetInBoundProcessor(codec.NewPBReceiver(4096))
+				session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
+					evQueue.PostNoWait(0, func() {
 						atomic.AddInt32(&clientcount, -1)
 						delete(clientMap, session)
 					})
 				})
-				session.Start(func(ev *kendynet.Event) {
-					if ev.EventType == kendynet.EventTypeError {
-						session.Close(ev.Data.(error).Error(), 0)
-					} else {
-						evQueue.PostNoWait(func() {
-							//广播，编码一次，直接发送编码后的包，省得每次发送单独编码一次
-							resp, _ := encoder.EnCode(ev.Data.(proto.Message))
-							atomic.AddInt32(&packetcount, int32(len(clientMap)))
-							for s, _ := range clientMap {
-								s.SendMessage(resp)
-							}
-						})
-					}
+				session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
+					evQueue.PostNoWait(0, func() {
+						//广播，编码一次，直接发送编码后的包，省得每次发送单独编码一次
+						resp, _ := encoder.EnCode(msg.(proto.Message))
+						atomic.AddInt32(&packetcount, int32(len(clientMap)))
+						for s, _ := range clientMap {
+							s.SendMessage(resp)
+						}
+					})
 				})
-				evQueue.PostNoWait(func() {
+				evQueue.PostNoWait(0, func() {
 					atomic.AddInt32(&clientcount, 1)
 					clientMap[session] = true
 				})
@@ -101,18 +97,14 @@ func client(service string, count int) {
 		} else {
 			selfID := i + 1
 			session.SetEncoder(codec.NewPbEncoder(4096))
-			session.SetReceiver(codec.NewPBReceiver(4096))
-			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
+			session.SetInBoundProcessor(codec.NewPBReceiver(4096))
+			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
 				fmt.Printf("client client close:%s\n", reason)
 			})
-			session.Start(func(event *kendynet.Event) {
-				if event.EventType == kendynet.EventTypeError {
-					event.Session.Close(event.Data.(error).Error(), 0)
-				} else {
-					msg := event.Data.(*testproto.BrocastPingpong)
-					if msg.GetId() == int64(selfID) {
-						event.Session.Send(event.Data.(proto.Message))
-					}
+			session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
+				m := msg.(*testproto.BrocastPingpong)
+				if m.GetId() == int64(selfID) {
+					s.Send(msg.(proto.Message))
 				}
 			})
 			//send the first messge

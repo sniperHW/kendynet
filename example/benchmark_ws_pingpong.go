@@ -18,7 +18,7 @@ func server(service string) {
 	clientcount := int32(0)
 	bytescount := int32(0)
 	packetcount := int32(0)
-	timer.Repeat(time.Second, nil, func(_ *timer.Timer, ctx interface{}) {
+	timer.Repeat(time.Second, func(_ *timer.Timer, ctx interface{}) {
 		tmp1 := atomic.LoadInt32(&bytescount)
 		tmp2 := atomic.LoadInt32(&packetcount)
 		atomic.StoreInt32(&bytescount, 0)
@@ -31,20 +31,17 @@ func server(service string) {
 		fmt.Printf("server running on:%s\n", service)
 		err = server.Serve(func(session kendynet.StreamSession) {
 			atomic.AddInt32(&clientcount, 1)
-			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
-				fmt.Printf("client close:%s\n", reason)
+			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
+				fmt.Println("client close:", reason)
 				atomic.AddInt32(&clientcount, -1)
 			})
-			session.Start(func(event *kendynet.Event) {
-				if event.EventType == kendynet.EventTypeError {
-					event.Session.Close(event.Data.(error).Error(), 0)
-				} else {
-					//fmt.Printf("recv msg\n")
-					atomic.AddInt32(&bytescount, int32(len(event.Data.(kendynet.Message).Bytes())))
-					atomic.AddInt32(&packetcount, int32(1))
-					event.Session.SendMessage(event.Data.(kendynet.Message))
-				}
+
+			session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
+				atomic.AddInt32(&bytescount, int32(len(msg.(kendynet.Message).Bytes())))
+				atomic.AddInt32(&packetcount, int32(1))
+				s.SendMessage(msg.(kendynet.Message))
 			})
+
 		})
 
 		if nil != err {
@@ -72,16 +69,14 @@ func client(service string, count int) {
 		if err != nil {
 			fmt.Printf("Dial error:%s\n", err.Error())
 		} else {
-			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
-				fmt.Printf("client close:%s\n", reason)
+			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
+				fmt.Println("client close", reason)
 			})
-			session.Start(func(event *kendynet.Event) {
-				if event.EventType == kendynet.EventTypeError {
-					event.Session.Close(event.Data.(error).Error(), 0)
-				} else {
-					event.Session.SendMessage(event.Data.(kendynet.Message))
-				}
+
+			session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
+				s.SendMessage(msg.(kendynet.Message))
 			})
+
 			//send the first messge
 			err = session.SendMessage(message.NewWSMessage(message.WSTextMessage, "hello"))
 			if err != nil {
