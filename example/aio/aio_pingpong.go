@@ -147,22 +147,3 @@ func main() {
 	return
 
 }
-
-/*
-func main() {
-
-	aio.Init(1, runtime.NumCPU())
-
-	go server("localhost:8110")
-
-	c := make(chan os.Signal)
-	signal.Notify(c, syscall.SIGINT) //监听指定信号
-
-	_ = <-c //阻塞直至有信号传入
-
-	fmt.Println("exit")
-
-	return
-
-}
-*/

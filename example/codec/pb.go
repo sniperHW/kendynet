@@ -49,7 +49,7 @@ func NewPBReceiver(maxMsgSize uint64) *PBReceiver {
 
 func (this *PBReceiver) unPack() (interface{}, error) {
 	msg, dataLen, err := pb.Decode(this.buffer, this.unpackIdx, this.unpackIdx+this.unpackSize, this.maxpacket)
-	if dataLen > 0 {
+	if msg != nil {
 		this.unpackIdx += dataLen
 		this.unpackSize -= dataLen
 	}

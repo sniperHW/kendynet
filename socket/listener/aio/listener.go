@@ -11,10 +11,10 @@ type Listener struct {
     listener *net.TCPListener
     started  int32
     closed   int32
-    s        *aio.SocketSerice
+    s        *aio.SocketService
 }
 
-func New(s *aio.SocketSerice, nettype, service string) (*Listener, error) {
+func New(s *aio.SocketService, nettype, service string) (*Listener, error) {
     tcpAddr, err := net.ResolveTCPAddr(nettype, service)
     if err != nil {
         return nil, err

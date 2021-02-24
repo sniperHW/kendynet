@@ -106,7 +106,7 @@ func Decode(buff []byte, start uint64, end uint64, maxMsgSize uint64) (proto.Mes
 	totalPacketSize := uint64(payload) + PBHeaderSize
 
 	if totalPacketSize > dataLen {
-		return nil, 0, nil
+		return nil, totalPacketSize, nil
 	}
 
 	s += PBHeaderSize
@@ -116,7 +116,7 @@ func Decode(buff []byte, start uint64, end uint64, maxMsgSize uint64) (proto.Mes
 	msg, err := newMessage(typeID)
 
 	if err != nil {
-		return nil, 0, fmt.Errorf("unregister type:%d", typeID)
+		return nil, totalPacketSize, fmt.Errorf("unregister type:%d", typeID)
 	}
 
 	s += pbIdSize
@@ -128,7 +128,7 @@ func Decode(buff []byte, start uint64, end uint64, maxMsgSize uint64) (proto.Mes
 	err = proto.Unmarshal(pbData, msg)
 
 	if err != nil {
-		return nil, 0, err
+		return nil, totalPacketSize, err
 	}
 
 	return msg, totalPacketSize, nil

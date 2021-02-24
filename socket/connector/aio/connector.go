@@ -10,10 +10,10 @@ import (
 type Connector struct {
 	nettype string
 	addr    string
-	s       *aio.SocketSerice
+	s       *aio.SocketService
 }
 
-func New(s *aio.SocketSerice, nettype string, addr string) (*Connector, error) {
+func New(s *aio.SocketService, nettype string, addr string) (*Connector, error) {
 	return &Connector{s: s, nettype: nettype, addr: addr}, nil
 }
 

@@ -318,7 +318,8 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 
 		defer func() {
 			if !s.testFlag(fclosed|frclosed) && recvAgain {
-				if nil != s.aioConn.Recv(s.inboundProcessor.GetRecvBuff(), &s.recvContext) {
+				b := s.inboundProcessor.GetRecvBuff()
+				if nil != s.aioConn.Recv(b, &s.recvContext) {
 					s.ioWait.Done()
 				}
 			} else {
@@ -349,9 +350,9 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 			for !s.testFlag(fclosed | frclosed) {
 				msg, err := s.inboundProcessor.Unpack()
 				if nil != err {
-					s.Close(r.Err, 0)
+					s.Close(err, 0)
 					if nil != s.errorCallback {
-						s.errorCallback(s, r.Err)
+						s.errorCallback(s, err)
 					}
 					break
 				} else if nil != msg {
