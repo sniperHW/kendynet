@@ -26,10 +26,10 @@ func (this *encoder) EnCode(o interface{}) (kendynet.Message, error) {
 	}
 }
 
-var aioService *SocketSerice
+var aioService *SocketService
 
 func init() {
-	aioService = NewSocketSerice(nil)
+	aioService = NewSocketService(nil)
 }
 
 func TestAioSocket(t *testing.T) {

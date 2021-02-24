@@ -18,7 +18,7 @@ import (
 	"time"
 )
 
-var aioService *aio.SocketSerice
+var aioService *aio.SocketService
 
 func server(service string) {
 
@@ -104,7 +104,7 @@ func main() {
 
 	_ = runtime.NumCPU() * 2
 
-	aioService = aio.NewSocketSerice(nil)
+	aioService = aio.NewSocketService(nil)
 
 	if len(os.Args) < 3 {
 		fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")

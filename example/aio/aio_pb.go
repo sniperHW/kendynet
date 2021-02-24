@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-var aioService *aio.SocketSerice
+var aioService *aio.SocketService
 
 func server(service string) {
 
@@ -107,7 +107,7 @@ func client(service string, count int) {
 
 func main() {
 
-	aioService = aio.NewSocketSerice(nil)
+	aioService = aio.NewSocketService(nil)
 
 	pb.Register(&testproto.Test{}, 1)
 	if len(os.Args) < 3 {

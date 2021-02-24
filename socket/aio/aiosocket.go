@@ -91,7 +91,7 @@ func (this *taskQueue) pop() (*Socket, error) {
 	return head, nil
 }
 
-type SocketSerice struct {
+type SocketService struct {
 	services          []*goaio.AIOService
 	outboundTaskQueue []*taskQueue
 	shareBuffer       goaio.ShareBuffer
@@ -102,7 +102,7 @@ type ioContext struct {
 	t rune
 }
 
-func (this *SocketSerice) completeRoutine(s *goaio.AIOService) {
+func (this *SocketService) completeRoutine(s *goaio.AIOService) {
 	for {
 		res, err := s.GetCompleteStatus()
 		if nil != err {
@@ -118,7 +118,7 @@ func (this *SocketSerice) completeRoutine(s *goaio.AIOService) {
 	}
 }
 
-func (this *SocketSerice) bind(conn net.Conn) (*goaio.AIOConn, *taskQueue, error) {
+func (this *SocketService) bind(conn net.Conn) (*goaio.AIOConn, *taskQueue, error) {
 	idx := rand.Int() % len(this.services)
 	c, err := this.services[idx].Bind(conn, goaio.AIOConnOption{
 		SendqueSize: 1,
@@ -128,7 +128,7 @@ func (this *SocketSerice) bind(conn net.Conn) (*goaio.AIOConn, *taskQueue, error
 	return c, this.outboundTaskQueue[idx], err
 }
 
-func (this *SocketSerice) outboundRoutine(tq *taskQueue) {
+func (this *SocketService) outboundRoutine(tq *taskQueue) {
 	for {
 		head, err := tq.pop()
 		if nil != err {
@@ -143,15 +143,15 @@ func (this *SocketSerice) outboundRoutine(tq *taskQueue) {
 	}
 }
 
-func (this *SocketSerice) Close() {
+func (this *SocketService) Close() {
 	for i, _ := range this.services {
 		this.services[i].Close()
 		this.outboundTaskQueue[i].close()
 	}
 }
 
-func NewSocketSerice(shareBuffer goaio.ShareBuffer) *SocketSerice {
-	s := &SocketSerice{
+func NewSocketService(shareBuffer goaio.ShareBuffer) *SocketService {
+	s := &SocketService{
 		shareBuffer: shareBuffer,
 	}
 
@@ -553,7 +553,7 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 	})
 }
 
-func NewSocket(service *SocketSerice, netConn net.Conn) kendynet.StreamSession {
+func NewSocket(service *SocketService, netConn net.Conn) kendynet.StreamSession {
 
 	s := &Socket{}
 	c, tq, err := service.bind(netConn)
@@ -565,7 +565,7 @@ func NewSocket(service *SocketSerice, netConn net.Conn) kendynet.StreamSession {
 	s.sendQueueSize = 256
 	s.sendQueue = list.New()
 	s.netconn = netConn
-	s.sendbuff = make([]byte, 4096)
+	s.sendbuff = make([]byte, kendynet.SendBufferSize)
 	s.sendOverChan = make(chan struct{})
 	s.sendContext = ioContext{s: s, t: 's'}
 	s.recvContext = ioContext{s: s, t: 'r'}
