@@ -338,9 +338,9 @@ func TestAsyn(t *testing.T) {
 
 		<-c1
 
-		pool.Close()
+		pool.Close(BlockClose)
 
-		pool.Close()
+		pool.Close(BlockClose)
 
 		assert.Equal(t, false, pool.AddTask(func() { fmt.Println("hello") }))
 
