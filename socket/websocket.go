@@ -87,11 +87,15 @@ func (this *WebSocket) sendMessage(msg kendynet.Message) error {
 func (this *WebSocket) sendThreadFunc() {
 	defer this.ioWait.Done()
 
+	localList := make([]interface{}, 0, 32)
+
+	closed := false
+
 	for {
 
 		timeout := this.getSendTimeout()
 
-		closed, localList := this.sendQue.Get()
+		closed, localList = this.sendQue.Swap(localList)
 		size := len(localList)
 		if closed && size == 0 {
 			break
@@ -100,6 +104,7 @@ func (this *WebSocket) sendThreadFunc() {
 		for i := 0; i < size; i++ {
 			var err error
 			msg := localList[i].(*message.WSMessage)
+			localList[i] = nil
 
 			if timeout > 0 {
 				this.conn.SetWriteDeadline(time.Now().Add(timeout))

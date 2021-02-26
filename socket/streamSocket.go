@@ -79,11 +79,15 @@ func (this *StreamSocket) sendThreadFunc() {
 
 	writer := bufio.NewWriterSize(this.conn, kendynet.SendBufferSize)
 
+	localList := make([]interface{}, 0, 32)
+
+	closed := false
+
 	for {
 
 		timeout := this.getSendTimeout()
 
-		closed, localList := this.sendQue.Get()
+		closed, localList = this.sendQue.Swap(localList)
 		size := len(localList)
 		if closed && size == 0 {
 			break
@@ -91,6 +95,7 @@ func (this *StreamSocket) sendThreadFunc() {
 
 		for i := 0; i < size; i++ {
 			msg := localList[i].(kendynet.Message)
+			localList[i] = nil
 
 			data := msg.Bytes()
 			for data != nil || (i == (size-1) && writer.Buffered() > 0) {
