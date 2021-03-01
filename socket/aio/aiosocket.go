@@ -3,7 +3,6 @@ package aio
 import (
 	"container/list"
 	"errors"
-	//"fmt"
 	"github.com/sniperHW/goaio"
 	"github.com/sniperHW/kendynet"
 	"math/rand"
@@ -444,9 +443,8 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 		s.muW.Lock()
 		if s.sendQueue.Len() > 0 {
 			delay = delay * time.Second
-			if delay <= 0 {
-				s.sendQueue = list.New()
-			}
+		} else {
+			delay = 0
 		}
 		s.muW.Unlock()
 
