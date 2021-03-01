@@ -3,7 +3,7 @@ package aio
 import (
 	"container/list"
 	"errors"
-	"fmt"
+	//"fmt"
 	"github.com/sniperHW/goaio"
 	"github.com/sniperHW/kendynet"
 	"math/rand"
@@ -496,7 +496,7 @@ func NewSocket(service *SocketService, netConn net.Conn) kendynet.StreamSession 
 	s.recvContext = ioContext{s: s, t: 'r'}
 
 	runtime.SetFinalizer(s, func(s *Socket) {
-		fmt.Println("gc")
+		//fmt.Println("gc")
 		s.Close(errors.New("gc"), 0)
 	})
 
