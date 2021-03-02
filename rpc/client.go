@@ -46,7 +46,7 @@ func (this *channelReqContexts) remove(req *reqContext) bool {
 }
 
 func (this *reqContext) onTimeout(_ *timer.Timer, _ interface{}) {
-	kendynet.GetLogger().Infoln("req timeout", this.seq, time.Now())
+	kendynet.GetLogger().Info("req timeout", this.seq, time.Now())
 	if this.c.removeChannelReq(this) {
 		this.onResponse(nil, ErrCallTimeout)
 	}
@@ -147,7 +147,7 @@ func (this *RPCClient) OnRPCMessage(message interface{}) {
 					ctx.(*reqContext).onResponse(resp.Ret, resp.Err)
 				}
 			} else if nil == ctx {
-				kendynet.GetLogger().Infoln("onResponse with no reqContext", resp.GetSeq())
+				kendynet.GetLogger().Info("onResponse with no reqContext", resp.GetSeq())
 			}
 		}
 	}

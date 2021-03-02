@@ -103,7 +103,7 @@ func (this *PBReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface
 				return nil, err
 			}
 		} else {
-			kendynet.GetLogger().Infoln(this.unpackIdx, this.unpackSize, this.buffer[this.lastUnpackIdx:this.unpackIdx+this.unpackSize])
+			kendynet.GetLogger().Info(this.unpackIdx, this.unpackSize, this.buffer[this.lastUnpackIdx:this.unpackIdx+this.unpackSize])
 			panic("err")
 			break
 		}

@@ -50,7 +50,7 @@ func pcall(t *task) {
 	if _, err := util.ProtectCall(t.fn, t.args); err != nil {
 		logger := kendynet.GetLogger()
 		if logger != nil {
-			logger.Errorln(err)
+			logger.Error(err)
 		}
 	}
 }

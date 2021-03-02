@@ -79,7 +79,7 @@ func (this *RPCServer) OnServiceStop(channel RPCChannel, message interface{}, er
 
 	msg, err := this.decoder.Decode(message)
 	if nil != err {
-		kendynet.GetLogger().Errorln(util.FormatFileLine("RPCServer rpc message from(%s) decode err:%s\n", channel.Name(), err.Error()))
+		kendynet.GetLogger().Error(util.FormatFileLine("RPCServer rpc message from(%s) decode err:%s\n", channel.Name(), err.Error()))
 		return
 	}
 
@@ -128,7 +128,7 @@ func (this *RPCServer) UnRegisterMethod(name string) {
 
 func (this *RPCServer) callMethod(method RPCMethodHandler, replyer *RPCReplyer, arg interface{}) {
 	if _, err := util.ProtectCall(method, replyer, arg); nil != err {
-		kendynet.GetLogger().Errorln(err.Error())
+		kendynet.GetLogger().Error(err.Error())
 		replyer.Reply(nil, err)
 	}
 }
@@ -139,7 +139,7 @@ func (this *RPCServer) callMethod(method RPCMethodHandler, replyer *RPCReplyer, 
 func (this *RPCServer) OnRPCMessage(channel RPCChannel, message interface{}) {
 	msg, err := this.decoder.Decode(message)
 	if nil != err {
-		kendynet.GetLogger().Errorln(util.FormatFileLine("RPCServer rpc message from(%s) decode err:%s\n", channel.Name(), err.Error()))
+		kendynet.GetLogger().Error(util.FormatFileLine("RPCServer rpc message from(%s) decode err:%s\n", channel.Name(), err.Error()))
 		return
 	}
 

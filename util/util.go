@@ -3,7 +3,7 @@ package util
 import (
 	"errors"
 	"fmt"
-	"github.com/sniperHW/kendynet/golog"
+	"github.com/sniperHW/kendynet"
 	"reflect"
 	"runtime"
 	"strings"
@@ -62,7 +62,7 @@ func RecoverAndCall(fn func(), logger ...golog.LoggerI) {
 }
 */
 
-func Recover(logger ...golog.LoggerI) {
+func Recover(logger ...kendynet.LoggerI) {
 	if r := recover(); r != nil {
 		if len(logger) > 0 && logger[0] != nil {
 			buf := make([]byte, 65535)
