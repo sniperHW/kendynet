@@ -19,7 +19,7 @@ var (
 
 func newMessage(id uint32) (msg proto.Message, err error) {
 	if mt, ok := idToMeta[id]; ok {
-		msg = reflect.New(mt.Elem()).Interface().(proto.Message)
+		msg = reflect.New(mt).Interface().(proto.Message)
 	} else {
 		err = fmt.Errorf("not found %d", id)
 	}
@@ -29,7 +29,7 @@ func newMessage(id uint32) (msg proto.Message, err error) {
 //根据名字注册实例
 func Register(msg proto.Message, id uint32) (err error) {
 	if _, ok := idToMeta[id]; ok {
-		err = fmt.Errorf("duplicate id:%u", id)
+		err = fmt.Errorf("duplicate id:%d", id)
 		return
 	}
 
@@ -42,7 +42,7 @@ func Register(msg proto.Message, id uint32) (err error) {
 	}
 
 	nameToTypeID[name] = id
-	idToMeta[id] = tt
+	idToMeta[id] = tt.Elem()
 	return nil
 }
 
