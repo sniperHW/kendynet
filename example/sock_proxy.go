@@ -68,30 +68,22 @@ func (self *ProxySession) Close() {
 		return
 	}
 
-	self.client.Close("", 5)
+	self.client.Close(nil, 5)
 	self.client = nil
 	if nil != self.server {
-		self.server.Close("", 0)
+		self.server.Close(nil, 0)
 		self.server = nil
 	}
 }
 
-func onServerEvent(event *kendynet.Event) {
-	proxySession := event.Session.GetUserData().(*ProxySession)
-	if event.EventType == kendynet.EventTypeError {
-		proxySession.Close()
-	} else {
-		proxySession.client.SendMessage(event.Data.(kendynet.Message))
-	}
+func onServerEvent(s kendynet.StreamSession, msg interface{}) {
+	proxySession := s.GetUserData().(*ProxySession)
+	proxySession.client.SendMessage(msg.(kendynet.Message))
 }
 
-func onClientEvent(event *kendynet.Event) {
-	proxySession := event.Session.GetUserData().(*ProxySession)
-	if event.EventType == kendynet.EventTypeError {
-		proxySession.Close()
-	} else {
-		proxySession.ProcessClientMsg(event.Data.(kendynet.Message))
-	}
+func onClientEvent(s kendynet.StreamSession, msg interface{}) {
+	proxySession := s.GetUserData().(*ProxySession)
+	proxySession.ProcessClientMsg(msg.(kendynet.Message))
 }
 
 func (self *ProxySession) ProcessClientMsg(msg kendynet.Message) {
@@ -151,13 +143,10 @@ func (self *ProxySession) ProcessSockV4() {
 			fmt.Printf("Dial failed:%s\n", err.Error())
 			return
 		}
-
-		//session.SetReceiver(codec.NewRawReceiver(65535))
-		//session.SetEventCallBack(onServerEvent)
 		session.SetUserData(self)
 		self.server = session
 		self.status = ESTABLISHED
-		session.Start(onServerEvent)
+		session.BeginRecv(onServerEvent)
 		responseBuff.PutByte(1, byte(90))
 		err = self.client.SendMessage(responseBuff)
 		if err != nil {
@@ -192,7 +181,7 @@ func (self *ProxySession) ProcessSockV5() {
 
 			self.buff.Reset()
 
-			responseBuff := kendynet.NewByteBuffer(2) //make([] byte,2)
+			responseBuff := kendynet.NewByteBuffer(2)
 			responseBuff.AppendByte(VER)
 			responseBuff.AppendByte(byte(METHOD))
 			self.client.SendMessage(responseBuff)
@@ -259,11 +248,10 @@ func (self *ProxySession) ProcessSockV5() {
 				fmt.Printf("Dial failed:%s\n", err.Error())
 				return
 			}
-			//session.SetReceiver(codec.NewRawReceiver(65535))
 			session.SetUserData(self)
 			self.server = session
 			self.status = ESTABLISHED
-			session.Start(onServerEvent)
+			session.BeginRecv(onServerEvent)
 			responseBuff.AppendByte(byte(SOCKS5_SUCCEEDED))
 			responseBuff.AppendByte(byte(0))
 			responseBuff.AppendBytes(b[3 : 6+addrSize])
@@ -293,8 +281,7 @@ func main() {
 			proxySession.server = nil
 			proxySession.buff = kendynet.NewByteBuffer(128)
 			session.SetUserData(proxySession)
-			//session.SetReceiver(codec.NewRawReceiver(65535))
-			session.Start(onClientEvent)
+			session.BeginRecv(onClientEvent)
 		})
 		if nil != err {
 			fmt.Printf("TcpServer start failed %s\n", err)
