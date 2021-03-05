@@ -160,8 +160,8 @@ func (s *Socket) IsClosed() bool {
 
 func (s *Socket) setFlag(flag int32) {
 	for {
-		f := atomic.LoadInt32(&this.flag)
-		if atomic.CompareAndSwapInt32(&this.flag, f, f|flag) {
+		f := atomic.LoadInt32(&s.flag)
+		if atomic.CompareAndSwapInt32(&s.flag, f, f|flag) {
 			break
 		}
 	}
@@ -345,16 +345,15 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 	defer s.ioWait.Done()
 	if nil == r.Err {
 		s.muW.Lock()
+		defer s.muW.Unlock()
 		s.sendbuff = nil
 		if s.sendQueue.Len() == 0 {
 			s.sendLock = false
 			if s.testFlag(fclosed) {
 				close(s.sendOverChan)
 			}
-			s.muW.Unlock()
 		} else {
 			s.emitSendTask()
-			s.muW.Unlock()
 		}
 	} else if !s.testFlag(fclosed) {
 
