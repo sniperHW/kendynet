@@ -370,8 +370,8 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 			}
 			s.errorCallback(s, r.Err)
 
-			//如果用户没有关闭socket,再次请求发送
-			if s.testFlag(fclosed) {
+			//如果是发送超时且用户没有关闭socket,再次请求发送
+			if r.Err == kendynet.ErrSendTimeout && !s.testFlag(fclosed) {
 				s.muW.Lock()
 				s.emitSendTask()
 				s.muW.Unlock()
