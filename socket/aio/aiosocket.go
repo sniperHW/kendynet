@@ -143,7 +143,9 @@ type Socket struct {
 	closeOnce        sync.Once
 	sendQueueSize    int
 	sendLock         bool
+	localSendbuff    []byte
 	sendbuff         []byte
+	offset           int
 	ioWait           sync.WaitGroup
 	sendOverChan     chan struct{}
 	netconn          net.Conn
@@ -302,31 +304,35 @@ func (s *Socket) emitSendTask() {
 func (s *Socket) doSend() {
 	s.muW.Lock()
 	defer s.muW.Unlock()
-	var buff []byte
 
-	space := len(s.sendbuff)
-	offset := 0
-	for v := s.sendQueue.Front(); space > 0 && v != nil; v = s.sendQueue.Front() {
-		b := v.Value.(kendynet.Message).Bytes()
-		if space >= len(b) {
-			copy(s.sendbuff[offset:], b)
-			offset += len(b)
-			space -= len(b)
-			s.sendQueue.Remove(v)
-		} else {
-			if offset == 0 {
+	//>0表示前一次的发送请求尚未全部发送完成
+	if len(s.sendbuff) == 0 {
+		size := 0
+		space := len(s.localSendbuff)
+		for v := s.sendQueue.Front(); space > 0 && v != nil; v = s.sendQueue.Front() {
+			b := v.Value.(kendynet.Message).Bytes()
+			if space >= len(b) {
+				copy(s.localSendbuff[size:], b)
+				size += len(b)
+				space -= len(b)
 				s.sendQueue.Remove(v)
-				buff = b
+			} else {
+				if size == 0 {
+					s.sendQueue.Remove(v)
+					s.sendbuff = b
+				}
+				break
 			}
-			break
 		}
+
+		if size > 0 {
+			s.sendbuff = s.localSendbuff[:size]
+		}
+
+		s.offset = 0
 	}
 
-	if offset > 0 {
-		buff = s.sendbuff[:offset]
-	}
-
-	if nil != s.aioConn.Send(buff, &s.sendContext) {
+	if nil != s.aioConn.Send(s.sendbuff[s.offset:], &s.sendContext) {
 		s.ioWait.Done()
 	}
 }
@@ -335,6 +341,7 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 	defer s.ioWait.Done()
 	if nil == r.Err {
 		s.muW.Lock()
+		s.sendbuff = nil
 		if s.sendQueue.Len() == 0 {
 			s.sendLock = false
 			if s.testFlag(fclosed) {
@@ -349,6 +356,8 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 
 		if r.Err == goaio.ErrSendTimeout {
 			r.Err = kendynet.ErrSendTimeout
+			//超时可能会发送部分数据
+			s.offset += r.Bytestransfer
 		}
 
 		if nil != s.errorCallback {
@@ -356,6 +365,14 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 				s.Close(r.Err, 0)
 			}
 			s.errorCallback(s, r.Err)
+
+			//如果用户没有关闭socket,再次请求发送
+			if s.testFlag(fclosed) {
+				s.muW.Lock()
+				s.emitSendTask()
+				s.muW.Unlock()
+			}
+
 		} else {
 			s.Close(r.Err, 0)
 		}
@@ -488,7 +505,7 @@ func NewSocket(service *SocketService, netConn net.Conn) kendynet.StreamSession 
 	s.sendQueueSize = 256
 	s.sendQueue = list.New()
 	s.netconn = netConn
-	s.sendbuff = make([]byte, kendynet.SendBufferSize)
+	s.localSendbuff = make([]byte, kendynet.SendBufferSize)
 	s.sendOverChan = make(chan struct{})
 	s.sendContext = ioContext{s: s, t: 's'}
 	s.recvContext = ioContext{s: s, t: 'r'}
