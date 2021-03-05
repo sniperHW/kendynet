@@ -159,7 +159,11 @@ func (s *Socket) IsClosed() bool {
 }
 
 func (s *Socket) setFlag(flag int32) {
-	for !atomic.CompareAndSwapInt32(&s.flag, s.flag, s.flag|flag) {
+	for {
+		f := atomic.LoadInt32(&this.flag)
+		if atomic.CompareAndSwapInt32(&this.flag, f, f|flag) {
+			break
+		}
 	}
 }
 

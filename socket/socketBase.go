@@ -44,7 +44,11 @@ type SocketBase struct {
 }
 
 func (this *SocketBase) setFlag(flag int32) {
-	for !atomic.CompareAndSwapInt32(&this.flag, this.flag, this.flag|flag) {
+	for {
+		f := atomic.LoadInt32(&this.flag)
+		if atomic.CompareAndSwapInt32(&this.flag, f, f|flag) {
+			break
+		}
 	}
 }
 
