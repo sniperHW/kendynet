@@ -124,21 +124,25 @@ func (this *StreamSocket) sendThreadFunc() {
 						err = writer.Flush()
 					}
 
-					if err != nil && !this.testFlag(fclosed) {
-						if kendynet.IsNetTimeout(err) {
-							err = kendynet.ErrSendTimeout
-						}
+					if err != nil {
+						if !this.testFlag(fclosed) {
+							if kendynet.IsNetTimeout(err) {
+								err = kendynet.ErrSendTimeout
+							}
 
-						if nil != this.errorCallback {
-							if err != kendynet.ErrSendTimeout {
+							if nil != this.errorCallback {
+								if err != kendynet.ErrSendTimeout {
+									this.Close(err, 0)
+								}
+								this.errorCallback(this, err)
+							} else {
 								this.Close(err, 0)
 							}
-							this.errorCallback(this, err)
-						} else {
-							this.Close(err, 0)
-						}
 
-						if this.testFlag(fclosed) {
+							if this.testFlag(fclosed) {
+								return
+							}
+						} else {
 							return
 						}
 					}
