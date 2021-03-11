@@ -2,6 +2,7 @@ package codec
 
 import (
 	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/buffer"
 	"github.com/sniperHW/kendynet/example/pb"
 	"github.com/sniperHW/kendynet/socket"
 )
@@ -9,29 +10,29 @@ import (
 const minBuffSize = 64
 
 type PbEncoder struct {
-	maxMsgSize uint64
+	maxMsgSize int
 }
 
-func NewPbEncoder(maxMsgSize uint64) *PbEncoder {
+func NewPbEncoder(maxMsgSize int) *PbEncoder {
 	return &PbEncoder{maxMsgSize: maxMsgSize}
 }
 
-func (this *PbEncoder) EnCode(o interface{}) (kendynet.Message, error) {
-	return pb.Encode(o, this.maxMsgSize)
+func (this *PbEncoder) EnCode(o interface{}, b *buffer.Buffer) error {
+	return pb.Encode(o, b, this.maxMsgSize)
 }
 
 type PBReceiver struct {
 	recvBuff       []byte
 	buffer         []byte
-	maxpacket      uint64
-	unpackSize     uint64
-	unpackIdx      uint64
-	initBuffSize   uint64
-	totalMaxPacket uint64
-	lastUnpackIdx  uint64
+	maxpacket      int
+	unpackSize     int
+	unpackIdx      int
+	initBuffSize   int
+	totalMaxPacket int
+	lastUnpackIdx  int
 }
 
-func NewPBReceiver(maxMsgSize uint64) *PBReceiver {
+func NewPBReceiver(maxMsgSize int) *PBReceiver {
 	receiver := &PBReceiver{}
 	//完整数据包大小为head+data
 	receiver.totalMaxPacket = maxMsgSize + pb.PBHeaderSize
@@ -67,7 +68,7 @@ func (this *PBReceiver) check(buff []byte) {
 			}
 		}
 		if j == 8 {
-			kendynet.GetLogger().Infoln(buff)
+			kendynet.GetLogger().Info(buff)
 		}
 	}
 }
@@ -84,7 +85,7 @@ func (this *PBReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface
 			if this.unpackSize == 0 {
 				this.unpackIdx = 0
 				this.recvBuff = this.buffer
-			} else if uint64(len(this.recvBuff)) < this.totalMaxPacket/4 {
+			} else if len(this.recvBuff) < this.totalMaxPacket/4 {
 				if this.unpackSize > 0 {
 					//有数据尚未解包，需要移动到buffer前部
 					copy(this.buffer, this.buffer[this.unpackIdx:this.unpackIdx+this.unpackSize])
@@ -96,7 +97,7 @@ func (this *PBReceiver) ReceiveAndUnpack(sess kendynet.StreamSession) (interface
 			n, err := sess.(*socket.StreamSocket).Read(this.recvBuff)
 			if n > 0 {
 				this.lastUnpackIdx = this.unpackIdx
-				this.unpackSize += uint64(n) //增加待解包数据
+				this.unpackSize += n //增加待解包数据
 				this.recvBuff = this.recvBuff[n:]
 			}
 			if err != nil {
@@ -117,7 +118,7 @@ func (this *PBReceiver) GetRecvBuff() []byte {
 }
 
 func (this *PBReceiver) OnData(data []byte) {
-	this.unpackSize += uint64(len(data))
+	this.unpackSize += len(data)
 	this.recvBuff = this.recvBuff[len(data):]
 }
 
@@ -127,7 +128,7 @@ func (this *PBReceiver) Unpack() (msg interface{}, err error) {
 		if this.unpackSize == 0 {
 			this.unpackIdx = 0
 			this.recvBuff = this.buffer
-		} else if uint64(len(this.recvBuff)) < this.totalMaxPacket/4 {
+		} else if len(this.recvBuff) < this.totalMaxPacket/4 {
 			if this.unpackSize > 0 {
 				//有数据尚未解包，需要移动到buffer前部
 				copy(this.buffer, this.buffer[this.unpackIdx:this.unpackIdx+this.unpackSize])

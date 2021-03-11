@@ -3,13 +3,14 @@ package pb
 import (
 	"fmt"
 	"github.com/golang/protobuf/proto"
-	"github.com/sniperHW/kendynet"
+	//"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/buffer"
 	"reflect"
 )
 
 const (
-	PBHeaderSize uint64 = 4
-	pbIdSize     uint64 = 4
+	PBHeaderSize int = 4
+	pbIdSize     int = 4
 )
 
 var (
@@ -46,7 +47,7 @@ func Register(msg proto.Message, id uint32) (err error) {
 	return nil
 }
 
-func Encode(o interface{}, maxMsgSize uint64) (r *kendynet.ByteBuffer, e error) {
+func Encode(o interface{}, b *buffer.Buffer, maxMsgSize int) (e error) {
 	typeID, ok := nameToTypeID[reflect.TypeOf(o).String()]
 	if !ok {
 		e = fmt.Errorf("unregister type:%s", reflect.TypeOf(o).String())
@@ -60,7 +61,7 @@ func Encode(o interface{}, maxMsgSize uint64) (r *kendynet.ByteBuffer, e error) 
 		return
 	}
 
-	dataLen := uint64(len(data))
+	dataLen := len(data)
 	if dataLen > maxMsgSize {
 		e = fmt.Errorf("message size limite maxMsgSize[%d],msg payload[%d]", maxMsgSize, dataLen)
 		return
@@ -68,18 +69,16 @@ func Encode(o interface{}, maxMsgSize uint64) (r *kendynet.ByteBuffer, e error) 
 
 	totalLen := PBHeaderSize + pbIdSize + dataLen
 
-	buff := kendynet.NewByteBuffer(totalLen)
 	//写payload大小
-	buff.AppendUint32(uint32(totalLen - PBHeaderSize))
+	b.AppendUint32(uint32(totalLen - PBHeaderSize))
 	//写类型ID
-	buff.AppendUint32(typeID)
+	b.AppendUint32(typeID)
 	//写数据
-	buff.AppendBytes(data)
-	r = buff
+	b.AppendBytes(data)
 	return
 }
 
-func Decode(buff []byte, start uint64, end uint64, maxMsgSize uint64) (proto.Message, uint64, error) {
+func Decode(buff []byte, start int, end int, maxMsgSize int) (proto.Message, int, error) {
 
 	dataLen := end - start
 
@@ -87,31 +86,23 @@ func Decode(buff []byte, start uint64, end uint64, maxMsgSize uint64) (proto.Mes
 		return nil, 0, nil
 	}
 
-	reader := kendynet.NewByteBuffer(buff[start:end], dataLen)
+	reader := buffer.NewReader(buffer.New(buff[start:end])) //kendynet.NewByteBuffer(buff[start:end], dataLen)
 
-	s := uint64(0)
+	payload := reader.GetUint32()
 
-	payload, err := reader.GetUint32(0)
-
-	if err != nil {
-		return nil, 0, err
-	}
-
-	if uint64(payload) > maxMsgSize {
+	if int(payload) > maxMsgSize {
 		return nil, 0, fmt.Errorf("Decode size limited maxMsgSize[%d],msg payload[%d]", maxMsgSize, payload)
-	} else if uint64(payload) == 0 {
+	} else if payload == 0 {
 		return nil, 0, fmt.Errorf("Decode header payload == 0")
 	}
 
-	totalPacketSize := uint64(payload) + PBHeaderSize
+	totalPacketSize := int(payload) + PBHeaderSize
 
 	if totalPacketSize > dataLen {
 		return nil, totalPacketSize, nil
 	}
 
-	s += PBHeaderSize
-
-	typeID, _ := reader.GetUint32(s)
+	typeID := reader.GetUint32()
 
 	msg, err := newMessage(typeID)
 
@@ -119,11 +110,9 @@ func Decode(buff []byte, start uint64, end uint64, maxMsgSize uint64) (proto.Mes
 		return nil, totalPacketSize, fmt.Errorf("unregister type:%d", typeID)
 	}
 
-	s += pbIdSize
-
 	pbDataLen := totalPacketSize - PBHeaderSize - pbIdSize
 
-	pbData, _ := reader.GetBytes(s, pbDataLen)
+	pbData := reader.GetBytes(pbDataLen)
 
 	err = proto.Unmarshal(pbData, msg)
 
