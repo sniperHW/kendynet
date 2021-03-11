@@ -20,6 +20,21 @@ import (
 
 var aioService *aio.SocketService
 
+type encoder struct {
+}
+
+func (this *encoder) EnCode(o interface{}, b *buffer.Buffer) error {
+	switch o.(type) {
+	case string:
+		b.AppendString(o.(string))
+	case []byte:
+		b.AppendBytes(o.([]byte))
+	default:
+		return errors.New("invaild o")
+	}
+	return nil
+}
+
 func server(service string) {
 
 	clientcount := int32(0)
@@ -42,15 +57,17 @@ func server(service string) {
 
 			session.SetRecvTimeout(time.Second * 5)
 
+			session.SetEncoder(&encoder{})
+
 			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
 				atomic.AddInt32(&clientcount, -1)
 				fmt.Println("client close:", reason, sess.GetUnderConn(), atomic.LoadInt32(&clientcount))
 			})
 
 			session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
-				atomic.AddInt32(&bytescount, int32(len(msg.(kendynet.Message).Bytes())))
+				atomic.AddInt32(&bytescount, int32(len(msg.([]byte))))
 				atomic.AddInt32(&packetcount, int32(1))
-				s.SendMessage(msg.(kendynet.Message))
+				s.Send(msg)
 			})
 		})
 
@@ -81,14 +98,16 @@ func client(service string, count int) {
 				fmt.Printf("client close:%s\n", reason)
 			})
 
+			session.SetEncoder(&encoder{})
+
 			session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
-				s.SendMessage(msg.(kendynet.Message))
+				s.Send(msg)
 			})
 			//send the first messge
-			msg := kendynet.NewByteBuffer("hello")
-			session.SendMessage(msg)
-			session.SendMessage(msg)
-			session.SendMessage(msg)
+			msg := "hello"
+			session.Send(msg)
+			session.Send(msg)
+			session.Send(msg)
 		}
 	}
 }
