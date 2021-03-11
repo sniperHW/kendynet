@@ -58,12 +58,12 @@ func (this *TestEncoder) Encode(message rpc.RPCMessage) (interface{}, error) {
 			NeedResp: proto.Bool(req.NeedResp),
 		}
 		if req.Arg != nil {
-			buff, err := pb.Encode(req.Arg, 1000)
+			b, err := pb.Encode(req.Arg, nil, 1000)
 			if err != nil {
 				fmt.Printf("encode error: %s\n", err.Error())
 				return nil, err
 			}
-			request.Arg = buff.Bytes()
+			request.Arg = b.Bytes()
 		}
 		return request, nil
 	} else {
@@ -73,12 +73,12 @@ func (this *TestEncoder) Encode(message rpc.RPCMessage) (interface{}, error) {
 			response.Err = proto.String(resp.Err.Error())
 		}
 		if resp.Ret != nil {
-			buff, err := pb.Encode(resp.Ret, 1000)
+			b, err := pb.Encode(resp.Ret, nil, 1000)
 			if err != nil {
 				fmt.Printf("encode error: %s\n", err.Error())
 				return nil, err
 			}
-			response.Ret = buff.Bytes()
+			response.Ret = b.Bytes()
 		}
 		return response, nil
 	}
@@ -98,7 +98,7 @@ func (this *TestDecoder) Decode(o interface{}) (rpc.RPCMessage, error) {
 		}
 		if len(req.Arg) > 0 {
 			var err error
-			request.Arg, _, err = pb.Decode(req.Arg, 0, (uint64)(len(req.Arg)), 1000)
+			request.Arg, _, err = pb.Decode(req.Arg, 0, len(req.Arg), 1000)
 			if err != nil {
 				return nil, err
 			}
@@ -113,7 +113,7 @@ func (this *TestDecoder) Decode(o interface{}) (rpc.RPCMessage, error) {
 		}
 		if len(resp.Ret) > 0 {
 			var err error
-			response.Ret, _, err = pb.Decode(resp.Ret, 0, (uint64)(len(resp.Ret)), 1000)
+			response.Ret, _, err = pb.Decode(resp.Ret, 0, len(resp.Ret), 1000)
 			if err != nil {
 				return nil, err
 			}

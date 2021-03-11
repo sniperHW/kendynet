@@ -1,6 +1,7 @@
 package codec
 
 import (
+	"errors"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/buffer"
 	"github.com/sniperHW/kendynet/example/pb"
@@ -17,8 +18,13 @@ func NewPbEncoder(maxMsgSize int) *PbEncoder {
 	return &PbEncoder{maxMsgSize: maxMsgSize}
 }
 
-func (this *PbEncoder) EnCode(o interface{}, b *buffer.Buffer) error {
-	return pb.Encode(o, b, this.maxMsgSize)
+func (this *PbEncoder) EnCode(o interface{}, b *buffer.Buffer) (e error) {
+	if nil == b {
+		e = errors.New("b==nil")
+	} else {
+		_, e = pb.Encode(o, b, this.maxMsgSize)
+	}
+	return
 }
 
 type PBReceiver struct {

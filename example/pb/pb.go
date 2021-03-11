@@ -47,7 +47,9 @@ func Register(msg proto.Message, id uint32) (err error) {
 	return nil
 }
 
-func Encode(o interface{}, b *buffer.Buffer, maxMsgSize int) (e error) {
+func Encode(o interface{}, b *buffer.Buffer, maxMsgSize int) (r *buffer.Buffer, e error) {
+	r = b
+
 	typeID, ok := nameToTypeID[reflect.TypeOf(o).String()]
 	if !ok {
 		e = fmt.Errorf("unregister type:%s", reflect.TypeOf(o).String())
@@ -68,6 +70,11 @@ func Encode(o interface{}, b *buffer.Buffer, maxMsgSize int) (e error) {
 	}
 
 	totalLen := PBHeaderSize + pbIdSize + dataLen
+
+	if nil == b {
+		b = buffer.New(make([]byte, 0, totalLen))
+		r = b
+	}
 
 	//写payload大小
 	b.AppendUint32(uint32(totalLen - PBHeaderSize))
