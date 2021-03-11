@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/sniperHW/goaio"
 	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/buffer"
 	"math/rand"
 	"net"
 	"runtime"
@@ -104,8 +105,8 @@ func (this *defaultInBoundProcessor) Unpack() (interface{}, error) {
 	if 0 == this.bytes {
 		return nil, nil
 	} else {
-		msg := kendynet.NewByteBuffer(this.bytes)
-		msg.AppendBytes(this.buffer[:this.bytes])
+		msg := make([]byte, 0, this.bytes)
+		msg = append(msg, this.buffer[:this.bytes]...)
 		this.bytes = 0
 		return msg, nil
 	}
@@ -143,8 +144,7 @@ type Socket struct {
 	closeOnce        sync.Once
 	sendQueueSize    int
 	sendLock         bool
-	localSendbuff    []byte
-	sendbuff         []byte
+	b                *buffer.Buffer
 	offset           int
 	ioWait           sync.WaitGroup
 	sendOverChan     chan struct{}
@@ -309,34 +309,33 @@ func (s *Socket) doSend() {
 	s.muW.Lock()
 	defer s.muW.Unlock()
 
-	//>0表示前一次的发送请求尚未全部发送完成
-	if len(s.sendbuff) == 0 {
-		size := 0
-		space := len(s.localSendbuff)
-		for v := s.sendQueue.Front(); space > 0 && v != nil; v = s.sendQueue.Front() {
-			b := v.Value.(kendynet.Message).Bytes()
-			if space >= len(b) {
-				copy(s.localSendbuff[size:], b)
-				size += len(b)
-				space -= len(b)
-				s.sendQueue.Remove(v)
-			} else {
-				if size == 0 {
-					s.sendQueue.Remove(v)
-					s.sendbuff = b
+	const maxsendsize = kendynet.SendBufferSize
+
+	//只有之前请求的buff全部发送完毕才填充新的buff
+	if nil == s.b {
+		s.b = buffer.Get()
+		for v := s.sendQueue.Front(); v != nil; v = s.sendQueue.Front() {
+			s.sendQueue.Remove(v)
+			if err := s.encoder.EnCode(v.Value, s.b); nil != err {
+				s.b.Free()
+				s.b = nil
+				if !s.testFlag(fclosed) {
+					if nil != s.errorCallback {
+						s.Close(err, 0)
+						s.errorCallback(s, err)
+					} else {
+						s.Close(err, 0)
+					}
 				}
+				return
+			} else if s.b.Len() >= maxsendsize {
 				break
 			}
 		}
-
-		if size > 0 {
-			s.sendbuff = s.localSendbuff[:size]
-		}
-
 		s.offset = 0
 	}
 
-	if nil != s.aioConn.Send(s.sendbuff[s.offset:], &s.sendContext) {
+	if nil != s.aioConn.Send(s.b.Bytes()[s.offset:], &s.sendContext) {
 		s.ioWait.Done()
 	}
 }
@@ -346,7 +345,9 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 	if nil == r.Err {
 		s.muW.Lock()
 		defer s.muW.Unlock()
-		s.sendbuff = nil
+		//发送完成释放发送buff
+		s.b.Free()
+		s.b = nil
 		if s.sendQueue.Len() == 0 {
 			s.sendLock = false
 			if s.testFlag(fclosed) {
@@ -384,44 +385,26 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 
 func (s *Socket) Send(o interface{}) error {
 	if s.encoder == nil {
-		panic("Send s.encoder == nil")
+		return kendynet.ErrInvaildEncoder
 	} else if nil == o {
-		panic("Send o == nil")
-	}
-
-	msg, err := s.encoder.EnCode(o)
-
-	if err != nil {
-		return err
-	}
-
-	return s.SendMessage(msg)
-
-}
-
-func (s *Socket) SendMessage(msg kendynet.Message) error {
-	if nil == msg {
-		panic("SendMessage msg == nil")
-	}
-
-	if s.testFlag(fclosed) {
+		return kendynet.ErrInvaildObject
+	} else if s.testFlag(fclosed) {
 		return kendynet.ErrSocketClose
+	} else {
+		s.muW.Lock()
+		defer s.muW.Unlock()
+
+		if s.sendQueue.Len() > s.sendQueueSize {
+			return kendynet.ErrSendQueFull
+		}
+
+		s.sendQueue.PushBack(o)
+
+		if !s.sendLock {
+			s.emitSendTask()
+		}
+		return nil
 	}
-
-	s.muW.Lock()
-	defer s.muW.Unlock()
-
-	if s.sendQueue.Len() > s.sendQueueSize {
-		return kendynet.ErrSendQueFull
-	}
-
-	s.sendQueue.PushBack(msg)
-
-	if !s.sendLock {
-		s.emitSendTask()
-	}
-
-	return nil
 }
 
 func (s *Socket) ShutdownRead() {
@@ -508,7 +491,6 @@ func NewSocket(service *SocketService, netConn net.Conn) kendynet.StreamSession 
 	s.sendQueueSize = 256
 	s.sendQueue = list.New()
 	s.netconn = netConn
-	s.localSendbuff = make([]byte, kendynet.SendBufferSize)
 	s.sendOverChan = make(chan struct{})
 	s.sendContext = ioContext{s: s, t: 's'}
 	s.recvContext = ioContext{s: s, t: 'r'}

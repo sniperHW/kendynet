@@ -19,7 +19,7 @@ type SocketImpl interface {
 	kendynet.StreamSession
 	recvThreadFunc()
 	sendThreadFunc()
-	sendMessage(kendynet.Message) error
+	//sendMessage(kendynet.Message) error
 	defaultInBoundProcessor() kendynet.InBoundProcessor
 }
 
@@ -136,23 +136,27 @@ func (this *SocketBase) getSendTimeout() time.Duration {
 }
 
 func (this *SocketBase) Send(o interface{}) error {
-	if this.encoder == nil {
-		panic("Send s.encoder == nil")
-	} else if nil == o {
-		panic("Send o == nil")
+	if nil == o {
+		return kendynet.ErrInvaildObject
+	} else if nil == this.encoder {
+		return kendynet.ErrInvaildEncoder
+	} else {
+		fullReturn := true
+		err := this.sendQue.AddNoWait(o, fullReturn)
+		if nil != err {
+			if err == util.ErrQueueClosed {
+				err = kendynet.ErrSocketClose
+			} else if err == util.ErrQueueFull {
+				err = kendynet.ErrSendQueFull
+			}
+			return err
+		}
+		this.sendOnce.Do(func() {
+			this.ioWait.Add(1)
+			go this.imp.sendThreadFunc()
+		})
+		return nil
 	}
-
-	msg, err := this.encoder.EnCode(o)
-
-	if err != nil {
-		return err
-	}
-
-	return this.imp.sendMessage(msg)
-}
-
-func (this *SocketBase) SendMessage(msg kendynet.Message) error {
-	return this.imp.sendMessage(msg)
 }
 
 func (this *SocketBase) recvThreadFunc() {

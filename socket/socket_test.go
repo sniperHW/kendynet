@@ -7,6 +7,7 @@ import (
 	"fmt"
 	gorilla "github.com/gorilla/websocket"
 	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/buffer"
 	"github.com/sniperHW/kendynet/message"
 	"github.com/stretchr/testify/assert"
 	"net"
@@ -21,25 +22,45 @@ import (
 type encoder struct {
 }
 
-func (this *encoder) EnCode(o interface{}) (kendynet.Message, error) {
+func (this *encoder) EnCode(o interface{}, b *buffer.Buffer) error {
 	switch o.(type) {
-	case *kendynet.ByteBuffer:
-		return o.(*kendynet.ByteBuffer), nil
+	case string:
+		b.AppendString(o.(string))
+	case []byte:
+		b.AppendBytes(o.([]byte))
 	default:
-		return nil, errors.New("invaild o")
+		return errors.New("invaild o")
 	}
+	return nil
+}
+
+type errencoder struct {
+}
+
+func (this *errencoder) EnCode(o interface{}, b *buffer.Buffer) error {
+	return errors.New("invaild o")
 }
 
 type wsencoder struct {
 }
 
-func (this *wsencoder) EnCode(o interface{}) (kendynet.Message, error) {
+func (this *wsencoder) EnCode(o interface{}, b *buffer.Buffer) error {
 	switch o.(type) {
 	case string:
-		return message.NewWSMessage(message.WSTextMessage, o.(string)), nil
+		b.AppendString(o.(string))
+	case []byte:
+		b.AppendBytes(o.([]byte))
 	default:
-		return nil, errors.New("invaild o")
+		return errors.New("invaild o")
 	}
+	return nil
+}
+
+type errwsencoder struct {
+}
+
+func (this *errwsencoder) EnCode(o interface{}, b *buffer.Buffer) error {
+	return errors.New("invaild o")
 }
 
 func TestSendTimeout(t *testing.T) {
@@ -106,7 +127,7 @@ func TestSendTimeout(t *testing.T) {
 
 		go func() {
 			for {
-				err := session.SendMessage(message.NewWSMessage(message.WSTextMessage, strings.Repeat("a", 65536)))
+				err := session.Send(message.NewWSMessage(message.WSTextMessage, strings.Repeat("a", 65536)))
 				if nil != err && err != kendynet.ErrSendQueFull {
 					break
 				}
@@ -175,7 +196,7 @@ func TestSendTimeout(t *testing.T) {
 		go func() {
 
 			for {
-				err := session.Send(kendynet.NewByteBuffer(strings.Repeat("a", 65536)))
+				err := session.Send(strings.Repeat("a", 65536))
 				if nil != err && err != kendynet.ErrSendQueFull {
 					break
 				}
@@ -214,15 +235,14 @@ func TestWebSocket(t *testing.T) {
 			session.GetUnderConn()
 			session.SetRecvTimeout(time.Second * 1)
 			session.SetSendTimeout(time.Second * 1)
+			session.SetEncoder(&wsencoder{})
 			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
 				close(die)
 			})
 
 			session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
-				s.SendMessage(msg.(kendynet.Message))
+				s.Send(msg)
 			})
-
-			assert.Equal(t, ErrInvaildWSMessage, session.SendMessage(kendynet.NewByteBuffer("hello")))
 
 		})
 
@@ -237,18 +257,18 @@ func TestWebSocket(t *testing.T) {
 		assert.NotNil(t, conn)
 		session := NewWSSocket(conn)
 
-		respChan := make(chan kendynet.Message)
+		respChan := make(chan *message.WSMessage)
 
 		session.SetEncoder(&wsencoder{}).SetSendQueueSize(100).BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
-			s.SendMessage(msg.(kendynet.Message))
-			respChan <- msg.(kendynet.Message)
+			s.Send(msg)
+			respChan <- msg.(*message.WSMessage)
 		})
 
-		session.Send("hello")
+		session.Send(message.NewWSMessage(message.WSTextMessage, "hello"))
 
 		resp := <-respChan
 
-		assert.Equal(t, resp.Bytes(), []byte("hello"))
+		assert.Equal(t, resp.Data().([]byte), []byte("hello"))
 
 		<-die
 
@@ -271,16 +291,17 @@ func TestWebSocket(t *testing.T) {
 			conn, _ := upgrader.Upgrade(w, r, nil)
 			assert.NotNil(t, conn)
 			session := NewWSSocket(conn)
+			session.SetEncoder(&wsencoder{})
 			session.SetRecvTimeout(time.Second * 1).SetSendTimeout(time.Second * 1)
 
 			session.(*WebSocket).SetPingHandler(func(appData string) error {
 				fmt.Println(appData)
-				session.SendMessage(message.NewWSMessage(message.WSPongMessage, "pong"))
+				session.Send(message.NewWSMessage(message.WSPongMessage, "pong"))
 				return nil
 			})
 
 			session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
-				s.SendMessage(msg.(kendynet.Message))
+				s.Send(msg)
 				s.Close(nil, time.Second)
 			})
 		})
@@ -298,21 +319,19 @@ func TestWebSocket(t *testing.T) {
 			assert.NotNil(t, conn)
 			session := NewWSSocket(conn)
 
-			respChan := make(chan kendynet.Message)
+			respChan := make(chan *message.WSMessage)
+
+			session.SetEncoder(&wsencoder{})
 
 			session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
-				respChan <- msg.(kendynet.Message)
+				respChan <- msg.(*message.WSMessage)
 			})
 
-			assert.Equal(t, session.SendMessage(nil), kendynet.ErrInvaildBuff)
-
-			session.SendMessage(message.NewWSMessage(message.WSTextMessage, "hello"))
-
-			//session.Close("none", time.Second)
+			session.Send(message.NewWSMessage(message.WSTextMessage, "hello"))
 
 			resp := <-respChan
 
-			assert.Equal(t, resp.Bytes(), []byte("hello"))
+			assert.Equal(t, resp.Data().([]byte), []byte("hello"))
 
 		}
 
@@ -324,6 +343,8 @@ func TestWebSocket(t *testing.T) {
 
 			die := make(chan struct{})
 
+			session.SetEncoder(&wsencoder{})
+
 			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
 				close(die)
 			})
@@ -332,9 +353,7 @@ func TestWebSocket(t *testing.T) {
 
 			})
 
-			assert.Equal(t, session.SendMessage(nil), kendynet.ErrInvaildBuff)
-
-			session.SendMessage(message.NewWSMessage(message.WSTextMessage, "hello"))
+			session.Send(message.NewWSMessage(message.WSTextMessage, "hello"))
 
 			session.Close(nil, time.Second)
 
@@ -352,9 +371,7 @@ func TestWebSocket(t *testing.T) {
 
 			die := make(chan struct{})
 
-			//session.SetCloseCallBack(func(sess kendynet.StreamSession, reason string) {
-			//	close(die)
-			//})
+			session.SetEncoder(&wsencoder{})
 
 			session.(*WebSocket).SetPongHandler(func(appData string) error {
 				fmt.Println(appData)
@@ -366,17 +383,13 @@ func TestWebSocket(t *testing.T) {
 
 			})
 
-			err := session.SendMessage(message.NewWSMessage(message.WSPingMessage, "ping"))
+			err := session.Send(message.NewWSMessage(message.WSPingMessage, "ping"))
 
 			if nil != err {
 				fmt.Println(err)
 			} else {
 				fmt.Println("send ping ok")
 			}
-
-			//session.SendMessage(message.NewWSMessage(message.WSTextMessage, "hello"))
-
-			//session.Close("none", time.Second)
 
 			<-die
 		}
@@ -393,6 +406,8 @@ func TestWebSocket(t *testing.T) {
 				session := NewWSSocket(conn)
 
 				die := make(chan struct{})
+
+				session.SetEncoder(&wsencoder{})
 
 				session.SetErrorCallBack(func(sess kendynet.StreamSession, reason error) {
 					close(die)
@@ -422,6 +437,26 @@ func TestWebSocket(t *testing.T) {
 			}
 		}
 
+		{
+			//test errwsencoder
+			conn, _, _ := dialer.Dial(u.String(), nil)
+			assert.NotNil(t, conn)
+			session := NewWSSocket(conn)
+			session.SetEncoder(&errwsencoder{})
+
+			die := make(chan struct{})
+
+			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
+				fmt.Println("reason", reason)
+				close(die)
+			})
+
+			session.Send(message.NewWSMessage(message.WSPingMessage, "ping"))
+
+			<-die
+
+		}
+
 		listener.Close()
 	}
 }
@@ -446,6 +481,7 @@ func TestStreamSocket(t *testing.T) {
 				} else {
 					session := NewStreamSocket(conn)
 					session.GetUnderConn()
+					session.SetEncoder(&encoder{})
 					session.SetRecvTimeout(time.Second * 1).SetSendTimeout(time.Second * 1)
 					session.SetCloseCallBack(func(s kendynet.StreamSession, reason error) {
 						fmt.Println("server close")
@@ -454,9 +490,9 @@ func TestStreamSocket(t *testing.T) {
 
 					session.SetErrorCallBack(func(s kendynet.StreamSession, err error) {
 						s.Close(err, 0)
-						assert.Equal(t, s.SendMessage(kendynet.NewByteBuffer("hello")), kendynet.ErrSocketClose)
+						assert.Equal(t, s.Send("hello"), kendynet.ErrSocketClose)
 					}).BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
-						s.SendMessage(msg.(kendynet.Message))
+						s.Send(msg)
 					})
 				}
 			}
@@ -466,7 +502,7 @@ func TestStreamSocket(t *testing.T) {
 		conn, _ := dialer.Dial("tcp", "localhost:8110")
 		session := NewStreamSocket(conn)
 
-		respChan := make(chan kendynet.Message)
+		respChan := make(chan interface{})
 
 		session.SetUserData(1)
 		assert.Equal(t, 1, session.GetUserData().(int))
@@ -479,16 +515,14 @@ func TestStreamSocket(t *testing.T) {
 			s.Close(err, 0)
 			assert.Equal(t, true, s.IsClosed())
 		}).BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
-			respChan <- msg.(kendynet.Message)
+			respChan <- msg
 		})
 
-		assert.Equal(t, session.SendMessage(nil), kendynet.ErrInvaildBuff)
-
-		session.Send(kendynet.NewByteBuffer("hello"))
+		session.Send("hello")
 
 		resp := <-respChan
 
-		assert.Equal(t, resp.Bytes(), []byte("hello"))
+		assert.Equal(t, resp.([]byte), []byte("hello"))
 
 		<-die
 
@@ -507,8 +541,8 @@ func TestStreamSocket(t *testing.T) {
 				if err != nil {
 					return
 				} else {
-					NewStreamSocket(conn).SetRecvTimeout(time.Second * 1).BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
-						s.SendMessage(msg.(kendynet.Message))
+					NewStreamSocket(conn).SetEncoder(&encoder{}).SetRecvTimeout(time.Second * 1).BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
+						s.Send(msg)
 						s.Close(nil, time.Second)
 					})
 				}
@@ -520,17 +554,19 @@ func TestStreamSocket(t *testing.T) {
 			conn, _ := dialer.Dial("tcp", "localhost:8110")
 			session := NewStreamSocket(conn)
 
-			respChan := make(chan kendynet.Message)
+			respChan := make(chan interface{})
+
+			session.SetEncoder(&encoder{})
 
 			session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
-				respChan <- msg.(kendynet.Message)
+				respChan <- msg
 			})
 
-			session.SendMessage(kendynet.NewByteBuffer("hello"))
+			session.Send("hello")
 
 			resp := <-respChan
 
-			assert.Equal(t, resp.Bytes(), []byte("hello"))
+			assert.Equal(t, resp.([]byte), []byte("hello"))
 		}
 
 		{
@@ -540,9 +576,8 @@ func TestStreamSocket(t *testing.T) {
 
 			session.SetEncoder(&encoder{})
 
-			assert.NotNil(t, session.Send("haha"))
-
 			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
+
 			})
 
 			session.Close(nil, 0)
@@ -568,6 +603,24 @@ func TestStreamSocket(t *testing.T) {
 				time.Sleep(time.Second)
 				runtime.GC()
 			}
+		}
+
+		{
+			dialer := &net.Dialer{}
+			conn, _ := dialer.Dial("tcp", "localhost:8110")
+			session := NewStreamSocket(conn)
+
+			die := make(chan struct{})
+
+			session.SetEncoder(&errencoder{})
+
+			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
+				close(die)
+			})
+
+			session.Send("hello")
+
+			<-die
 		}
 
 		listener.Close()
@@ -600,7 +653,7 @@ func TestStreamSocket(t *testing.T) {
 
 		session.SetEncoder(&encoder{})
 
-		session.Send(kendynet.NewByteBuffer("hello"))
+		session.Send("hello")
 
 		session.Close(nil, time.Second)
 
@@ -648,7 +701,7 @@ func TestStreamSocket(t *testing.T) {
 
 		go func() {
 			for {
-				if err := session.Send(kendynet.NewByteBuffer("hello")); nil != err {
+				if err := session.Send("hello"); nil != err {
 					if err == kendynet.ErrSocketClose {
 						break
 					}
@@ -712,20 +765,8 @@ func TestShutDownRead(t *testing.T) {
 
 	session.Close(nil, 0)
 
-	//session.Send(kendynet.NewByteBuffer("hello"))
-
 	<-die
 
 	listener.Close()
 
 }
-
-/*
-func TestGC(t *testing.T) {
-	_ = NewStreamSocket(nil)
-	for i := 0; i < 10; i++ {
-		time.Sleep(time.Second)
-		runtime.GC()
-	}
-}
-*/

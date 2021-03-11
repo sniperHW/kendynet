@@ -5,10 +5,11 @@
 package socket
 
 import (
-	"bufio"
+	//"bufio"
 	//"fmt"
 	"errors"
 	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/buffer"
 	"github.com/sniperHW/kendynet/util"
 	"net"
 	"runtime"
@@ -24,8 +25,9 @@ func (this *defaultSSInBoundProcessor) ReceiveAndUnpack(sess kendynet.StreamSess
 	if err != nil {
 		return nil, err
 	}
-	msg := kendynet.NewByteBuffer(n)
-	msg.AppendBytes(this.buffer[:n])
+
+	msg := make([]byte, 0, n)
+	msg = append(msg, this.buffer[:n]...)
 	return msg, err
 }
 
@@ -50,29 +52,106 @@ type StreamSocket struct {
 	conn net.Conn
 }
 
-func (this *StreamSocket) sendMessage(msg kendynet.Message) error {
-	if msg == nil {
-		return kendynet.ErrInvaildBuff
-	} else {
-		fullReturn := true
-		err := this.sendQue.AddNoWait(msg, fullReturn)
-		if nil != err {
-			if err == util.ErrQueueClosed {
-				err = kendynet.ErrSocketClose
-			} else if err == util.ErrQueueFull {
-				err = kendynet.ErrSendQueFull
+func (this *StreamSocket) sendThreadFunc() {
+	defer this.ioWait.Done()
+
+	var err error
+
+	localList := make([]interface{}, 0, 32)
+
+	closed := false
+
+	var i int
+
+	var size int
+
+	const maxsendsize = kendynet.SendBufferSize
+
+	var b *buffer.Buffer
+
+	var offset int
+
+	var n int
+
+	defer func() {
+		if nil != b {
+			b.Free()
+		}
+	}()
+
+	timeout := this.getSendTimeout()
+
+	for {
+
+		if i >= size {
+			closed, localList = this.sendQue.Swap(localList)
+			size = len(localList)
+			if closed && size == 0 {
+				break
 			}
-			return err
+			i = 0
+		}
+
+		if nil == b {
+			b = buffer.Get()
+			for ; i < size; i++ {
+				err = this.encoder.EnCode(localList[i], b)
+				if nil != err {
+					b.Free()
+					b = nil
+					if !this.testFlag(fclosed) {
+						if nil != this.errorCallback {
+							this.Close(err, 0)
+							this.errorCallback(this, err)
+						} else {
+							this.Close(err, 0)
+						}
+					}
+					return
+				} else if b.Len() >= maxsendsize {
+					break
+				}
+			}
+			offset = 0
+		}
+
+		if timeout > 0 {
+			this.conn.SetWriteDeadline(time.Now().Add(timeout))
+			n, err = this.conn.Write(b.Bytes()[offset:])
+			this.conn.SetWriteDeadline(time.Time{})
+		} else {
+			n, err = this.conn.Write(b.Bytes()[offset:])
+		}
+
+		offset += n
+
+		if nil == err {
+			b.Free()
+			b = nil
+		} else if !this.testFlag(fclosed) {
+			if kendynet.IsNetTimeout(err) {
+				err = kendynet.ErrSendTimeout
+			}
+
+			if nil != this.errorCallback {
+				if err != kendynet.ErrSendTimeout {
+					this.Close(err, 0)
+				}
+				this.errorCallback(this, err)
+			} else {
+				this.Close(err, 0)
+			}
+
+			if this.testFlag(fclosed) {
+				return
+			}
+		} else {
+			return
 		}
 	}
-	this.sendOnce.Do(func() {
-		this.ioWait.Add(1)
-		go this.sendThreadFunc()
-	})
-	return nil
 }
 
-func (this *StreamSocket) sendThreadFunc() {
+/*func (this *StreamSocket) sendThreadFunc() {
 	defer this.ioWait.Done()
 
 	var err error
@@ -150,7 +229,7 @@ func (this *StreamSocket) sendThreadFunc() {
 			}
 		}
 	}
-}
+}*/
 
 func NewStreamSocket(conn net.Conn) kendynet.StreamSession {
 	switch conn.(type) {

@@ -13,6 +13,7 @@ import (
 	"net"
 	//"sync/atomic"
 	"errors"
+	"github.com/sniperHW/kendynet/buffer"
 	"runtime"
 	"time"
 )
@@ -56,34 +57,6 @@ type WebSocket struct {
 	conn *gorilla.Conn
 }
 
-func (this *WebSocket) sendMessage(msg kendynet.Message) error {
-	if msg == nil {
-		return kendynet.ErrInvaildBuff
-	} else {
-		switch msg.(type) {
-		case *message.WSMessage:
-			fullReturn := true
-			err := this.sendQue.AddNoWait(msg, fullReturn)
-			if nil != err {
-				if err == util.ErrQueueClosed {
-					err = kendynet.ErrSocketClose
-				} else if err == util.ErrQueueFull {
-					err = kendynet.ErrSendQueFull
-				}
-				return err
-			}
-			break
-		default:
-			return ErrInvaildWSMessage
-		}
-	}
-	this.sendOnce.Do(func() {
-		this.ioWait.Add(1)
-		go this.sendThreadFunc()
-	})
-	return nil
-}
-
 func (this *WebSocket) sendThreadFunc() {
 	defer this.ioWait.Done()
 
@@ -103,15 +76,40 @@ func (this *WebSocket) sendThreadFunc() {
 
 		for i := 0; i < size; i++ {
 			var err error
-			msg := localList[i].(*message.WSMessage)
+			msg, ok := localList[i].(*message.WSMessage)
+			if !ok {
+				panic("invaild ws message")
+			}
 			localList[i] = nil
+			var buff []byte
+			var b *buffer.Buffer
+			if nil != msg.Data() {
+				b = buffer.Get()
+				if err = this.encoder.EnCode(msg.Data(), b); nil != err {
+					if !this.testFlag(fclosed) {
+						if nil != this.errorCallback {
+							this.Close(err, 0)
+							this.errorCallback(this, err)
+						} else {
+							this.Close(err, 0)
+						}
+					}
+					return
+				} else {
+					buff = b.Bytes()
+				}
+			}
 
 			if timeout > 0 {
 				this.conn.SetWriteDeadline(time.Now().Add(timeout))
-				err = this.conn.WriteMessage(msg.Type(), msg.Bytes())
+				err = this.conn.WriteMessage(msg.Type(), buff)
 				this.conn.SetWriteDeadline(time.Time{})
 			} else {
-				err = this.conn.WriteMessage(msg.Type(), msg.Bytes())
+				err = this.conn.WriteMessage(msg.Type(), buff)
+			}
+
+			if nil != b {
+				b.Free()
 			}
 
 			if err != nil && !this.testFlag(fclosed) {
@@ -189,5 +187,5 @@ func (this *WebSocket) defaultInBoundProcessor() kendynet.InBoundProcessor {
 }
 
 func (this *WebSocket) SendWSClose(reason string) error {
-	return this.sendMessage(message.NewWSMessage(message.WSCloseMessage, gorilla.FormatCloseMessage(1000, reason)))
+	return this.Send(message.NewWSMessage(message.WSCloseMessage, gorilla.FormatCloseMessage(1000, reason)))
 }

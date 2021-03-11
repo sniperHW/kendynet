@@ -2,8 +2,8 @@ package kendynet
 
 import (
 	"encoding/binary"
-	"fmt"
-	"reflect"
+	//"fmt"
+	//"reflect"
 	//"unsafe"
 )
 
@@ -35,7 +35,7 @@ type ByteBuffer struct {
 	needcopy bool //标记是否执行写时拷贝
 }
 
-func NewByteBuffer(arg ...interface{}) *ByteBuffer {
+/*func NewByteBuffer(arg ...interface{}) *ByteBuffer {
 	if len(arg) < 2 {
 		var size uint64
 		if len(arg) == 0 {
@@ -145,12 +145,12 @@ func NewByteBuffer(arg ...interface{}) *ByteBuffer {
 		/*
 		 * 直接引用bytes,并设置needcopy标记
 		 * 如果ByteBuffer要修改bytes中的内容，首先要先执行拷贝，之后才能修改
-		 */
+		 * /
 		return &ByteBuffer{buffer: bytes, datasize: size, capacity: size, needcopy: true}
 	} else {
 		return nil
 	}
-}
+}*/
 
 func (this *ByteBuffer) Reset() {
 	this.datasize = 0
