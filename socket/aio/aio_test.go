@@ -30,6 +30,13 @@ func (this *encoder) EnCode(o interface{}, b *buffer.Buffer) error {
 	return nil
 }
 
+type errencoder struct {
+}
+
+func (this *errencoder) EnCode(o interface{}, b *buffer.Buffer) error {
+	return errors.New("invaild o")
+}
+
 var aioService *SocketService
 
 func init() {
@@ -175,6 +182,25 @@ func TestAioSocket(t *testing.T) {
 				time.Sleep(time.Second)
 				runtime.GC()
 			}
+		}
+
+		{
+			dialer := &net.Dialer{}
+			conn, _ := dialer.Dial("tcp", "localhost:8110")
+			session := NewSocket(aioService, conn)
+
+			die := make(chan struct{})
+
+			session.SetEncoder(&errencoder{})
+
+			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
+				fmt.Println("close", reason)
+				close(die)
+			})
+
+			session.Send("hello")
+
+			<-die
 		}
 
 		listener.Close()

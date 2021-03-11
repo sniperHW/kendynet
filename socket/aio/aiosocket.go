@@ -306,28 +306,20 @@ func (s *Socket) emitSendTask() {
 }
 
 func (s *Socket) doSend() {
-	s.muW.Lock()
-	defer s.muW.Unlock()
-
 	const maxsendsize = kendynet.SendBufferSize
 
+	var err error
+
+	s.muW.Lock()
 	//只有之前请求的buff全部发送完毕才填充新的buff
 	if nil == s.b {
 		s.b = buffer.Get()
 		for v := s.sendQueue.Front(); v != nil; v = s.sendQueue.Front() {
 			s.sendQueue.Remove(v)
-			if err := s.encoder.EnCode(v.Value, s.b); nil != err {
+			if err = s.encoder.EnCode(v.Value, s.b); nil != err {
 				s.b.Free()
 				s.b = nil
-				if !s.testFlag(fclosed) {
-					if nil != s.errorCallback {
-						s.Close(err, 0)
-						s.errorCallback(s, err)
-					} else {
-						s.Close(err, 0)
-					}
-				}
-				return
+				break
 			} else if s.b.Len() >= maxsendsize {
 				break
 			}
@@ -335,8 +327,22 @@ func (s *Socket) doSend() {
 		s.offset = 0
 	}
 
-	if nil != s.aioConn.Send(s.b.Bytes()[s.offset:], &s.sendContext) {
+	s.muW.Unlock()
+
+	if nil == err {
+		if nil != s.aioConn.Send(s.b.Bytes()[s.offset:], &s.sendContext) {
+			s.ioWait.Done()
+		}
+	} else {
 		s.ioWait.Done()
+		if !s.testFlag(fclosed) {
+			if nil != s.errorCallback {
+				s.Close(err, 0)
+				s.errorCallback(s, err)
+			} else {
+				s.Close(err, 0)
+			}
+		}
 	}
 }
 
