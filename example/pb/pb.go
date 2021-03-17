@@ -93,7 +93,7 @@ func Decode(buff []byte, start int, end int, maxMsgSize int) (proto.Message, int
 		return nil, 0, nil
 	}
 
-	reader := buffer.NewReader(buffer.New(buff[start:end])) //kendynet.NewByteBuffer(buff[start:end], dataLen)
+	reader := buffer.NewReader(buff[start:end]) //kendynet.NewByteBuffer(buff[start:end], dataLen)
 
 	payload := reader.GetUint32()
 
