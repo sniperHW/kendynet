@@ -163,8 +163,12 @@ func NewReader(b interface{}) *BufferReader {
 	return nil
 }
 
+func (this *BufferReader) IsOver() bool {
+	return this.offset >= len(this.bs)
+}
+
 func (this *BufferReader) GetByte() byte {
-	if this.offset+1 >= len(this.bs) {
+	if this.offset+1 > len(this.bs) {
 		return 0
 	} else {
 		ret := this.bs[this.offset]
@@ -174,7 +178,7 @@ func (this *BufferReader) GetByte() byte {
 }
 
 func (this *BufferReader) GetUint16() uint16 {
-	if this.offset+2 >= len(this.bs) {
+	if this.offset+2 > len(this.bs) {
 		return 0
 	} else {
 		ret := binary.BigEndian.Uint16(this.bs[this.offset : this.offset+2])
@@ -188,7 +192,7 @@ func (this *BufferReader) GetInt16() int16 {
 }
 
 func (this *BufferReader) GetUint32() uint32 {
-	if this.offset+4 >= len(this.bs) {
+	if this.offset+4 > len(this.bs) {
 		return 0
 	} else {
 		ret := binary.BigEndian.Uint32(this.bs[this.offset : this.offset+4])
@@ -202,7 +206,7 @@ func (this *BufferReader) GetInt32() int32 {
 }
 
 func (this *BufferReader) GetUint64() uint64 {
-	if this.offset+8 >= len(this.bs) {
+	if this.offset+8 > len(this.bs) {
 		return 0
 	} else {
 		ret := binary.BigEndian.Uint64(this.bs[this.offset : this.offset+8])
