@@ -319,31 +319,4 @@ func TestAsyn(t *testing.T) {
 
 	}
 
-	{
-
-		c1 := make(chan struct{})
-
-		pool := NewRoutinePool(0)
-
-		pool.AddTask(func() {
-			panic("test")
-		})
-
-		NewAsynWraper(mySleep3, func() {
-			fmt.Println("wrap14")
-			close(c1)
-		}, func(f func()) {
-			pool.AddTask(f)
-		}).Call()
-
-		<-c1
-
-		pool.Close(BlockClose)
-
-		pool.Close(BlockClose)
-
-		assert.Equal(t, false, pool.AddTask(func() { fmt.Println("hello") }))
-
-	}
-
 }
