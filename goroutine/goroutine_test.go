@@ -28,7 +28,7 @@ func TestGo(t *testing.T) {
 
 	//assert.Equal(t, defaultPool.routineCount, defaultPool.waitCount)
 
-	fmt.Println(defaultPool.totalCreateCount, defaultPool.routineCount)
+	fmt.Println(defaultPool.totalCreateCount, defaultPool.routineCount, defaultPool.waittail)
 
 	ch := make(chan struct{})
 	OnError(func(err error) {
@@ -37,7 +37,6 @@ func TestGo(t *testing.T) {
 	})
 
 	Go(func(ptr *int) {
-		fmt.Println("here")
 		*ptr = 1
 	}, nil)
 

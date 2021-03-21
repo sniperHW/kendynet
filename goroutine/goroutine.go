@@ -16,8 +16,8 @@ type task struct {
 }
 
 type routine struct {
-	nnext  *routine
-	notify chan struct{}
+	nnext *routine
+	cond  *sync.Cond
 }
 
 type pool struct {
@@ -48,17 +48,17 @@ var defaultPool *pool = New(Option{
 	MaxCount:     MaxCount,
 })
 
-func (this *pool) wait(p *routine) {
+func (this *pool) wait(r *routine) {
 	var head *routine
 	if this.waittail == nil {
-		head = p
+		head = r
 	} else {
 		head = this.waittail.nnext
-		this.waittail.nnext = p
+		this.waittail.nnext = r
 	}
-	p.nnext = head
-	this.waittail = p
-	<-p.notify
+	r.nnext = head
+	this.waittail = r
+	r.cond.Wait()
 }
 
 func (this *pool) singal() {
@@ -70,10 +70,7 @@ func (this *pool) singal() {
 			this.waittail.nnext = head.nnext
 		}
 		head.nnext = nil
-		select {
-		case head.notify <- struct{}{}:
-		default:
-		}
+		head.cond.Signal()
 	} else {
 		panic("panic here")
 	}
@@ -123,7 +120,7 @@ func (this *pool) OnError(onError func(error)) {
 func (this *pool) createNewRoutine() {
 	go func() {
 		r := &routine{
-			notify: make(chan struct{}),
+			cond: sync.NewCond(&this.mu),
 		}
 		for {
 			t := this.pop(r)
