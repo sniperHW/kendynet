@@ -9,6 +9,12 @@ import (
 var ReserveCount int = 1000
 var MaxCount int = 10000
 
+type Option struct {
+	ReserveCount    int //保留的goroutine数量
+	MaxCount        int //最大允许的goroutine数量
+	MaxCurrentCount int //最大并发数量，值大于0为开启
+}
+
 type task struct {
 	nnext *task
 	args  []interface{}
@@ -23,17 +29,13 @@ type routine struct {
 type pool struct {
 	mu               sync.Mutex
 	ttail            *task
+	taskcount        int
 	waittail         *routine
+	waitcount        int
 	routineCount     int
 	totalCreateCount int64
 	onError          atomic.Value
 	option           Option
-}
-
-type Option struct {
-	ReserveCount    int //保留的goroutine数量
-	MaxCount        int //最大允许的goroutine数量
-	MaxCurrentCount int //最大并发数量，值大于0为开启
 }
 
 func New(o Option) *pool {
@@ -58,25 +60,11 @@ func (this *pool) wait(r *routine) {
 	}
 	r.nnext = head
 	this.waittail = r
+	this.waitcount++
 	r.cond.Wait()
 }
 
-func (this *pool) singal() {
-	if this.waittail != nil {
-		head := this.waittail.nnext
-		if head == this.waittail {
-			this.waittail = nil
-		} else {
-			this.waittail.nnext = head.nnext
-		}
-		head.nnext = nil
-		head.cond.Signal()
-	} else {
-		panic("panic here")
-	}
-}
-
-func (this *pool) push(t *task) (create bool) {
+func (this *pool) push(t *task) (create bool, r *routine) {
 	var head *task
 	if this.ttail == nil {
 		head = t
@@ -86,9 +74,17 @@ func (this *pool) push(t *task) (create bool) {
 	}
 	t.nnext = head
 	this.ttail = t
+	this.taskcount++
 
 	if this.waittail != nil {
-		this.singal()
+		r = this.waittail.nnext
+		if r == this.waittail {
+			this.waittail = nil
+		} else {
+			this.waittail.nnext = r.nnext
+		}
+		r.nnext = nil
+		this.waitcount--
 	} else if this.routineCount < this.option.MaxCount {
 		this.routineCount++
 		this.totalCreateCount++
@@ -109,6 +105,7 @@ func (this *pool) pop(r *routine) *task {
 	} else {
 		this.ttail.nnext = head.nnext
 	}
+	this.taskcount--
 	this.mu.Unlock()
 	return head
 }
@@ -148,23 +145,35 @@ func (this *pool) createNewRoutine() {
 	}()
 }
 
-func (this *pool) Go(fn interface{}, args ...interface{}) {
-	var create bool
+//如果超过最大并发限制返回false
+func (this *pool) Go(fn interface{}, args ...interface{}) bool {
 	this.mu.Lock()
-	create = this.push(&task{
+	if this.option.MaxCurrentCount > 0 {
+		workcount := this.routineCount - this.waitcount
+		if this.routineCount >= this.option.MaxCount && workcount+this.taskcount > this.option.MaxCurrentCount {
+			this.mu.Unlock()
+			return false
+		}
+	}
+	var create bool
+	var r *routine
+	create, r = this.push(&task{
 		fn:   fn,
 		args: args,
 	})
 	this.mu.Unlock()
 	if create {
 		this.createNewRoutine()
+	} else if nil != r {
+		r.cond.Signal()
 	}
+	return true
 }
 
 func OnError(onError func(error)) {
 	defaultPool.OnError(onError)
 }
 
-func Go(fn interface{}, args ...interface{}) {
-	defaultPool.Go(fn, args...)
+func Go(fn interface{}, args ...interface{}) bool {
+	return defaultPool.Go(fn, args...)
 }
