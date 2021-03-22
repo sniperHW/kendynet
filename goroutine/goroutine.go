@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 )
 
-var ReserveCount int = 1000
+var ReserveCount int = 10000
 var MaxCount int = 10000
 
 type Option struct {

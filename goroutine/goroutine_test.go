@@ -68,17 +68,14 @@ func TestGo(t *testing.T) {
 }
 
 func BenchmarkGoroutine(b *testing.B) {
-	MaxCount = 10000
-	ReserveCount = 10000
 	var wait sync.WaitGroup
 	for i := 0; i < b.N; i++ {
 		wait.Add(1)
 		Go(func() {
 			wait.Done()
 		})
-		wait.Wait()
 	}
-
+	wait.Wait()
 }
 
 func BenchmarkRoutine(b *testing.B) {
@@ -88,6 +85,6 @@ func BenchmarkRoutine(b *testing.B) {
 		go func() {
 			wait.Done()
 		}()
-		wait.Wait()
 	}
+	wait.Wait()
 }
