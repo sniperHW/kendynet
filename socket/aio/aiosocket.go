@@ -266,7 +266,7 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 				if r.Err == kendynet.ErrRecvTimeout {
 					recvAgain = true
 				} else {
-					s.Close(r.Err, 0)
+					s.setFlag(frclosed)
 				}
 				s.errorCallback(s, r.Err)
 			} else {

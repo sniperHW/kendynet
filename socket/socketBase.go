@@ -164,7 +164,7 @@ func (this *SocketBase) recvThreadFunc() {
 
 	conn := this.imp.GetNetConn()
 
-	for {
+	for !this.testFlag(fclosed | frclosed) {
 		var (
 			p   interface{}
 			err error
@@ -188,7 +188,7 @@ func (this *SocketBase) recvThreadFunc() {
 
 				if nil != this.errorCallback {
 					if err != kendynet.ErrRecvTimeout {
-						this.Close(err, 0)
+						this.setFlag(frclosed)
 					}
 					this.errorCallback(this.imp, err)
 				} else {
