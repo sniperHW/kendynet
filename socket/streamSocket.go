@@ -94,8 +94,10 @@ func (this *StreamSocket) sendThreadFunc() {
 
 		if nil == b {
 			b = buffer.Get()
-			for ; i < size; i++ {
+			for i < size {
 				err = this.encoder.EnCode(localList[i], b)
+				localList[i] = nil
+				i++
 				if nil != err {
 					b.Free()
 					b = nil
