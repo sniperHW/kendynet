@@ -164,18 +164,24 @@ func (this *SocketBase) recvThreadFunc() {
 
 	conn := this.imp.GetNetConn()
 
+	oldTimeout := this.getRecvTimeout()
+	recvTimeout := oldTimeout
+
 	for !this.testFlag(fclosed | frclosed) {
 		var (
 			p   interface{}
 			err error
 		)
 
-		recvTimeout := this.getRecvTimeout()
+		oldTimeout = recvTimeout
+		recvTimeout = this.getRecvTimeout()
+		if oldTimeout != recvTimeout && recvTimeout == 0 {
+			conn.SetReadDeadline(time.Time{})
+		}
 
 		if recvTimeout > 0 {
 			conn.SetReadDeadline(time.Now().Add(recvTimeout))
 			p, err = this.inboundProcessor.ReceiveAndUnpack(this.imp)
-			conn.SetReadDeadline(time.Time{})
 		} else {
 			p, err = this.inboundProcessor.ReceiveAndUnpack(this.imp)
 		}

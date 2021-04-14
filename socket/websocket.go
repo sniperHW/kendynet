@@ -64,6 +64,9 @@ func (this *WebSocket) sendThreadFunc() {
 
 	closed := false
 
+	oldTimeout := this.getSendTimeout()
+	timeout := oldTimeout
+
 	for {
 
 		closed, localList = this.sendQue.Swap(localList)
@@ -98,7 +101,12 @@ func (this *WebSocket) sendThreadFunc() {
 				}
 			}
 
-			timeout := this.getSendTimeout()
+			oldTimeout = timeout
+			timeout = this.getSendTimeout()
+
+			if oldTimeout != timeout && timeout == 0 {
+				this.conn.SetWriteDeadline(time.Time{})
+			}
 
 			if timeout > 0 {
 				this.conn.SetWriteDeadline(time.Now().Add(timeout))
