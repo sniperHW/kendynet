@@ -79,8 +79,6 @@ func (this *StreamSocket) sendThreadFunc() {
 		}
 	}()
 
-	timeout := this.getSendTimeout()
-
 	for {
 
 		if i >= size {
@@ -116,6 +114,8 @@ func (this *StreamSocket) sendThreadFunc() {
 			}
 			offset = 0
 		}
+
+		timeout := this.getSendTimeout()
 
 		if timeout > 0 {
 			this.conn.SetWriteDeadline(time.Now().Add(timeout))
