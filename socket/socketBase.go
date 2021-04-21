@@ -2,6 +2,7 @@ package socket
 
 import (
 	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/gopool"
 	"github.com/sniperHW/kendynet/util"
 	"net"
 	"runtime"
@@ -269,12 +270,12 @@ func (this *SocketBase) Close(reason error, delay time.Duration) {
 			this.imp.GetNetConn().Close()
 		}
 
-		go func() {
+		gopool.Go(func() {
 			this.ioWait.Wait()
 			if nil != this.closeCallBack {
 				this.closeCallBack(this.imp, reason)
 			}
-		}()
+		})
 
 	})
 

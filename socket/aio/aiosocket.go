@@ -6,6 +6,7 @@ import (
 	"github.com/sniperHW/goaio"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/buffer"
+	"github.com/sniperHW/kendynet/gopool"
 	"math/rand"
 	"net"
 	"runtime"
@@ -473,7 +474,7 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 			s.aioConn.Close(nil)
 		}
 
-		go func() {
+		gopool.Go(func() {
 			s.ioWait.Wait()
 			if nil != s.inboundProcessor {
 				s.inboundProcessor.OnSocketClose()
@@ -481,7 +482,7 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 			if nil != s.closeCallBack {
 				s.closeCallBack(s, reason)
 			}
-		}()
+		})
 	})
 }
 

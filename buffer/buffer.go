@@ -166,6 +166,14 @@ func NewReader(b interface{}) *BufferReader {
 	return nil
 }
 
+func (this *BufferReader) GetAll() []byte {
+	return this.bs[this.offset:]
+}
+
+func (this *BufferReader) GetOffset() int {
+	return this.offset
+}
+
 func (this *BufferReader) IsOver() bool {
 	return this.offset >= len(this.bs)
 }
