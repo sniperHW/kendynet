@@ -13,7 +13,7 @@ import (
 	"github.com/sniperHW/kendynet/example/testproto"
 	connector "github.com/sniperHW/kendynet/socket/connector/tcp"
 	listener "github.com/sniperHW/kendynet/socket/listener/tcp"
-	"github.com/sniperHW/kendynet/util"
+	//"github.com/sniperHW/kendynet/util"
 	"github.com/stretchr/testify/assert"
 	"reflect"
 	"sync/atomic"
@@ -450,10 +450,7 @@ func TestRPC(t *testing.T) {
 
 		assert.NotNil(t, caller.Post("hello", &testproto.Hello{Hello: proto.String("hello")}))
 
-		_, err := util.ProtectCall(func() {
-			caller.AsynCall("hello", &testproto.Hello{Hello: proto.String("hello")}, time.Second, nil)
-		})
-		assert.NotNil(t, err)
+		assert.NotNil(t, caller.AsynCall("hello", &testproto.Hello{Hello: proto.String("hello")}, time.Second, nil))
 	}
 
 	{

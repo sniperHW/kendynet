@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"container/list"
+	"errors"
 	"fmt"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/timer"
@@ -13,9 +14,6 @@ import (
 
 var ErrCallTimeout error = fmt.Errorf("rpc call timeout")
 var ErrChannelDisconnected error = fmt.Errorf("channel disconnected")
-var sequence uint64
-var client_once sync.Once
-var timerMgrs []*timer.TimerMgr
 
 type RPCResponseHandler func(interface{}, error)
 
@@ -25,6 +23,12 @@ type reqContext struct {
 	listEle    *list.Element
 	channelUID uint64
 	c          *RPCClient
+}
+
+var reqContextPool = sync.Pool{
+	New: func() interface{} {
+		return &reqContext{}
+	},
 }
 
 type channelReqContexts struct {
@@ -39,16 +43,20 @@ func (this *channelReqContexts) remove(req *reqContext) bool {
 	if nil != req.listEle {
 		this.reqs.Remove(req.listEle)
 		req.listEle = nil
+		reqContextPool.Put(req)
 		return true
 	} else {
 		return false
 	}
 }
 
-func (this *reqContext) onTimeout(_ *timer.Timer, _ interface{}) {
-	kendynet.GetLogger().Info("req timeout", this.seq, time.Now())
-	if this.c.removeChannelReq(this) {
-		this.onResponse(nil, ErrCallTimeout)
+func onReqTimeout(_ *timer.Timer, v interface{}) {
+	c := v.(*reqContext)
+	kendynet.GetLogger().Info("req timeout", c.seq, time.Now())
+	onResponse := c.onResponse
+	cli := c.c
+	if cli.removeChannelReq(c) {
+		onResponse(nil, ErrCallTimeout)
 	}
 }
 
@@ -61,6 +69,8 @@ type RPCClient struct {
 	encoder        RPCMessageEncoder
 	decoder        RPCMessageDecoder
 	channelReqMaps []channelReqMap
+	sequence       uint64
+	timerMgr       *timer.TimerMgr
 }
 
 func (this *RPCClient) addChannelReq(channel RPCChannel, req *reqContext) {
@@ -102,36 +112,36 @@ func (this *RPCClient) OnChannelDisconnect(channel RPCChannel) {
 	uid := channel.UID()
 	m := this.channelReqMaps[int(uid)%len(this.channelReqMaps)]
 
-	var tmp []*reqContext
-
 	m.Lock()
-	c, ok := m.m[uid]
+	channelReqContexts, ok := m.m[uid]
 	if ok {
 		delete(m.m, uid)
-		tmp = make([]*reqContext, 0, c.reqs.Len())
+	}
+	m.Unlock()
+
+	if ok {
 		for {
-			if v := c.reqs.Front(); nil != v {
-				v.Value.(*reqContext).listEle = nil
-				tmp = append(tmp, v.Value.(*reqContext))
-				c.reqs.Remove(v)
+			if v := channelReqContexts.reqs.Front(); nil != v {
+				c := v.Value.(*reqContext)
+
+				/*
+				 * 不管CancelByIndex是否返回true都应该调用onResponse
+				 * 考虑如下onResponse调用丢失的场景
+				 * A线程执行OnChannelDisconnect,走到m.Unlock()之后的代码
+				 * B线程执行onTimeout的removeChannelReq,此时removeChannelReq必然返回false,因此onResponse不会执行。
+				 * A线程继续执行,如果像OnRPCMessage一样判断CancelByIndex为true才执行onResponse,那么对于这个请求的onResponse将丢失
+				 * 因为这个req的onTimeout已经被执行，CancelByIndex必定返回false
+				 */
+				this.timerMgr.CancelByIndex(c.seq)
+				c.onResponse(nil, ErrChannelDisconnected)
+				c.listEle = nil
+
+				channelReqContexts.reqs.Remove(v)
+				reqContextPool.Put(c)
 			} else {
 				break
 			}
 		}
-	}
-	m.Unlock()
-
-	for _, v := range tmp {
-		/*
-		 * 不管CancelByIndex是否返回true都应该调用onResponse
-		 * 考虑如下onResponse调用丢失的场景
-		 * A线程执行OnChannelDisconnect,走到m.Unlock()之后的代码
-		 * B线程执行onTimeout的removeChannelReq,此时removeChannelReq必然返回false,因此onResponse不会执行。
-		 * A线程继续执行,如果像OnRPCMessage一样判断CancelByIndex为true才执行onResponse,那么对于这个请求的onResponse将丢失
-		 * 因为这个req的onTimeout已经被执行，CancelByIndex必定返回false
-		 */
-		timerMgrs[v.seq%uint64(len(timerMgrs))].CancelByIndex(v.seq)
-		v.onResponse(nil, ErrChannelDisconnected)
 	}
 }
 
@@ -141,8 +151,7 @@ func (this *RPCClient) OnRPCMessage(message interface{}) {
 		kendynet.GetLogger().Errorf(util.FormatFileLine("RPCClient rpc message decode err:%s\n", err.Error()))
 	} else {
 		if resp, ok := msg.(*RPCResponse); ok {
-			mgr := timerMgrs[msg.GetSeq()%uint64(len(timerMgrs))]
-			if ok, ctx := mgr.CancelByIndex(resp.GetSeq()); ok {
+			if ok, ctx := this.timerMgr.CancelByIndex(resp.GetSeq()); ok {
 				if this.removeChannelReq(ctx.(*reqContext)) {
 					ctx.(*reqContext).onResponse(resp.Ret, resp.Err)
 				}
@@ -158,7 +167,7 @@ func (this *RPCClient) Post(channel RPCChannel, method string, arg interface{}) 
 
 	req := &RPCRequest{
 		Method:   method,
-		Seq:      atomic.AddUint64(&sequence, 1),
+		Seq:      atomic.AddUint64(&this.sequence, 1),
 		Arg:      arg,
 		NeedResp: false,
 	}
@@ -177,34 +186,32 @@ func (this *RPCClient) Post(channel RPCChannel, method string, arg interface{}) 
 func (this *RPCClient) AsynCall(channel RPCChannel, method string, arg interface{}, timeout time.Duration, cb RPCResponseHandler) error {
 
 	if cb == nil {
-		panic("cb == nil")
+		return errors.New("cb == nil")
 	}
 
 	req := &RPCRequest{
 		Method:   method,
-		Seq:      atomic.AddUint64(&sequence, 1),
+		Seq:      atomic.AddUint64(&this.sequence, 1),
 		Arg:      arg,
 		NeedResp: true,
-	}
-
-	context := &reqContext{
-		onResponse: cb,
-		seq:        req.Seq,
-		c:          this,
-		channelUID: channel.UID(),
 	}
 
 	if request, err := this.encoder.Encode(req); err != nil {
 		return err
 	} else {
-		mgr := timerMgrs[req.Seq%uint64(len(timerMgrs))]
+		context := reqContextPool.Get().(*reqContext)
+		context.onResponse = cb
+		context.seq = req.Seq
+		context.c = this
+		context.channelUID = channel.UID()
+
 		this.addChannelReq(channel, context)
-		mgr.OnceWithIndex(timeout, context.onTimeout, context, context.seq)
+		this.timerMgr.OnceWithIndex(timeout, onReqTimeout, context, context.seq)
 		if err = channel.SendRequest(request); err == nil {
 			return nil
 		} else {
 			this.removeChannelReq(context)
-			mgr.CancelByIndex(context.seq)
+			this.timerMgr.CancelByIndex(req.Seq)
 			return err
 		}
 	}
@@ -231,23 +238,16 @@ func NewClient(decoder RPCMessageDecoder, encoder RPCMessageEncoder) *RPCClient 
 		return nil
 	} else {
 
-		client_once.Do(func() {
-			timerMgrs = make([]*timer.TimerMgr, 61)
-			for i, _ := range timerMgrs {
-				timerMgrs[i] = timer.NewTimerMgr(1)
-			}
-		})
-
 		c := &RPCClient{
-			encoder:        encoder,
-			decoder:        decoder,
-			channelReqMaps: make([]channelReqMap, 127, 127),
+			encoder:  encoder,
+			decoder:  decoder,
+			timerMgr: timer.NewTimerMgr(61),
 		}
 
-		for k, _ := range c.channelReqMaps {
-			c.channelReqMaps[k] = channelReqMap{
+		for i := 0; i < 127; i++ {
+			c.channelReqMaps = append(c.channelReqMaps, channelReqMap{
 				m: map[uint64]*channelReqContexts{},
-			}
+			})
 		}
 
 		return c
