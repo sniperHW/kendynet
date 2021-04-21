@@ -1,7 +1,6 @@
 package gopool
 
 import (
-	"container/list"
 	"errors"
 	"sync"
 )
@@ -35,12 +34,70 @@ type Option struct {
 	Mode            Mode
 }
 
+type ring struct {
+	head int
+	tail int
+	data []interface{}
+	max  int
+}
+
+func newring(max int) ring {
+	r := ring{
+		max: max,
+	}
+
+	var l int
+	if max == 0 {
+		l = 100 + 1
+	} else {
+		l = max + 1
+	}
+
+	r.data = make([]interface{}, l, l)
+
+	return r
+}
+
+func (r *ring) grow() {
+	data := make([]interface{}, len(r.data)*2-1, len(r.data)*2-1)
+	i := 0
+	for v := r.pop(); nil != v; v = r.pop() {
+		data[i] = v
+		i++
+	}
+	r.data = data
+	r.head = 0
+	r.tail = i
+}
+
+func (r *ring) pop() interface{} {
+	if r.head != r.tail {
+		head := r.data[r.head]
+		r.data[r.head] = nil
+		r.head = (r.head + 1) % len(r.data)
+		return head
+	} else {
+		return nil
+	}
+}
+
+func (r *ring) push(v interface{}) bool {
+	if (r.tail+1)%len(r.data) != r.head {
+		r.data[r.tail] = v
+		r.tail = (r.tail + 1) % len(r.data)
+		return true
+	} else if r.max == 0 {
+		r.grow()
+		return r.push(v)
+	} else {
+		return false
+	}
+}
+
 type pool struct {
 	sync.Mutex
-	head  int
-	tail  int
-	frees []*routine
-	queue *list.List
+	frees ring
+	queue ring
 	count int
 	o     Option
 }
@@ -58,11 +115,11 @@ func New(o Option) *pool {
 
 	p := &pool{
 		o:     o,
-		frees: make([]*routine, o.MaxRoutineCount+1, o.MaxRoutineCount+1),
+		frees: newring(o.MaxRoutineCount),
 	}
 
 	if o.Mode == QueueMode {
-		p.queue = list.New()
+		p.queue = newring(o.MaxQueueSize)
 	}
 
 	return p
@@ -73,25 +130,18 @@ func (p *pool) free(r *routine) {
 	defer p.Unlock()
 	switch p.o.Mode {
 	case QueueMode:
-		f := p.queue.Front()
+		f := p.queue.pop()
 		if nil != f {
-			r.taskCh <- f.Value.(func())
-			p.queue.Remove(f)
+			r.taskCh <- f.(func())
 			return
 		}
 	}
-
-	p.frees[p.tail] = r
-	p.tail = (p.tail + 1) % len(p.frees)
-
+	p.frees.push(r)
 }
 
 func (p *pool) popFree() *routine {
-	if p.head != p.tail {
-		head := p.frees[p.head]
-		p.frees[p.head] = nil
-		p.head = (p.head + 1) % len(p.frees)
-		return head
+	if r := p.frees.pop(); nil != r {
+		return r.(*routine)
 	} else {
 		return nil
 	}
@@ -109,10 +159,9 @@ func (p *pool) Go(f func()) error {
 			case GoMode:
 				go f()
 			case QueueMode:
-				if p.o.MaxQueueSize > 0 && p.queue.Len() == p.o.MaxQueueSize {
+				if !p.queue.push(f) {
 					return errors.New("exceed MaxQueueSize")
 				}
-				p.queue.PushBack(f)
 			}
 		} else {
 			p.count++

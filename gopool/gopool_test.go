@@ -24,7 +24,7 @@ func TestGo(t *testing.T) {
 
 		for i := 0; i < 20; i++ {
 			pool.Go(func() {
-				time.Sleep(time.Second)
+				time.Sleep(time.Millisecond * 5)
 				wait.Done()
 			})
 		}
@@ -35,12 +35,24 @@ func TestGo(t *testing.T) {
 
 		for i := 0; i < 20; i++ {
 			pool.Go(func() {
-				time.Sleep(time.Second)
+				time.Sleep(time.Millisecond * 5)
 				wait.Done()
 			})
 		}
 
 		wait.Wait()
+
+		wait.Add(120)
+
+		for i := 0; i < 120; i++ {
+			pool.Go(func() {
+				time.Sleep(time.Millisecond * 5)
+				wait.Done()
+			})
+		}
+
+		wait.Wait()
+
 	}
 
 	{
@@ -55,7 +67,7 @@ func TestGo(t *testing.T) {
 
 		for i := 0; i < 20; i++ {
 			pool.Go(func() {
-				time.Sleep(time.Second)
+				time.Sleep(time.Millisecond * 5)
 				wait.Done()
 			})
 		}
