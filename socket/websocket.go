@@ -88,11 +88,9 @@ func (this *WebSocket) sendThreadFunc() {
 				b = buffer.Get()
 				if err = this.encoder.EnCode(msg.Data(), b); nil != err {
 					if !this.testFlag(fclosed) {
+						this.Close(err, 0)
 						if nil != this.errorCallback {
-							this.Close(err, 0)
 							this.errorCallback(this, err)
-						} else {
-							this.Close(err, 0)
 						}
 					}
 					return
@@ -124,15 +122,12 @@ func (this *WebSocket) sendThreadFunc() {
 
 				if kendynet.IsNetTimeout(err) {
 					err = kendynet.ErrSendTimeout
+				} else {
+					this.Close(err, 0)
 				}
 
 				if nil != this.errorCallback {
-					if err != kendynet.ErrSendTimeout {
-						this.Close(err, 0)
-					}
 					this.errorCallback(this, err)
-				} else {
-					this.Close(err, 0)
 				}
 
 				if this.testFlag(fclosed) {

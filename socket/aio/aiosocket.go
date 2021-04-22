@@ -261,21 +261,18 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 
 			if r.Err == goaio.ErrRecvTimeout {
 				r.Err = kendynet.ErrRecvTimeout
+				recvAgain = true
+			} else {
+				s.setFlag(frclosed)
 			}
 
 			if nil != s.errorCallback {
-				if r.Err == kendynet.ErrRecvTimeout {
-					recvAgain = true
-				} else {
-					s.setFlag(frclosed)
-				}
 				s.errorCallback(s, r.Err)
 			} else {
 				s.Close(r.Err, 0)
 			}
 
 		} else {
-			//fmt.Println("Bytestransfer", r.Bytestransfer)
 			s.inboundProcessor.OnData(r.Buff[:r.Bytestransfer])
 			for !s.testFlag(fclosed | frclosed) {
 				msg, err := s.inboundProcessor.Unpack()
@@ -337,11 +334,9 @@ func (s *Socket) doSend() {
 	} else {
 		s.ioWait.Done()
 		if !s.testFlag(fclosed) {
+			s.Close(err, 0)
 			if nil != s.errorCallback {
-				s.Close(err, 0)
 				s.errorCallback(s, err)
-			} else {
-				s.Close(err, 0)
 			}
 		}
 	}
@@ -369,12 +364,11 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 			r.Err = kendynet.ErrSendTimeout
 			//超时可能会发送部分数据
 			s.offset += r.Bytestransfer
+		} else {
+			s.Close(r.Err, 0)
 		}
 
 		if nil != s.errorCallback {
-			if r.Err != kendynet.ErrSendTimeout {
-				s.Close(r.Err, 0)
-			}
 			s.errorCallback(s, r.Err)
 
 			//如果是发送超时且用户没有关闭socket,再次请求发送
@@ -383,9 +377,6 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 				s.emitSendTask()
 				s.muW.Unlock()
 			}
-
-		} else {
-			s.Close(r.Err, 0)
 		}
 	}
 }
