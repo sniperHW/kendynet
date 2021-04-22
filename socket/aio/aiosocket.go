@@ -93,6 +93,13 @@ func NewSocketService(shareBuffer goaio.ShareBuffer) *SocketService {
 	return s
 }
 
+type AioInBoundProcessor interface {
+	kendynet.InBoundProcessor
+	GetRecvBuff() []byte
+	OnData(buff []byte)
+	OnSocketClose()
+}
+
 type defaultInBoundProcessor struct {
 	bytes  int
 	buffer []byte
@@ -121,10 +128,6 @@ func (this *defaultInBoundProcessor) OnSocketClose() {
 
 }
 
-func (this *defaultInBoundProcessor) ReceiveAndUnpack(sess kendynet.StreamSession) (interface{}, error) {
-	return nil, nil
-}
-
 const (
 	fclosed  = int32(1 << 1)
 	frclosed = int32(1 << 2)
@@ -137,7 +140,7 @@ type Socket struct {
 	flag             int32
 	aioConn          *goaio.AIOConn
 	encoder          kendynet.EnCoder
-	inboundProcessor kendynet.InBoundProcessor
+	inboundProcessor AioInBoundProcessor
 	errorCallback    func(kendynet.StreamSession, error)
 	closeCallBack    func(kendynet.StreamSession, error)
 	inboundCallBack  func(kendynet.StreamSession, interface{})
@@ -230,14 +233,8 @@ func (s *Socket) RemoteAddr() net.Addr {
 }
 
 func (s *Socket) SetInBoundProcessor(in kendynet.InBoundProcessor) kendynet.StreamSession {
-	s.inboundProcessor = in
+	s.inboundProcessor = in.(AioInBoundProcessor)
 	return s
-}
-
-func (s *Socket) getDefaultInboundProcessor() kendynet.InBoundProcessor {
-	return &defaultInBoundProcessor{
-		buffer: make([]byte, 4096),
-	}
 }
 
 func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
@@ -364,11 +361,13 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 			r.Err = kendynet.ErrSendTimeout
 			//超时可能会发送部分数据
 			s.offset += r.Bytestransfer
-		} else {
-			s.Close(r.Err, 0)
 		}
 
 		if nil != s.errorCallback {
+			if r.Err != kendynet.ErrSendTimeout {
+				s.Close(r.Err, 0)
+			}
+
 			s.errorCallback(s, r.Err)
 
 			//如果是发送超时且用户没有关闭socket,再次请求发送
@@ -377,6 +376,8 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 				s.emitSendTask()
 				s.muW.Unlock()
 			}
+		} else {
+			s.Close(r.Err, 0)
 		}
 	}
 }
@@ -421,7 +422,9 @@ func (s *Socket) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err er
 		} else {
 			//发起第一个recv
 			if nil == s.inboundProcessor {
-				s.inboundProcessor = s.getDefaultInboundProcessor()
+				s.inboundProcessor = &defaultInBoundProcessor{
+					buffer: make([]byte, 4096),
+				}
 			}
 			s.inboundCallBack = cb
 
@@ -494,7 +497,6 @@ func NewSocket(service *SocketService, netConn net.Conn) kendynet.StreamSession 
 	s.recvContext = ioContext{s: s, t: 'r'}
 
 	runtime.SetFinalizer(s, func(s *Socket) {
-		//fmt.Println("gc")
 		s.Close(errors.New("gc"), 0)
 	})
 

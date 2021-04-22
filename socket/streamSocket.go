@@ -5,8 +5,6 @@
 package socket
 
 import (
-	//"bufio"
-	//"fmt"
 	"errors"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/buffer"
@@ -16,40 +14,125 @@ import (
 	"time"
 )
 
-type defaultSSInBoundProcessor struct {
-	buffer []byte
+type StreamSocketInBoundProcessor interface {
+	kendynet.InBoundProcessor
+	GetRecvBuff() []byte
+	OnData([]byte)
 }
 
-func (this *defaultSSInBoundProcessor) ReceiveAndUnpack(sess kendynet.StreamSession) (interface{}, error) {
-	n, err := sess.(*StreamSocket).Read(this.buffer[:])
-	if err != nil {
-		return nil, err
-	}
-
-	msg := make([]byte, 0, n)
-	msg = append(msg, this.buffer[:n]...)
-	return msg, err
+type defaultSSInBoundProcessor struct {
+	buffer []byte
+	w      int
 }
 
 func (this *defaultSSInBoundProcessor) GetRecvBuff() []byte {
-	return nil
+	return this.buffer[this.w:]
 }
 
-func (this *defaultSSInBoundProcessor) OnData([]byte) {
-
+func (this *defaultSSInBoundProcessor) OnData(data []byte) {
+	this.w += len(data)
 }
 
 func (this *defaultSSInBoundProcessor) Unpack() (interface{}, error) {
-	return nil, nil
-}
-
-func (this *defaultSSInBoundProcessor) OnSocketClose() {
-
+	if this.w == 0 {
+		return nil, nil
+	} else {
+		o := make([]byte, 0, this.w)
+		o = append(o, this.buffer[:this.w]...)
+		this.w = 0
+		return o, nil
+	}
 }
 
 type StreamSocket struct {
 	SocketBase
-	conn net.Conn
+	inboundProcessor StreamSocketInBoundProcessor
+	conn             net.Conn
+}
+
+func (this *StreamSocket) getInBoundProcessor() kendynet.InBoundProcessor {
+	return this.inboundProcessor
+}
+
+func (this *StreamSocket) SetInBoundProcessor(in kendynet.InBoundProcessor) kendynet.StreamSession {
+	this.inboundProcessor = in.(StreamSocketInBoundProcessor)
+	return this
+}
+
+func (this *StreamSocket) recvThreadFunc() {
+	defer this.ioWait.Done()
+
+	oldTimeout := this.getRecvTimeout()
+	timeout := oldTimeout
+
+	for !this.testFlag(fclosed | frclosed) {
+
+		var (
+			p   interface{}
+			err error
+			n   int
+		)
+
+		isUnpackError := false
+
+		for {
+			p, err = this.inboundProcessor.Unpack()
+			if nil != p {
+				break
+			} else if nil != err {
+				isUnpackError = true
+				break
+			} else {
+
+				oldTimeout = timeout
+				timeout = this.getRecvTimeout()
+
+				if oldTimeout != timeout && timeout == 0 {
+					this.conn.SetReadDeadline(time.Time{})
+				}
+
+				buff := this.inboundProcessor.GetRecvBuff()
+				if timeout > 0 {
+					this.conn.SetReadDeadline(time.Now().Add(timeout))
+					n, err = this.conn.Read(buff)
+				} else {
+					n, err = this.conn.Read(buff)
+				}
+
+				if nil == err {
+					this.inboundProcessor.OnData(buff[:n])
+				} else {
+					break
+				}
+			}
+		}
+
+		if !this.testFlag(fclosed | frclosed) {
+			if nil != err {
+				if kendynet.IsNetTimeout(err) {
+					err = kendynet.ErrRecvTimeout
+				}
+
+				if nil != this.errorCallback {
+
+					if isUnpackError {
+						this.Close(err, 0)
+					} else if err != kendynet.ErrRecvTimeout {
+						this.setFlag(frclosed)
+					}
+
+					this.errorCallback(this, err)
+				} else {
+					this.Close(err, 0)
+				}
+
+			} else if p != nil {
+				this.inboundCallBack(this, p)
+			}
+		} else {
+			break
+		}
+	}
 }
 
 func (this *StreamSocket) sendThreadFunc() {
@@ -155,86 +238,6 @@ func (this *StreamSocket) sendThreadFunc() {
 	}
 }
 
-/*func (this *StreamSocket) sendThreadFunc() {
-	defer this.ioWait.Done()
-
-	var err error
-
-	writer := bufio.NewWriterSize(this.conn, kendynet.SendBufferSize)
-
-	localList := make([]interface{}, 0, 32)
-
-	closed := false
-
-	for {
-
-		timeout := this.getSendTimeout()
-
-		closed, localList = this.sendQue.Swap(localList)
-		size := len(localList)
-		if closed && size == 0 {
-			break
-		}
-
-		for i := 0; i < size; i++ {
-			msg := localList[i].(kendynet.Message)
-			localList[i] = nil
-
-			data := msg.Bytes()
-			for data != nil || (i == (size-1) && writer.Buffered() > 0) {
-				if data != nil {
-					var s int
-					if len(data) > writer.Available() {
-						s = writer.Available()
-					} else {
-						s = len(data)
-					}
-					writer.Write(data[:s])
-
-					if s != len(data) {
-						data = data[s:]
-					} else {
-						data = nil
-					}
-				}
-
-				if writer.Available() == 0 || i == (size-1) {
-					if timeout > 0 {
-						this.conn.SetWriteDeadline(time.Now().Add(timeout))
-						err = writer.Flush()
-						this.conn.SetWriteDeadline(time.Time{})
-					} else {
-						err = writer.Flush()
-					}
-
-					if err != nil {
-						if !this.testFlag(fclosed) {
-							if kendynet.IsNetTimeout(err) {
-								err = kendynet.ErrSendTimeout
-							}
-
-							if nil != this.errorCallback {
-								if err != kendynet.ErrSendTimeout {
-									this.Close(err, 0)
-								}
-								this.errorCallback(this, err)
-							} else {
-								this.Close(err, 0)
-							}
-
-							if this.testFlag(fclosed) {
-								return
-							}
-						} else {
-							return
-						}
-					}
-				}
-			}
-		}
-	}
-}*/
-
 func NewStreamSocket(conn net.Conn) kendynet.StreamSession {
 	switch conn.(type) {
 	case *net.TCPConn, *net.UnixConn:
@@ -253,7 +256,6 @@ func NewStreamSocket(conn net.Conn) kendynet.StreamSession {
 	}
 
 	runtime.SetFinalizer(s, func(s *StreamSocket) {
-		//fmt.Println("gc")
 		s.Close(errors.New("gc"), 0)
 	})
 

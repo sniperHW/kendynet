@@ -32,18 +32,11 @@ const (
 	SendBufferSize = 65535 //64k
 )
 
-//type Message interface {
-//	Bytes() []byte
-//}
-
 type InBoundProcessor interface {
-	//供aio socket使用
-	GetRecvBuff() []byte
-	OnData([]byte)
+	//GetRecvBuff() []byte
+	//OnData([]byte)
 	Unpack() (interface{}, error)
-	OnSocketClose()
-	//供阻塞式socket使用
-	ReceiveAndUnpack(StreamSession) (interface{}, error)
+	//OnSocketClose()
 }
 
 type EnCoder interface {
@@ -51,8 +44,6 @@ type EnCoder interface {
 }
 
 type StreamSession interface {
-	//SetWaitMode(bool)
-
 	/*
 		发送一个对象，使用encoder将对象编码
 	*/

@@ -20,8 +20,9 @@ type SocketImpl interface {
 	kendynet.StreamSession
 	recvThreadFunc()
 	sendThreadFunc()
-	//sendMessage(kendynet.Message) error
 	defaultInBoundProcessor() kendynet.InBoundProcessor
+	getInBoundProcessor() kendynet.InBoundProcessor
+	SetInBoundProcessor(kendynet.InBoundProcessor) kendynet.StreamSession
 }
 
 type SocketBase struct {
@@ -37,11 +38,10 @@ type SocketBase struct {
 	sendOnce      sync.Once
 	ioWait        sync.WaitGroup
 
-	encoder          kendynet.EnCoder
-	inboundProcessor kendynet.InBoundProcessor
-	errorCallback    func(kendynet.StreamSession, error)
-	closeCallBack    func(kendynet.StreamSession, error)
-	inboundCallBack  func(kendynet.StreamSession, interface{})
+	encoder         kendynet.EnCoder
+	errorCallback   func(kendynet.StreamSession, error)
+	closeCallBack   func(kendynet.StreamSession, error)
+	inboundCallBack func(kendynet.StreamSession, interface{})
 }
 
 func (this *SocketBase) setFlag(flag int32) {
@@ -103,11 +103,6 @@ func (this *SocketBase) SetEncoder(encoder kendynet.EnCoder) kendynet.StreamSess
 	return this.imp
 }
 
-func (this *SocketBase) SetInBoundProcessor(in kendynet.InBoundProcessor) kendynet.StreamSession {
-	this.inboundProcessor = in
-	return this.imp
-}
-
 func (this *SocketBase) SetSendQueueSize(size int) kendynet.StreamSession {
 	this.sendQue.SetFullSize(size)
 	return this.imp
@@ -150,56 +145,6 @@ func (this *SocketBase) Send(o interface{}) error {
 	}
 }
 
-func (this *SocketBase) recvThreadFunc() {
-	defer this.ioWait.Done()
-
-	conn := this.imp.GetNetConn()
-
-	oldTimeout := this.getRecvTimeout()
-	recvTimeout := oldTimeout
-
-	for !this.testFlag(fclosed | frclosed) {
-		var (
-			p   interface{}
-			err error
-		)
-
-		oldTimeout = recvTimeout
-		recvTimeout = this.getRecvTimeout()
-		if oldTimeout != recvTimeout && recvTimeout == 0 {
-			conn.SetReadDeadline(time.Time{})
-		}
-
-		if recvTimeout > 0 {
-			conn.SetReadDeadline(time.Now().Add(recvTimeout))
-			p, err = this.inboundProcessor.ReceiveAndUnpack(this.imp)
-		} else {
-			p, err = this.inboundProcessor.ReceiveAndUnpack(this.imp)
-		}
-
-		if !this.testFlag(fclosed | frclosed) {
-			if nil != err {
-				if kendynet.IsNetTimeout(err) {
-					err = kendynet.ErrRecvTimeout
-				}
-
-				if nil != this.errorCallback {
-					if err != kendynet.ErrRecvTimeout {
-						this.setFlag(frclosed)
-					}
-					this.errorCallback(this.imp, err)
-				} else {
-					this.Close(err, 0)
-				}
-			} else if p != nil {
-				this.inboundCallBack(this.imp, p)
-			}
-		} else {
-			break
-		}
-	}
-}
-
 func (this *SocketBase) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err error) {
 
 	this.beginOnce.Do(func() {
@@ -210,8 +155,8 @@ func (this *SocketBase) BeginRecv(cb func(kendynet.StreamSession, interface{})) 
 		if this.testFlag(fclosed | frclosed) {
 			err = kendynet.ErrSocketClose
 		} else {
-			if nil == this.inboundProcessor {
-				this.inboundProcessor = this.imp.defaultInBoundProcessor()
+			if nil == this.imp.getInBoundProcessor() {
+				this.imp.SetInBoundProcessor(this.imp.defaultInBoundProcessor())
 			}
 			this.inboundCallBack = cb
 			this.ioWait.Add(1)
@@ -268,5 +213,4 @@ func (this *SocketBase) Close(reason error, delay time.Duration) {
 		})
 
 	})
-
 }

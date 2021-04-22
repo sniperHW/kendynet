@@ -5,15 +5,14 @@
 package socket
 
 import (
+	"errors"
 	"fmt"
 	gorilla "github.com/gorilla/websocket"
 	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/buffer"
 	"github.com/sniperHW/kendynet/message"
 	"github.com/sniperHW/kendynet/util"
 	"net"
-	//"sync/atomic"
-	"errors"
-	"github.com/sniperHW/kendynet/buffer"
 	"runtime"
 	"time"
 )
@@ -21,40 +20,126 @@ import (
 var ErrInvaildWSMessage = fmt.Errorf("invaild websocket message")
 
 /*
-*   无封包结构，直接将收到的所有数据返回
+ *   无封包结构，直接将收到的所有数据返回
  */
 
+type WebsocketInBoundProcessor interface {
+	kendynet.InBoundProcessor
+	OnData(int, []byte)
+}
+
 type defaultWSInBoundProcessor struct {
+	gotData     bool
+	messageType int
+	data        []byte
 }
 
-func (this *defaultWSInBoundProcessor) ReceiveAndUnpack(sess kendynet.StreamSession) (interface{}, error) {
-	mt, msg, err := sess.(*WebSocket).Read()
-	if err != nil {
-		return nil, err
-	} else {
-		return message.NewWSMessage(mt, msg), nil
-	}
-}
-
-func (this *defaultWSInBoundProcessor) GetRecvBuff() []byte {
-	return nil
-}
-
-func (this *defaultWSInBoundProcessor) OnData([]byte) {
-
+func (this *defaultWSInBoundProcessor) OnData(messageType int, data []byte) {
+	this.gotData = true
+	this.messageType = messageType
+	this.data = data
 }
 
 func (this *defaultWSInBoundProcessor) Unpack() (interface{}, error) {
-	return nil, nil
-}
-
-func (this *defaultWSInBoundProcessor) OnSocketClose() {
-
+	if this.gotData {
+		msg := message.NewWSMessage(this.messageType, this.data)
+		this.gotData = false
+		this.data = nil
+		return msg, nil
+	} else {
+		return nil, nil
+	}
 }
 
 type WebSocket struct {
 	SocketBase
-	conn *gorilla.Conn
+	inboundProcessor WebsocketInBoundProcessor
+	conn             *gorilla.Conn
+}
+
+func (this *WebSocket) getInBoundProcessor() kendynet.InBoundProcessor {
+	return this.inboundProcessor
+}
+
+func (this *WebSocket) SetInBoundProcessor(in kendynet.InBoundProcessor) kendynet.StreamSession {
+	this.inboundProcessor = in.(WebsocketInBoundProcessor)
+	return this
+}
+
+func (this *WebSocket) recvThreadFunc() {
+	defer this.ioWait.Done()
+
+	oldTimeout := this.getRecvTimeout()
+	timeout := oldTimeout
+
+	for !this.testFlag(fclosed | frclosed) {
+
+		var (
+			p           interface{}
+			err         error
+			messageType int
+			data        []byte
+		)
+
+		isUnpackError := false
+
+		for {
+			p, err = this.inboundProcessor.Unpack()
+			if nil != p {
+				break
+			} else if nil != err {
+				isUnpackError = true
+				break
+			} else {
+
+				oldTimeout = timeout
+				timeout = this.getRecvTimeout()
+
+				if oldTimeout != timeout && timeout == 0 {
+					this.conn.SetReadDeadline(time.Time{})
+				}
+
+				if timeout > 0 {
+					this.conn.SetReadDeadline(time.Now().Add(timeout))
+					messageType, data, err = this.conn.ReadMessage()
+				} else {
+					messageType, data, err = this.conn.ReadMessage()
+				}
+
+				if nil == err {
+					this.inboundProcessor.OnData(messageType, data)
+				} else {
+					break
+				}
+			}
+		}
+
+		if !this.testFlag(fclosed | frclosed) {
+			if nil != err {
+				if kendynet.IsNetTimeout(err) {
+					err = kendynet.ErrRecvTimeout
+				}
+
+				if nil != this.errorCallback {
+
+					if isUnpackError {
+						this.Close(err, 0)
+					} else if err != kendynet.ErrRecvTimeout {
+						this.setFlag(frclosed)
+					}
+
+					this.errorCallback(this, err)
+				} else {
+					this.Close(err, 0)
+				}
+
+			} else if p != nil {
+				this.inboundCallBack(this, p)
+			}
+		} else {
+			break
+		}
+	}
 }
 
 func (this *WebSocket) sendThreadFunc() {
@@ -179,10 +264,6 @@ func (this *WebSocket) GetUnderConn() interface{} {
 
 func (this *WebSocket) GetNetConn() net.Conn {
 	return this.conn.UnderlyingConn()
-}
-
-func (this *WebSocket) Read() (messageType int, p []byte, err error) {
-	return this.conn.ReadMessage()
 }
 
 func (this *WebSocket) defaultInBoundProcessor() kendynet.InBoundProcessor {

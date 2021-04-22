@@ -358,10 +358,12 @@ func TestSendTimeout(t *testing.T) {
 		session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
 		})
 
+		fmt.Println("--------------------")
 		for {
 			err := session.Send(strings.Repeat("a", 65536))
 			//fmt.Println(err)
 			if nil != err && err != kendynet.ErrSendQueFull {
+				fmt.Println("break here")
 				break
 			}
 		}
