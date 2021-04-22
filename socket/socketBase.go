@@ -28,8 +28,8 @@ type SocketBase struct {
 	flag          int32
 	ud            atomic.Value
 	sendQue       *util.BlockQueue
-	sendTimeout   atomic.Value
-	recvTimeout   atomic.Value
+	sendTimeout   int64
+	recvTimeout   int64
 	sendCloseChan chan struct{}
 	imp           SocketImpl
 	closeOnce     sync.Once
@@ -79,12 +79,12 @@ func (this *SocketBase) GetUserData() interface{} {
 }
 
 func (this *SocketBase) SetRecvTimeout(timeout time.Duration) kendynet.StreamSession {
-	this.recvTimeout.Store(timeout)
+	atomic.StoreInt64(&this.recvTimeout, int64(timeout))
 	return this.imp
 }
 
 func (this *SocketBase) SetSendTimeout(timeout time.Duration) kendynet.StreamSession {
-	this.sendTimeout.Store(timeout)
+	atomic.StoreInt64(&this.sendTimeout, int64(timeout))
 	return this.imp
 }
 
@@ -119,21 +119,11 @@ func (this *SocketBase) ShutdownRead() {
 }
 
 func (this *SocketBase) getRecvTimeout() time.Duration {
-	t := this.recvTimeout.Load()
-	if nil == t {
-		return 0
-	} else {
-		return t.(time.Duration)
-	}
+	return time.Duration(atomic.LoadInt64(&this.recvTimeout))
 }
 
 func (this *SocketBase) getSendTimeout() time.Duration {
-	t := this.sendTimeout.Load()
-	if nil == t {
-		return 0
-	} else {
-		return t.(time.Duration)
-	}
+	return time.Duration(atomic.LoadInt64(&this.sendTimeout))
 }
 
 func (this *SocketBase) Send(o interface{}) error {

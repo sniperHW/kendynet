@@ -10,6 +10,8 @@ import (
 	"github.com/sniperHW/kendynet/rpc"
 	"github.com/sniperHW/kendynet/timer"
 	//"github.com/sniperHW/kendynet/util"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"strconv"
 	"sync/atomic"
@@ -21,6 +23,11 @@ var timeoutcount int32
 var reqcount int32
 
 func server(service string) {
+
+	go func() {
+		http.ListenAndServe("localhost:8899", nil)
+	}()
+
 	count := int32(0)
 	total := 0
 	timer.Repeat(time.Second, func(_ *timer.Timer, ctx interface{}) {
