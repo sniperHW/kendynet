@@ -60,6 +60,10 @@ func (this *StreamSocket) SetInBoundProcessor(in kendynet.InBoundProcessor) kend
 }
 
 func (this *StreamSocket) recvThreadFunc() {
+	if this.flag.Test(fclosed) {
+		return
+	}
+
 	defer this.ioDone()
 
 	oldTimeout := this.getRecvTimeout()
@@ -136,6 +140,10 @@ func (this *StreamSocket) recvThreadFunc() {
 }
 
 func (this *StreamSocket) sendThreadFunc() {
+	if this.flag.Test(fclosed) {
+		return
+	}
+
 	defer this.ioDone()
 
 	var err error
