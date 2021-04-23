@@ -7,6 +7,7 @@ import (
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/buffer"
 	"github.com/sniperHW/kendynet/gopool"
+	"github.com/sniperHW/kendynet/util"
 	"math/rand"
 	"net"
 	"runtime"
@@ -129,16 +130,16 @@ func (this *defaultInBoundProcessor) OnSocketClose() {
 }
 
 const (
-	fclosed  = int32(1 << 1)
-	frclosed = int32(1 << 2)
-	fwclosed = int32(1 << 3)
+	fclosed  = uint32(1 << 1)
+	frclosed = uint32(1 << 2)
+	fwclosed = uint32(1 << 3)
 )
 
 type Socket struct {
 	ud               atomic.Value
 	muW              sync.Mutex
 	sendQueue        *list.List
-	flag             int32
+	flag             util.Flag
 	aioConn          *goaio.AIOConn
 	encoder          kendynet.EnCoder
 	inboundProcessor AioInBoundProcessor
@@ -160,20 +161,7 @@ type Socket struct {
 }
 
 func (s *Socket) IsClosed() bool {
-	return s.testFlag(fclosed)
-}
-
-func (s *Socket) setFlag(flag int32) {
-	for {
-		f := atomic.LoadInt32(&s.flag)
-		if atomic.CompareAndSwapInt32(&s.flag, f, f|flag) {
-			break
-		}
-	}
-}
-
-func (s *Socket) testFlag(flag int32) bool {
-	return atomic.LoadInt32(&s.flag)&flag > 0
+	return s.flag.Test(fclosed)
 }
 
 func (s *Socket) SetEncoder(e kendynet.EnCoder) kendynet.StreamSession {
@@ -239,13 +227,13 @@ func (s *Socket) SetInBoundProcessor(in kendynet.InBoundProcessor) kendynet.Stre
 }
 
 func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
-	if s.testFlag(fclosed | frclosed) {
+	if s.flag.Test(fclosed | frclosed) {
 		s.ioWait.Done()
 	} else {
 		recvAgain := false
 
 		defer func() {
-			if !s.testFlag(fclosed|frclosed) && recvAgain {
+			if !s.flag.Test(fclosed|frclosed) && recvAgain {
 				b := s.inboundProcessor.GetRecvBuff()
 				if nil != s.aioConn.Recv(b, &s.recvContext) {
 					s.ioWait.Done()
@@ -261,7 +249,7 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 				r.Err = kendynet.ErrRecvTimeout
 				recvAgain = true
 			} else {
-				s.setFlag(frclosed)
+				s.flag.Set(frclosed)
 			}
 
 			if nil != s.errorCallback {
@@ -272,7 +260,7 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 
 		} else {
 			s.inboundProcessor.OnData(r.Buff[:r.Bytestransfer])
-			for !s.testFlag(fclosed | frclosed) {
+			for !s.flag.Test(fclosed | frclosed) {
 				msg, err := s.inboundProcessor.Unpack()
 				if nil != err {
 					s.Close(err, 0)
@@ -331,7 +319,7 @@ func (s *Socket) doSend() {
 		}
 	} else {
 		s.ioWait.Done()
-		if !s.testFlag(fclosed) {
+		if !s.flag.Test(fclosed) {
 			s.Close(err, 0)
 			if nil != s.errorCallback {
 				s.errorCallback(s, err)
@@ -350,19 +338,17 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 		s.b = nil
 		if s.sendQueue.Len() == 0 {
 			s.sendLock = false
-			if s.testFlag(fclosed | fwclosed) {
+			if s.flag.Test(fclosed | fwclosed) {
 				s.netconn.(interface{ CloseWrite() error }).CloseWrite()
 				close(s.sendOverChan)
 			}
 		} else {
 			s.emitSendTask()
 		}
-	} else if !s.testFlag(fclosed) {
+	} else if !s.flag.Test(fclosed) {
 
 		if r.Err == goaio.ErrSendTimeout {
 			r.Err = kendynet.ErrSendTimeout
-			//超时可能会发送部分数据
-			s.offset += r.Bytestransfer
 		}
 
 		if nil != s.errorCallback {
@@ -373,8 +359,10 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 			s.errorCallback(s, r.Err)
 
 			//如果是发送超时且用户没有关闭socket,再次请求发送
-			if r.Err == kendynet.ErrSendTimeout && !s.testFlag(fclosed) {
+			if r.Err == kendynet.ErrSendTimeout && !s.flag.Test(fclosed) {
 				s.muW.Lock()
+				//超时可能会发送部分数据
+				s.offset += r.Bytestransfer
 				s.emitSendTask()
 				s.muW.Unlock()
 			}
@@ -389,7 +377,7 @@ func (s *Socket) Send(o interface{}) error {
 		return kendynet.ErrInvaildEncoder
 	} else if nil == o {
 		return kendynet.ErrInvaildObject
-	} else if s.testFlag(fclosed | fwclosed) {
+	} else if s.flag.Test(fclosed | fwclosed) {
 		return kendynet.ErrSocketClose
 	} else {
 		s.muW.Lock()
@@ -409,12 +397,12 @@ func (s *Socket) Send(o interface{}) error {
 }
 
 func (s *Socket) ShutdownRead() {
-	s.setFlag(frclosed)
+	s.flag.Set(frclosed)
 	s.netconn.(interface{ CloseRead() error }).CloseRead()
 }
 
 func (s *Socket) ShutdownWrite() {
-	s.setFlag(fwclosed)
+	s.flag.Set(fwclosed)
 	s.muW.Lock()
 	defer s.muW.Unlock()
 	if s.sendQueue.Len() == 0 {
@@ -432,7 +420,7 @@ func (s *Socket) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err er
 			panic("BeginRecv cb is nil")
 		}
 
-		if s.testFlag(fclosed | frclosed) {
+		if s.flag.Test(fclosed | frclosed) {
 			err = kendynet.ErrSocketClose
 		} else {
 			//发起第一个recv
@@ -457,7 +445,7 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 	s.closeOnce.Do(func() {
 		runtime.SetFinalizer(s, nil)
 
-		s.setFlag(fclosed)
+		s.flag.Set(fclosed)
 
 		s.muW.Lock()
 		if s.sendQueue.Len() > 0 {

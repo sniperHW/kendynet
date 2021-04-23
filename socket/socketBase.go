@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	fclosed  = int32(1 << 1) //是否已经调用Close
-	frclosed = int32(1 << 2) //调用来了shutdownRead
+	fclosed  = uint32(1 << 1) //是否已经调用Close
+	frclosed = uint32(1 << 2) //调用来了shutdownRead
 )
 
 type SocketImpl interface {
@@ -26,7 +26,7 @@ type SocketImpl interface {
 }
 
 type SocketBase struct {
-	flag          int32
+	flag          util.Flag
 	ud            atomic.Value
 	sendQue       *util.BlockQueue
 	sendTimeout   int64
@@ -44,21 +44,8 @@ type SocketBase struct {
 	inboundCallBack func(kendynet.StreamSession, interface{})
 }
 
-func (this *SocketBase) setFlag(flag int32) {
-	for {
-		f := atomic.LoadInt32(&this.flag)
-		if atomic.CompareAndSwapInt32(&this.flag, f, f|flag) {
-			break
-		}
-	}
-}
-
-func (this *SocketBase) testFlag(flag int32) bool {
-	return atomic.LoadInt32(&this.flag)&flag > 0
-}
-
 func (this *SocketBase) IsClosed() bool {
-	return this.testFlag(fclosed)
+	return this.flag.Test(fclosed)
 }
 
 func (this *SocketBase) LocalAddr() net.Addr {
@@ -109,7 +96,7 @@ func (this *SocketBase) SetSendQueueSize(size int) kendynet.StreamSession {
 }
 
 func (this *SocketBase) ShutdownRead() {
-	this.setFlag(frclosed)
+	this.flag.Set(frclosed)
 	this.imp.GetNetConn().(interface{ CloseRead() error }).CloseRead()
 }
 
@@ -160,7 +147,7 @@ func (this *SocketBase) BeginRecv(cb func(kendynet.StreamSession, interface{})) 
 			panic("BeginRecv cb is nil")
 		}
 
-		if this.testFlag(fclosed | frclosed) {
+		if this.flag.Test(fclosed | frclosed) {
 			err = kendynet.ErrSocketClose
 		} else {
 			if nil == this.imp.getInBoundProcessor() {
@@ -180,7 +167,7 @@ func (this *SocketBase) Close(reason error, delay time.Duration) {
 	this.closeOnce.Do(func() {
 		runtime.SetFinalizer(this.imp, nil)
 
-		this.setFlag(fclosed)
+		this.flag.Set(fclosed)
 
 		wclosed := this.sendQue.Closed()
 
