@@ -2,7 +2,6 @@ package socket
 
 import (
 	"github.com/sniperHW/kendynet"
-	"github.com/sniperHW/kendynet/gopool"
 	"github.com/sniperHW/kendynet/util"
 	"net"
 	"runtime"
@@ -14,6 +13,7 @@ import (
 const (
 	fclosed  = uint32(1 << 1) //是否已经调用Close
 	frclosed = uint32(1 << 2) //调用来了shutdownRead
+	fdoclose = uint32(1 << 3)
 )
 
 type SocketImpl interface {
@@ -36,7 +36,9 @@ type SocketBase struct {
 	closeOnce     sync.Once
 	beginOnce     sync.Once
 	sendOnce      sync.Once
-	ioWait        sync.WaitGroup
+	ioCount       int32
+	closeReason   error
+	//ioWait        sync.WaitGroup
 
 	encoder         kendynet.EnCoder
 	errorCallback   func(kendynet.StreamSession, error)
@@ -101,11 +103,12 @@ func (this *SocketBase) ShutdownRead() {
 }
 
 func (this *SocketBase) ShutdownWrite() {
-	this.sendQue.Close()
-	this.sendOnce.Do(func() {
-		this.ioWait.Add(1)
-		go this.imp.sendThreadFunc()
-	})
+	if this.sendQue.Close() {
+		this.sendOnce.Do(func() {
+			this.addIO()
+			go this.imp.sendThreadFunc()
+		})
+	}
 }
 
 func (this *SocketBase) getRecvTimeout() time.Duration {
@@ -133,7 +136,7 @@ func (this *SocketBase) Send(o interface{}) error {
 			return err
 		}
 		this.sendOnce.Do(func() {
-			this.ioWait.Add(1)
+			this.addIO()
 			go this.imp.sendThreadFunc()
 		})
 		return nil
@@ -154,12 +157,24 @@ func (this *SocketBase) BeginRecv(cb func(kendynet.StreamSession, interface{})) 
 				this.imp.SetInBoundProcessor(this.imp.defaultInBoundProcessor())
 			}
 			this.inboundCallBack = cb
-			this.ioWait.Add(1)
+			this.addIO()
 			go this.imp.recvThreadFunc()
 		}
 	})
 
 	return
+}
+
+func (this *SocketBase) addIO() {
+	atomic.AddInt32(&this.ioCount, 1)
+}
+
+func (this *SocketBase) ioDone() {
+	if 0 == atomic.AddInt32(&this.ioCount, -1) && this.flag.Test(fdoclose) {
+		if nil != this.closeCallBack {
+			this.closeCallBack(this.imp, this.closeReason)
+		}
+	}
 }
 
 func (this *SocketBase) Close(reason error, delay time.Duration) {
@@ -200,12 +215,13 @@ func (this *SocketBase) Close(reason error, delay time.Duration) {
 			this.imp.GetNetConn().Close()
 		}
 
-		gopool.Go(func() {
-			this.ioWait.Wait()
+		this.closeReason = reason
+		this.flag.Set(fdoclose)
+
+		if atomic.LoadInt32(&this.ioCount) == 0 {
 			if nil != this.closeCallBack {
 				this.closeCallBack(this.imp, reason)
 			}
-		})
-
+		}
 	})
 }

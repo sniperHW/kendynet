@@ -67,7 +67,7 @@ func (this *WebSocket) SetInBoundProcessor(in kendynet.InBoundProcessor) kendyne
 }
 
 func (this *WebSocket) recvThreadFunc() {
-	defer this.ioWait.Done()
+	defer this.ioDone()
 
 	oldTimeout := this.getRecvTimeout()
 	timeout := oldTimeout
@@ -143,7 +143,7 @@ func (this *WebSocket) recvThreadFunc() {
 }
 
 func (this *WebSocket) sendThreadFunc() {
-	defer this.ioWait.Done()
+	defer this.ioDone()
 
 	localList := make([]interface{}, 0, 32)
 

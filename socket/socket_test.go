@@ -432,10 +432,9 @@ func TestWebSocket(t *testing.T) {
 				fmt.Println("reason", reason)
 			})
 			session = nil
-			for i := 0; i < 2; i++ {
-				time.Sleep(time.Second)
-				runtime.GC()
-			}
+
+			runtime.GC()
+
 		}
 
 		{
@@ -600,10 +599,9 @@ func TestStreamSocket(t *testing.T) {
 			_ = session.LocalAddr()
 			_ = session.RemoteAddr()
 			session = nil
-			for i := 0; i < 2; i++ {
-				time.Sleep(time.Second)
-				runtime.GC()
-			}
+
+			runtime.GC()
+
 		}
 
 		{

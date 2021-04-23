@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"sync/atomic"
 	//"syscall"
+	"errors"
+	"github.com/sniperHW/kendynet/buffer"
 	"github.com/sniperHW/kendynet/golog"
 	"net/http"
 	_ "net/http/pprof"

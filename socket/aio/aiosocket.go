@@ -6,7 +6,6 @@ import (
 	"github.com/sniperHW/goaio"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/buffer"
-	"github.com/sniperHW/kendynet/gopool"
 	"github.com/sniperHW/kendynet/util"
 	"math/rand"
 	"net"
@@ -133,6 +132,7 @@ const (
 	fclosed  = uint32(1 << 1)
 	frclosed = uint32(1 << 2)
 	fwclosed = uint32(1 << 3)
+	fdoclose = uint32(1 << 4)
 )
 
 type Socket struct {
@@ -152,12 +152,13 @@ type Socket struct {
 	sendLock         bool
 	b                *buffer.Buffer
 	offset           int
-	ioWait           sync.WaitGroup
 	sendOverChan     chan struct{}
 	netconn          net.Conn
 	tq               *goaio.TaskQueue
 	sendContext      ioContext
 	recvContext      ioContext
+	closeReason      error
+	ioCount          int32
 }
 
 func (s *Socket) IsClosed() bool {
@@ -228,7 +229,7 @@ func (s *Socket) SetInBoundProcessor(in kendynet.InBoundProcessor) kendynet.Stre
 
 func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 	if s.flag.Test(fclosed | frclosed) {
-		s.ioWait.Done()
+		s.ioDone()
 	} else {
 		recvAgain := false
 
@@ -236,10 +237,10 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 			if !s.flag.Test(fclosed|frclosed) && recvAgain {
 				b := s.inboundProcessor.GetRecvBuff()
 				if nil != s.aioConn.Recv(b, &s.recvContext) {
-					s.ioWait.Done()
+					s.ioDone()
 				}
 			} else {
-				s.ioWait.Done()
+				s.ioDone()
 			}
 		}()
 
@@ -280,11 +281,11 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 }
 
 func (s *Socket) emitSendTask() {
-	s.ioWait.Add(1)
+	s.addIO()
 	if nil == s.tq.Push(s) {
 		s.sendLock = true
 	} else {
-		s.ioWait.Done()
+		s.ioDone()
 		s.sendLock = false
 	}
 }
@@ -315,10 +316,10 @@ func (s *Socket) doSend() {
 
 	if nil == err {
 		if nil != s.aioConn.Send(s.b.Bytes()[s.offset:], &s.sendContext) {
-			s.ioWait.Done()
+			s.ioDone()
 		}
 	} else {
-		s.ioWait.Done()
+		s.ioDone()
 		if !s.flag.Test(fclosed) {
 			s.Close(err, 0)
 			if nil != s.errorCallback {
@@ -329,7 +330,7 @@ func (s *Socket) doSend() {
 }
 
 func (s *Socket) onSendComplete(r *goaio.AIOResult) {
-	defer s.ioWait.Done()
+	defer s.ioDone()
 	if nil == r.Err {
 		s.muW.Lock()
 		defer s.muW.Unlock()
@@ -402,14 +403,18 @@ func (s *Socket) ShutdownRead() {
 }
 
 func (s *Socket) ShutdownWrite() {
-	s.flag.Set(fwclosed)
 	s.muW.Lock()
 	defer s.muW.Unlock()
-	if s.sendQueue.Len() == 0 {
-		s.netconn.(interface{ CloseWrite() error }).CloseWrite()
+	if s.flag.Test(fwclosed | fclosed) {
+		return
 	} else {
-		if !s.sendLock {
-			s.emitSendTask()
+		s.flag.Set(fwclosed)
+		if s.sendQueue.Len() == 0 {
+			s.netconn.(interface{ CloseWrite() error }).CloseWrite()
+		} else {
+			if !s.sendLock {
+				s.emitSendTask()
+			}
 		}
 	}
 }
@@ -431,14 +436,31 @@ func (s *Socket) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err er
 			}
 			s.inboundCallBack = cb
 
-			s.ioWait.Add(1)
+			s.addIO()
 			if err = s.aioConn.Recv(s.inboundProcessor.GetRecvBuff(), &s.recvContext); nil != err {
-				s.ioWait.Done()
+				s.ioDone()
 			}
 
 		}
 	})
 	return
+}
+
+func (s *Socket) addIO() {
+	atomic.AddInt32(&s.ioCount, 1)
+}
+
+func (s *Socket) ioDone() {
+	if 0 == atomic.AddInt32(&s.ioCount, -1) && s.flag.Test(fdoclose) {
+
+		if nil != s.inboundProcessor {
+			s.inboundProcessor.OnSocketClose()
+		}
+
+		if nil != s.closeCallBack {
+			s.closeCallBack(s, s.closeReason)
+		}
+	}
 }
 
 func (s *Socket) Close(reason error, delay time.Duration) {
@@ -471,15 +493,17 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 			s.aioConn.Close(nil)
 		}
 
-		gopool.Go(func() {
-			s.ioWait.Wait()
+		s.closeReason = reason
+		s.flag.Set(fdoclose)
+
+		if atomic.LoadInt32(&s.ioCount) == 0 {
 			if nil != s.inboundProcessor {
 				s.inboundProcessor.OnSocketClose()
 			}
 			if nil != s.closeCallBack {
 				s.closeCallBack(s, reason)
 			}
-		})
+		}
 	})
 }
 
