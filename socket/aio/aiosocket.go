@@ -422,11 +422,12 @@ func (s *Socket) ShutdownWrite() {
 
 func (s *Socket) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err error) {
 	s.beginOnce.Do(func() {
-		s.addIO()
 
 		if nil == cb {
 			panic("BeginRecv cb is nil")
 		}
+
+		s.addIO()
 
 		if s.flag.Test(fclosed | frclosed) {
 			s.ioDone()
