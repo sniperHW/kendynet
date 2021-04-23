@@ -146,18 +146,20 @@ func (this *SocketBase) Send(o interface{}) error {
 func (this *SocketBase) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err error) {
 
 	this.beginOnce.Do(func() {
+		this.addIO()
+
 		if nil == cb {
 			panic("BeginRecv cb is nil")
 		}
 
 		if this.flag.Test(fclosed | frclosed) {
+			this.ioDone()
 			err = kendynet.ErrSocketClose
 		} else {
 			if nil == this.imp.getInBoundProcessor() {
 				this.imp.SetInBoundProcessor(this.imp.defaultInBoundProcessor())
 			}
 			this.inboundCallBack = cb
-			this.addIO()
 			go this.imp.recvThreadFunc()
 		}
 	})

@@ -281,11 +281,10 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 }
 
 func (s *Socket) emitSendTask() {
-	s.addIO()
 	if nil == s.tq.Push(s) {
+		s.addIO()
 		s.sendLock = true
 	} else {
-		s.ioDone()
 		s.sendLock = false
 	}
 }
@@ -378,11 +377,13 @@ func (s *Socket) Send(o interface{}) error {
 		return kendynet.ErrInvaildEncoder
 	} else if nil == o {
 		return kendynet.ErrInvaildObject
-	} else if s.flag.Test(fclosed | fwclosed) {
-		return kendynet.ErrSocketClose
 	} else {
 		s.muW.Lock()
 		defer s.muW.Unlock()
+
+		if s.flag.Test(fclosed | fwclosed) {
+			return kendynet.ErrSocketClose
+		}
 
 		if s.sendQueue.Len() > s.sendQueueSize {
 			return kendynet.ErrSendQueFull
@@ -421,11 +422,14 @@ func (s *Socket) ShutdownWrite() {
 
 func (s *Socket) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err error) {
 	s.beginOnce.Do(func() {
+		s.addIO()
+
 		if nil == cb {
 			panic("BeginRecv cb is nil")
 		}
 
 		if s.flag.Test(fclosed | frclosed) {
+			s.ioDone()
 			err = kendynet.ErrSocketClose
 		} else {
 			//发起第一个recv
@@ -435,12 +439,9 @@ func (s *Socket) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err er
 				}
 			}
 			s.inboundCallBack = cb
-
-			s.addIO()
 			if err = s.aioConn.Recv(s.inboundProcessor.GetRecvBuff(), &s.recvContext); nil != err {
 				s.ioDone()
 			}
-
 		}
 	})
 	return
@@ -467,14 +468,16 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 	s.closeOnce.Do(func() {
 		runtime.SetFinalizer(s, nil)
 
+		s.muW.Lock()
+
 		s.flag.Set(fclosed)
 
-		s.muW.Lock()
 		if s.sendQueue.Len() > 0 {
 			delay = delay * time.Second
 		} else {
 			delay = 0
 		}
+
 		s.muW.Unlock()
 
 		if delay > 0 {
