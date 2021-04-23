@@ -365,10 +365,15 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 				s.offset += r.Bytestransfer
 				s.emitSendTask()
 				s.muW.Unlock()
+			} else {
+				close(s.sendOverChan)
 			}
 		} else {
+			close(s.sendOverChan)
 			s.Close(r.Err, 0)
 		}
+	} else {
+		close(s.sendOverChan)
 	}
 }
 
