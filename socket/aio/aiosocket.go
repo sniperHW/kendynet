@@ -280,13 +280,14 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 	}
 }
 
-func (s *Socket) emitSendTask() {
+func (s *Socket) emitSendTask() bool {
 	if nil == s.tq.Push(s) {
 		s.addIO()
 		s.sendLock = true
 	} else {
 		s.sendLock = false
 	}
+	return s.sendLock
 }
 
 func (s *Socket) doSend() {
@@ -330,6 +331,7 @@ func (s *Socket) doSend() {
 
 func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 	defer s.ioDone()
+	sendOver := true
 	if nil == r.Err {
 		s.muW.Lock()
 		defer s.muW.Unlock()
@@ -340,10 +342,11 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 			s.sendLock = false
 			if s.flag.Test(fclosed | fwclosed) {
 				s.netconn.(interface{ CloseWrite() error }).CloseWrite()
-				close(s.sendOverChan)
 			}
 		} else {
-			s.emitSendTask()
+			if s.emitSendTask() {
+				sendOver = false
+			}
 		}
 	} else if !s.flag.Test(fclosed) {
 
@@ -363,16 +366,17 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 				s.muW.Lock()
 				//超时可能会发送部分数据
 				s.offset += r.Bytestransfer
-				s.emitSendTask()
+				if s.emitSendTask() {
+					sendOver = false
+				}
 				s.muW.Unlock()
-			} else {
-				close(s.sendOverChan)
 			}
 		} else {
-			close(s.sendOverChan)
 			s.Close(r.Err, 0)
 		}
-	} else {
+	}
+
+	if sendOver {
 		close(s.sendOverChan)
 	}
 }
