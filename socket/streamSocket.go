@@ -145,6 +145,7 @@ func (this *StreamSocket) sendThreadFunc() {
 	}
 
 	defer this.ioDone()
+	defer close(this.sendCloseChan)
 
 	var err error
 
