@@ -157,6 +157,7 @@ func (this *WebSocket) sendThreadFunc() {
 		closed, localList = this.sendQue.Swap(localList)
 		size := len(localList)
 		if closed && size == 0 {
+			this.conn.UnderlyingConn().(interface{ CloseWrite() error }).CloseWrite()
 			break
 		}
 

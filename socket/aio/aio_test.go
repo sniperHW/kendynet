@@ -8,6 +8,7 @@ import (
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/buffer"
 	"github.com/stretchr/testify/assert"
+	"io"
 	"net"
 	"runtime"
 	"strings"
@@ -373,6 +374,80 @@ func TestSendTimeout(t *testing.T) {
 
 		listener.Close()
 	}
+
+}
+
+func TestShutDownWrite(t *testing.T) {
+	tcpAddr, _ := net.ResolveTCPAddr("tcp", "localhost:8110")
+
+	listener, _ := net.ListenTCP("tcp", tcpAddr)
+
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			} else {
+				NewSocket(aioService, conn).SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
+					fmt.Println("server close")
+				}).SetErrorCallBack(func(sess kendynet.StreamSession, reason error) {
+					if reason == io.EOF {
+						fmt.Println("send ")
+						fmt.Println(sess.Send("hello"))
+					}
+					sess.Close(nil, 1)
+				}).SetEncoder(&encoder{}).BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
+					fmt.Println(string(msg.([]byte)))
+				})
+			}
+		}
+	}()
+
+	{
+		dialer := &net.Dialer{}
+		conn, _ := dialer.Dial("tcp", "localhost:8110")
+		session := NewSocket(aioService, conn)
+
+		die := make(chan struct{})
+
+		session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
+			fmt.Println("client close", reason)
+		}).SetEncoder(&encoder{}).SetRecvTimeout(time.Second * 1)
+
+		session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
+			assert.Equal(t, "hello", string(msg.([]byte)))
+			close(die)
+		})
+
+		session.ShutdownWrite()
+
+		<-die
+	}
+
+	{
+		dialer := &net.Dialer{}
+		conn, _ := dialer.Dial("tcp", "localhost:8110")
+		session := NewSocket(aioService, conn)
+
+		die := make(chan struct{})
+
+		session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
+			fmt.Println("client close", reason)
+		}).SetEncoder(&encoder{}).SetRecvTimeout(time.Second * 1)
+
+		session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
+			assert.Equal(t, "hello", string(msg.([]byte)))
+			close(die)
+		})
+
+		fmt.Println(session.Send("hello"))
+
+		session.ShutdownWrite()
+
+		<-die
+	}
+
+	listener.Close()
 
 }
 

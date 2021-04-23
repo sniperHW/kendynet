@@ -33,10 +33,7 @@ const (
 )
 
 type InBoundProcessor interface {
-	//GetRecvBuff() []byte
-	//OnData([]byte)
 	Unpack() (interface{}, error)
-	//OnSocketClose()
 }
 
 type EnCoder interface {
@@ -58,6 +55,8 @@ type StreamSession interface {
 	Close(reason error, timeout time.Duration)
 
 	ShutdownRead()
+
+	ShutdownWrite()
 
 	IsClosed() bool
 

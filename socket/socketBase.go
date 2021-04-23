@@ -113,6 +113,14 @@ func (this *SocketBase) ShutdownRead() {
 	this.imp.GetNetConn().(interface{ CloseRead() error }).CloseRead()
 }
 
+func (this *SocketBase) ShutdownWrite() {
+	this.sendQue.Close()
+	this.sendOnce.Do(func() {
+		this.ioWait.Add(1)
+		go this.imp.sendThreadFunc()
+	})
+}
+
 func (this *SocketBase) getRecvTimeout() time.Duration {
 	return time.Duration(atomic.LoadInt64(&this.recvTimeout))
 }

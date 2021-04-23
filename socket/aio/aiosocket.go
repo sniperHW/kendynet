@@ -131,6 +131,7 @@ func (this *defaultInBoundProcessor) OnSocketClose() {
 const (
 	fclosed  = int32(1 << 1)
 	frclosed = int32(1 << 2)
+	fwclosed = int32(1 << 3)
 )
 
 type Socket struct {
@@ -349,7 +350,8 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 		s.b = nil
 		if s.sendQueue.Len() == 0 {
 			s.sendLock = false
-			if s.testFlag(fclosed) {
+			if s.testFlag(fclosed | fwclosed) {
+				s.netconn.(interface{ CloseWrite() error }).CloseWrite()
 				close(s.sendOverChan)
 			}
 		} else {
@@ -387,7 +389,7 @@ func (s *Socket) Send(o interface{}) error {
 		return kendynet.ErrInvaildEncoder
 	} else if nil == o {
 		return kendynet.ErrInvaildObject
-	} else if s.testFlag(fclosed) {
+	} else if s.testFlag(fclosed | fwclosed) {
 		return kendynet.ErrSocketClose
 	} else {
 		s.muW.Lock()
@@ -409,6 +411,19 @@ func (s *Socket) Send(o interface{}) error {
 func (s *Socket) ShutdownRead() {
 	s.setFlag(frclosed)
 	s.netconn.(interface{ CloseRead() error }).CloseRead()
+}
+
+func (s *Socket) ShutdownWrite() {
+	s.setFlag(fwclosed)
+	s.muW.Lock()
+	defer s.muW.Unlock()
+	if s.sendQueue.Len() == 0 {
+		s.netconn.(interface{ CloseWrite() error }).CloseWrite()
+	} else {
+		if !s.sendLock {
+			s.emitSendTask()
+		}
+	}
 }
 
 func (s *Socket) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err error) {

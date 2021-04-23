@@ -171,6 +171,7 @@ func (this *StreamSocket) sendThreadFunc() {
 			closed, localList = this.sendQue.Swap(localList)
 			size = len(localList)
 			if closed && size == 0 {
+				this.conn.(interface{ CloseWrite() error }).CloseWrite()
 				break
 			}
 			i = 0
