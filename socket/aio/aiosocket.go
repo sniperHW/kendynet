@@ -69,7 +69,7 @@ func NewSocketService(shareBuffer goaio.ShareBuffer) *SocketService {
 	}
 
 	for i := 0; i < 2; i++ {
-		se := goaio.NewAIOService(2)
+		se := goaio.NewAIOService(1)
 		s.services = append(s.services, se)
 		go s.completeRoutine(se)
 	}
