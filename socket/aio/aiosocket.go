@@ -265,6 +265,7 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 
 func (s *Socket) emitSendTask() {
 	s.addIO()
+	s.sendLock = true
 	sendRoutinePool.Go(s.doSend)
 }
 
