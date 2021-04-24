@@ -310,7 +310,7 @@ func (s *Socket) doSend() {
 
 func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 	defer s.ioDone()
-	sendOver := true
+	sendOver := false
 	if nil == r.Err {
 		s.muW.Lock()
 		defer s.muW.Unlock()
@@ -324,7 +324,6 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 			}
 		} else {
 			s.emitSendTask()
-			sendOver = false
 		}
 	} else if !s.flag.Test(fclosed) {
 
@@ -335,6 +334,7 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 		if nil != s.errorCallback {
 			if r.Err != kendynet.ErrSendTimeout {
 				s.Close(r.Err, 0)
+				sendOver = true
 			}
 
 			s.errorCallback(s, r.Err)
@@ -350,7 +350,10 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 			}
 		} else {
 			s.Close(r.Err, 0)
+			sendOver = true
 		}
+	} else {
+		sendOver = true
 	}
 
 	if sendOver {
