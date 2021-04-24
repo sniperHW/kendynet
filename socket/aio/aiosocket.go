@@ -22,7 +22,7 @@ type SocketService struct {
 }
 
 var sendRoutinePool *gopool.Pool = gopool.New(gopool.Option{
-	MaxRoutineCount: 16,
+	MaxRoutineCount: 1024,
 	Mode:            gopool.QueueMode,
 })
 
