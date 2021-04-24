@@ -331,7 +331,7 @@ func (s *Socket) doSend() {
 
 func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 	defer s.ioDone()
-	sendOver := true
+	sendOver := false
 	if nil == r.Err {
 		s.muW.Lock()
 		defer s.muW.Unlock()
@@ -344,8 +344,8 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 				s.netconn.(interface{ CloseWrite() error }).CloseWrite()
 			}
 		} else {
-			if s.emitSendTask() {
-				sendOver = false
+			if !s.emitSendTask() {
+				sendOver = true
 			}
 		}
 	} else if !s.flag.Test(fclosed) {
@@ -357,6 +357,7 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 		if nil != s.errorCallback {
 			if r.Err != kendynet.ErrSendTimeout {
 				s.Close(r.Err, 0)
+				sendOver = true
 			}
 
 			s.errorCallback(s, r.Err)
@@ -366,14 +367,17 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 				s.muW.Lock()
 				//超时可能会发送部分数据
 				s.offset += r.Bytestransfer
-				if s.emitSendTask() {
-					sendOver = false
+				if !s.emitSendTask() {
+					sendOver = true
 				}
 				s.muW.Unlock()
 			}
 		} else {
 			s.Close(r.Err, 0)
+			sendOver = true
 		}
+	} else {
+		sendOver = true
 	}
 
 	if sendOver {
