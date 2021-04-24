@@ -212,7 +212,6 @@ func (this *SocketBase) Close(reason error, delay time.Duration) {
 			}()
 
 		} else {
-			this.sendQue.Clear()
 			this.imp.GetNetConn().Close()
 		}
 

@@ -9,14 +9,14 @@ type routine struct {
 	taskCh chan func()
 }
 
-func (r *routine) run(p *pool) {
+func (r *routine) run(p *Pool) {
 	for task := range r.taskCh {
 		task()
 		p.free(r)
 	}
 }
 
-var defaultPool *pool = New(Option{
+var defaultPool *Pool = New(Option{
 	MaxRoutineCount: 1000,
 	Mode:            QueueMode,
 })
@@ -94,7 +94,7 @@ func (r *ring) push(v interface{}) bool {
 	}
 }
 
-type pool struct {
+type Pool struct {
 	sync.Mutex
 	frees ring
 	queue ring
@@ -102,7 +102,7 @@ type pool struct {
 	o     Option
 }
 
-func New(o Option) *pool {
+func New(o Option) *Pool {
 	switch o.Mode {
 	case QueueMode, GoMode:
 	default:
@@ -113,7 +113,7 @@ func New(o Option) *pool {
 		o.MaxRoutineCount = 100
 	}
 
-	p := &pool{
+	p := &Pool{
 		o:     o,
 		frees: newring(o.MaxRoutineCount),
 	}
@@ -125,7 +125,7 @@ func New(o Option) *pool {
 	return p
 }
 
-func (p *pool) free(r *routine) {
+func (p *Pool) free(r *routine) {
 	p.Lock()
 	defer p.Unlock()
 	switch p.o.Mode {
@@ -139,7 +139,7 @@ func (p *pool) free(r *routine) {
 	p.frees.push(r)
 }
 
-func (p *pool) popFree() *routine {
+func (p *Pool) popFree() *routine {
 	if r := p.frees.pop(); nil != r {
 		return r.(*routine)
 	} else {
@@ -147,7 +147,7 @@ func (p *pool) popFree() *routine {
 	}
 }
 
-func (p *pool) Go(f func()) error {
+func (p *Pool) Go(f func()) error {
 	p.Lock()
 	defer p.Unlock()
 	r := p.popFree()

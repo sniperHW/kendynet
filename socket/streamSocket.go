@@ -189,19 +189,14 @@ func (this *StreamSocket) sendThreadFunc() {
 		if nil == b {
 			b = buffer.Get()
 			for i < size {
+				l := b.Len()
 				err = this.encoder.EnCode(localList[i], b)
 				localList[i] = nil
 				i++
 				if nil != err {
-					b.Free()
-					b = nil
-					if !this.flag.Test(fclosed) {
-						this.Close(err, 0)
-						if nil != this.errorCallback {
-							this.errorCallback(this, err)
-						}
-					}
-					return
+					//EnCode错误，这个包已经写入到b中的内容需要直接丢弃
+					b.ResetLen(l)
+					kendynet.GetLogger().Errorf("encode error:%v", err)
 				} else if b.Len() >= maxsendsize {
 					break
 				}
