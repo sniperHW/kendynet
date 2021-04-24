@@ -183,13 +183,9 @@ func (this *WebSocket) sendThreadFunc() {
 			if nil != msg.Data() {
 				b = buffer.Get()
 				if err = this.encoder.EnCode(msg.Data(), b); nil != err {
-					if !this.flag.Test(fclosed) {
-						this.Close(err, 0)
-						if nil != this.errorCallback {
-							this.errorCallback(this, err)
-						}
-					}
-					return
+					kendynet.GetLogger().Errorf("encode error:%v", err)
+					b.Free()
+					continue
 				} else {
 					buff = b.Bytes()
 				}

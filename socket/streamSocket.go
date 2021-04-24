@@ -267,10 +267,6 @@ func NewStreamSocket(conn net.Conn) kendynet.StreamSession {
 	return s
 }
 
-func (this *StreamSocket) Read(b []byte) (int, error) {
-	return this.conn.Read(b)
-}
-
 func (this *StreamSocket) GetNetConn() net.Conn {
 	return this.conn
 }
