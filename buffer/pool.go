@@ -22,7 +22,7 @@ package buffer
 
 import "sync"
 
-const _size = 1024
+const _size = 4096
 
 // A Pool is a type-safe wrapper around a sync.Pool.
 type Pool struct {
@@ -41,12 +41,12 @@ func NewPool() Pool {
 // Get retrieves a Buffer from the pool, creating one if necessary.
 func (p Pool) Get() *Buffer {
 	buf := p.p.Get().(*Buffer)
-	buf.Reset()
 	buf.pool = &p
 	return buf
 }
 
 func (p Pool) put(buf *Buffer) {
+	buf.Reset()
 	p.p.Put(buf)
 }
 

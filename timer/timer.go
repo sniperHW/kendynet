@@ -14,16 +14,54 @@ const (
 	removed  int32 = 2
 )
 
+type indexToTimer struct {
+	sync.Mutex
+	m map[uint64]*Timer
+}
+
+func (this *indexToTimer) add(t *Timer) bool {
+	this.Lock()
+	defer this.Unlock()
+	if _, ok := this.m[*t.index]; ok {
+		return false
+	} else {
+		this.m[*t.index] = t
+		return true
+	}
+}
+
+func (this *indexToTimer) get(index uint64) *Timer {
+	this.Lock()
+	defer this.Unlock()
+	return this.m[index]
+}
+
+func (this *indexToTimer) delete(index uint64) *Timer {
+	this.Lock()
+	defer this.Unlock()
+	if t, ok := this.m[index]; ok {
+		delete(this.m, index)
+		return t
+	} else {
+		return nil
+	}
+}
+
 type IndexMgr struct {
-	indexToTimer [63]sync.Map
+	indexToTimer [63]*indexToTimer
 }
 
-var defaultIndexMgr IndexMgr
-
-type Option struct {
-	Ud    interface{}
-	Index uint64
+func NewIndexMgr() IndexMgr {
+	m := IndexMgr{}
+	for k, _ := range m.indexToTimer {
+		m.indexToTimer[k] = &indexToTimer{
+			m: map[uint64]*Timer{},
+		}
+	}
+	return m
 }
+
+var defaultIndexMgr IndexMgr = NewIndexMgr()
 
 type Timer struct {
 	duration time.Duration
@@ -33,7 +71,7 @@ type Timer struct {
 	ud       interface{}
 	index    *uint64
 	repeat   bool
-	mgr      *IndexMgr
+	mgr      *indexToTimer
 }
 
 func (this *Timer) call() {
@@ -60,7 +98,7 @@ func (this *Timer) call() {
 		} else {
 			atomic.StoreInt32(&this.status, removed)
 			if this.index != nil {
-				this.mgr.indexToTimer[*this.index%uint64(len(this.mgr.indexToTimer))].Delete(*this.index)
+				this.mgr.delete(*this.index)
 			}
 		}
 	}
@@ -71,7 +109,7 @@ func (this *Timer) Cancel() bool {
 	if atomic.CompareAndSwapInt32(&this.status, waitting, removed) {
 		this.t.Load().(*time.Timer).Stop()
 		if nil != this.index {
-			this.mgr.indexToTimer[*this.index%uint64(len(this.mgr.indexToTimer))].Delete(*this.index)
+			this.mgr.delete(*this.index)
 		}
 		return true
 	} else {
@@ -92,7 +130,7 @@ func (this *Timer) GetCTX() interface{} {
 	return this.ud
 }
 
-func newTimer(mgr *IndexMgr, timeout time.Duration, repeat bool, fn func(*Timer, interface{}), ud interface{}, index *uint64) *Timer {
+func newTimer(mgr *indexToTimer, timeout time.Duration, repeat bool, fn func(*Timer, interface{}), ud interface{}, index *uint64) *Timer {
 	if nil != fn {
 		t := &Timer{
 			duration: timeout,
@@ -108,10 +146,8 @@ func newTimer(mgr *IndexMgr, timeout time.Duration, repeat bool, fn func(*Timer,
 		}))
 
 		if nil != index {
-			if _, ok := mgr.indexToTimer[*index%uint64(len(mgr.indexToTimer))].Load(*index); ok {
+			if !mgr.add(t) {
 				return nil
-			} else {
-				mgr.indexToTimer[*index%uint64(len(mgr.indexToTimer))].Store(*index, t)
 			}
 		}
 
@@ -123,25 +159,19 @@ func newTimer(mgr *IndexMgr, timeout time.Duration, repeat bool, fn func(*Timer,
 }
 
 func (this *IndexMgr) GetTimerByIndex(index uint64) *Timer {
-	if t, ok := this.indexToTimer[index%uint64(len(this.indexToTimer))].Load(index); ok {
-		return t.(*Timer)
-	} else {
-		return nil
-	}
+	return this.indexToTimer[index%uint64(len(this.indexToTimer))].get(index)
 }
 
 func (this *IndexMgr) OnceWithIndex(timeout time.Duration, callback func(*Timer, interface{}), ctx interface{}, index uint64) *Timer {
-	return newTimer(this, timeout, false, callback, ctx, &index)
+	return newTimer(this.indexToTimer[index%uint64(len(this.indexToTimer))], timeout, false, callback, ctx, &index)
 }
 
 func (this *IndexMgr) CancelByIndex(index uint64) (bool, interface{}) {
-	if v, ok := this.indexToTimer[index%uint64(len(this.indexToTimer))].LoadAndDelete(index); ok {
-		t := v.(*Timer)
+	if t := this.indexToTimer[index%uint64(len(this.indexToTimer))].delete(index); nil != t {
 		if atomic.CompareAndSwapInt32(&t.status, waitting, removed) {
 			return true, t.ud
 		} else {
 			atomic.StoreInt32(&t.status, removed)
-			return false, nil
 		}
 	}
 	return false, nil

@@ -239,8 +239,9 @@ func NewClient(decoder RPCMessageDecoder, encoder RPCMessageEncoder) *RPCClient 
 	} else {
 
 		c := &RPCClient{
-			encoder: encoder,
-			decoder: decoder,
+			encoder:  encoder,
+			decoder:  decoder,
+			indexMgr: timer.NewIndexMgr(),
 		}
 
 		for i := 0; i < 127; i++ {
