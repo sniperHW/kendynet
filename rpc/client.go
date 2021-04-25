@@ -15,9 +15,109 @@ import (
 var ErrCallTimeout error = fmt.Errorf("rpc call timeout")
 var ErrChannelDisconnected error = fmt.Errorf("channel disconnected")
 
+var sequence uint64
+
 type RPCResponseHandler func(interface{}, error)
 
-type reqContext struct {
+type callContext struct {
+	seq             uint64
+	channelID       uint64
+	onResponse      RPCResponseHandler
+	deadlineTimer   *time.Timer
+	rpcCli          *RPCClient
+	channelCallsMgr *channelCallsMgr
+}
+
+var callContextPool = sync.Pool{
+	New: func() interface{} {
+		return &callContext{}
+	},
+}
+
+type channelCalls struct {
+	calls map[uint64]*callContext
+}
+
+type RPCClient struct {
+	encoder RPCMessageEncoder
+	decoder RPCMessageDecoder
+
+	mu           sync.Mutex
+	callContexts map[uint64]*callContext
+	channels     map[uint64]*channelCalls
+}
+
+func (this *callContext) onTimeout() {
+	this.rpcCli.removeCallBySeqno(this.seq)
+	this.onResponse(nil, ErrCallTimeout)
+}
+
+func (this *RPCClient) addCall(call *callContext, timeout time.Duration) {
+	this.Lock()
+	this.callContexts[call.seq] = call
+	cc, ok := this.channels[call.channelID]
+	if !ok {
+		cc = &channelCalls{
+			calls: map[uint64]*callContext{},
+		}
+		this.channels[call.channelID] = cc
+	}
+	cc[call.seq] = call
+	this.Unlock()
+
+	call.deadlineTimer = time.AfterFunc(timeout, call.onTimeout())
+}
+
+func (this *RPCClient) removeCallBySeqno(seq uint64) *callContext {
+	this.Lock()
+	defer this.Unlock()
+	if call, ok := this.callContexts[seq]; ok {
+		cc = this.channels[call.channelID]
+		delete(cc, call.channelID)
+		if len(cc) == 0 {
+			delete(this.channels, call.channelID)
+		}
+
+		if call.deadlineTimer.Stop() {
+			return call
+		}
+	}
+	return false, nil
+}
+
+func (this *RPCClient) OnRPCMessage(message interface{}) {
+	if msg, err := this.decoder.Decode(message); nil != err {
+		kendynet.GetLogger().Errorf(util.FormatFileLine("RPCClient rpc message decode err:%s\n", err.Error()))
+	} else {
+		if resp, ok := msg.(*RPCResponse); ok {
+			if call := this.removeCallBySeqno(resp.GetSeq()); nil != call {
+				call.onResponse(resp.Ret, resp.Err)
+			} else {
+				kendynet.GetLogger().Info("onResponse with no reqContext", resp.GetSeq())
+			}
+		}
+	}
+}
+
+func (this *RPCClient) OnChannelDisconnect(channel RPCChannel) {
+	this.Lock()
+	cc, ok := this.channels[channel.UID()]
+	if ok {
+		delete(this.channels, channel.UID())
+	}
+	this.Unlock()
+
+	for k, v := range cc {
+		this.Lock()
+		delete(this.callContexts, k)
+		this.Unlock()
+		if v.deadlineTimer.Stop() {
+			v.onResponse(nil, ErrChannelDisconnected)
+		}
+	}
+}
+
+/*type reqContext struct {
 	seq        uint64
 	onResponse RPCResponseHandler
 	listEle    *list.Element
@@ -131,7 +231,7 @@ func (this *RPCClient) OnChannelDisconnect(channel RPCChannel) {
 				 * B线程执行onTimeout的removeChannelReq,此时removeChannelReq必然返回false,因此onResponse不会执行。
 				 * A线程继续执行,如果像OnRPCMessage一样判断CancelByIndex为true才执行onResponse,那么对于这个请求的onResponse将丢失
 				 * 因为这个req的onTimeout已经被执行，CancelByIndex必定返回false
-				 */
+				 * /
 				this.indexMgr.CancelByIndex(c.seq)
 				c.onResponse(nil, ErrChannelDisconnected)
 				c.listEle = nil
@@ -252,4 +352,4 @@ func NewClient(decoder RPCMessageDecoder, encoder RPCMessageEncoder) *RPCClient 
 
 		return c
 	}
-}
+}*/
