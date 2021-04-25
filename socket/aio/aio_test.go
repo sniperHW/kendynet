@@ -306,7 +306,7 @@ func TestAioSocket(t *testing.T) {
 
 		go func() {
 			time.Sleep(time.Second * 5)
-			session.Close(nil, 1)
+			session.Close(nil, time.Second)
 		}()
 
 		<-clientdie
@@ -397,7 +397,7 @@ func TestShutDownWrite(t *testing.T) {
 						fmt.Println("send ")
 						fmt.Println(sess.Send("hello"))
 					}
-					sess.Close(nil, 1)
+					sess.Close(nil, time.Second)
 				}).SetEncoder(&encoder{}).BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
 					fmt.Println(string(msg.([]byte)))
 				})

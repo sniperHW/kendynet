@@ -68,7 +68,7 @@ func NewSocketService(shareBuffer goaio.ShareBuffer) *SocketService {
 		shareBuffer: shareBuffer,
 	}
 
-	for i := 0; i < 2; i++ {
+	for i := 0; i < runtime.NumCPU()/2; i++ {
 		se := goaio.NewAIOService(1)
 		s.services = append(s.services, se)
 		go s.completeRoutine(se)
@@ -408,24 +408,25 @@ func (s *Socket) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err er
 	s.beginOnce.Do(func() {
 
 		if nil == cb {
-			panic("BeginRecv cb is nil")
-		}
-
-		s.addIO()
-
-		if s.flag.Test(fclosed | frclosed) {
-			s.ioDone()
-			err = kendynet.ErrSocketClose
+			err = errors.New("BeginRecv cb is nil")
 		} else {
-			//发起第一个recv
-			if nil == s.inboundProcessor {
-				s.inboundProcessor = &defaultInBoundProcessor{
-					buffer: make([]byte, 4096),
-				}
-			}
-			s.inboundCallBack = cb
-			if err = s.aioConn.Recv(s.inboundProcessor.GetRecvBuff(), &s.recvContext); nil != err {
+
+			s.addIO()
+
+			if s.flag.Test(fclosed | frclosed) {
 				s.ioDone()
+				err = kendynet.ErrSocketClose
+			} else {
+				//发起第一个recv
+				if nil == s.inboundProcessor {
+					s.inboundProcessor = &defaultInBoundProcessor{
+						buffer: make([]byte, 4096),
+					}
+				}
+				s.inboundCallBack = cb
+				if err = s.aioConn.Recv(s.inboundProcessor.GetRecvBuff(), &s.recvContext); nil != err {
+					s.ioDone()
+				}
 			}
 		}
 	})
@@ -457,13 +458,7 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 
 		s.flag.Set(fclosed)
 
-		if s.flag.Test(fwclosed) {
-			delay = 0
-		} else {
-			delay = delay * time.Second
-		}
-
-		if delay > 0 {
+		if !s.flag.Test(fwclosed) && delay > 0 {
 			if !s.sendLock {
 				s.emitSendTask()
 			}

@@ -753,7 +753,7 @@ func TestShutDownWrite(t *testing.T) {
 						fmt.Println("send ")
 						fmt.Println(sess.Send("hello"))
 					}
-					sess.Close(nil, 1)
+					sess.Close(nil, time.Second)
 				}).SetEncoder(&encoder{}).BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
 					fmt.Println(string(msg.([]byte)))
 				})
@@ -762,6 +762,7 @@ func TestShutDownWrite(t *testing.T) {
 	}()
 
 	{
+		fmt.Println("11111111111111111111")
 		dialer := &net.Dialer{}
 		conn, _ := dialer.Dial("tcp", "localhost:8110")
 		session := NewStreamSocket(conn)
@@ -783,6 +784,7 @@ func TestShutDownWrite(t *testing.T) {
 	}
 
 	{
+		fmt.Println("222222222222222222")
 		dialer := &net.Dialer{}
 		conn, _ := dialer.Dial("tcp", "localhost:8110")
 		session := NewStreamSocket(conn)

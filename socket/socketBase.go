@@ -190,13 +190,7 @@ func (this *SocketBase) Close(reason error, delay time.Duration) {
 
 		this.sendQue.Close()
 
-		if wclosed {
-			delay = 0 //写端已经关闭，delay参数没有意义设置为0
-		} else if delay > 0 {
-			delay = delay * time.Second
-		}
-
-		if delay > 0 {
+		if !wclosed && delay > 0 {
 			func() {
 				this.sendOnce.Do(func() {
 					this.addIO()
