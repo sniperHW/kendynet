@@ -61,6 +61,13 @@ func AppendInt64(bs []byte, i64 int64) []byte {
 	return AppendUint64(bs, uint64(i64))
 }
 
+func (b *Buffer) ResetLen(l int) *Buffer {
+	if l < len(b.bs) {
+		b.bs = b.bs[:l]
+	}
+	return b
+}
+
 //implement io.Writer
 func (b *Buffer) Write(bytes []byte) (int, error) {
 	b.AppendBytes(bytes)

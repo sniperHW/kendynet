@@ -20,6 +20,10 @@ import (
 	"time"
 )
 
+func init() {
+	kendynet.InitLogger(&kendynet.EmptyLogger{})
+}
+
 type encoder struct {
 }
 
@@ -302,6 +306,7 @@ func TestWebSocket(t *testing.T) {
 			})
 
 			session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
+				fmt.Println("got msg", msg)
 				s.Send(msg)
 				s.Close(nil, time.Second)
 			})
@@ -328,7 +333,12 @@ func TestWebSocket(t *testing.T) {
 				respChan <- msg.(*message.WSMessage)
 			})
 
-			session.Send(message.NewWSMessage(message.WSTextMessage, "hello"))
+			err := session.Send(message.NewWSMessage(message.WSTextMessage, "hello"))
+			if nil != err {
+				fmt.Println(err)
+			}
+
+			fmt.Println("wait resp")
 
 			resp := <-respChan
 
@@ -442,7 +452,9 @@ func TestWebSocket(t *testing.T) {
 			conn, _, _ := dialer.Dial(u.String(), nil)
 			assert.NotNil(t, conn)
 			session := NewWSSocket(conn)
-			session.SetEncoder(&errwsencoder{})
+			session.SetEncoder(&errwsencoder{}).SetRecvTimeout(time.Second).BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
+
+			})
 
 			die := make(chan struct{})
 
@@ -611,7 +623,9 @@ func TestStreamSocket(t *testing.T) {
 
 			die := make(chan struct{})
 
-			session.SetEncoder(&errencoder{})
+			session.SetEncoder(&errencoder{}).SetRecvTimeout(time.Second).BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
+
+			})
 
 			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
 				close(die)

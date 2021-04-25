@@ -6,6 +6,7 @@ import (
 	"github.com/sniperHW/goaio"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/buffer"
+	"github.com/sniperHW/kendynet/gopool"
 	"github.com/sniperHW/kendynet/util"
 	"math/rand"
 	"net"
@@ -16,10 +17,14 @@ import (
 )
 
 type SocketService struct {
-	services          []*goaio.AIOService
-	outboundTaskQueue []*goaio.TaskQueue
-	shareBuffer       goaio.ShareBuffer
+	services    []*goaio.AIOService
+	shareBuffer goaio.ShareBuffer
 }
+
+var sendRoutinePool *gopool.Pool = gopool.New(gopool.Option{
+	MaxRoutineCount: 1024,
+	Mode:            gopool.QueueMode,
+})
 
 type ioContext struct {
 	s *Socket
@@ -42,37 +47,19 @@ func (this *SocketService) completeRoutine(s *goaio.AIOService) {
 	}
 }
 
-func (this *SocketService) bind(conn net.Conn) (*goaio.AIOConn, *goaio.TaskQueue, error) {
+func (this *SocketService) bind(conn net.Conn) (*goaio.AIOConn, error) {
 	idx := rand.Int() % len(this.services)
 	c, err := this.services[idx].Bind(conn, goaio.AIOConnOption{
 		SendqueSize: 1,
 		RecvqueSize: 1,
 		ShareBuff:   this.shareBuffer,
 	})
-	return c, this.outboundTaskQueue[idx], err
-}
-
-func (this *SocketService) outboundRoutine(tq *goaio.TaskQueue) {
-	for {
-		var err error
-		queue := make([]interface{}, 0, 512)
-		for {
-			queue, err = tq.Pop(queue)
-			if nil != err {
-				return
-			} else {
-				for _, v := range queue {
-					v.(*Socket).doSend()
-				}
-			}
-		}
-	}
+	return c, err
 }
 
 func (this *SocketService) Close() {
 	for i, _ := range this.services {
 		this.services[i].Close()
-		this.outboundTaskQueue[i].Close()
 	}
 }
 
@@ -82,12 +69,9 @@ func NewSocketService(shareBuffer goaio.ShareBuffer) *SocketService {
 	}
 
 	for i := 0; i < 2; i++ {
-		se := goaio.NewAIOService(2)
-		tq := goaio.NewTaskQueue()
+		se := goaio.NewAIOService(1)
 		s.services = append(s.services, se)
-		s.outboundTaskQueue = append(s.outboundTaskQueue, tq)
 		go s.completeRoutine(se)
-		go s.outboundRoutine(tq)
 	}
 
 	return s
@@ -154,7 +138,6 @@ type Socket struct {
 	offset           int
 	sendOverChan     chan struct{}
 	netconn          net.Conn
-	tq               *goaio.TaskQueue
 	sendContext      ioContext
 	recvContext      ioContext
 	closeReason      error
@@ -280,20 +263,14 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 	}
 }
 
-func (s *Socket) emitSendTask() bool {
-	if nil == s.tq.Push(s) {
-		s.addIO()
-		s.sendLock = true
-	} else {
-		s.sendLock = false
-	}
-	return s.sendLock
+func (s *Socket) emitSendTask() {
+	s.addIO()
+	s.sendLock = true
+	sendRoutinePool.Go(s.doSend)
 }
 
 func (s *Socket) doSend() {
 	const maxsendsize = kendynet.SendBufferSize
-
-	var err error
 
 	s.muW.Lock()
 	//只有之前请求的buff全部发送完毕才填充新的buff
@@ -301,10 +278,12 @@ func (s *Socket) doSend() {
 		s.b = buffer.Get()
 		for v := s.sendQueue.Front(); v != nil; v = s.sendQueue.Front() {
 			s.sendQueue.Remove(v)
-			if err = s.encoder.EnCode(v.Value, s.b); nil != err {
-				s.b.Free()
-				s.b = nil
-				break
+			l := s.b.Len()
+			if err := s.encoder.EnCode(v.Value, s.b); nil != err {
+				//EnCode错误，这个包已经写入到b中的内容需要直接丢弃
+				s.b.ResetLen(l)
+				kendynet.GetLogger().Errorf("encode error:%v", err)
+
 			} else if s.b.Len() >= maxsendsize {
 				break
 			}
@@ -314,19 +293,14 @@ func (s *Socket) doSend() {
 
 	s.muW.Unlock()
 
-	if nil == err {
+	if len(s.b.Bytes()[s.offset:]) > 0 {
 		if nil != s.aioConn.Send(s.b.Bytes()[s.offset:], &s.sendContext) {
 			s.ioDone()
 		}
 	} else {
-		s.ioDone()
-		if !s.flag.Test(fclosed) {
-			s.Close(err, 0)
-			if nil != s.errorCallback {
-				s.errorCallback(s, err)
-			}
-		}
+		s.onSendComplete(&goaio.AIOResult{})
 	}
+
 }
 
 func (s *Socket) onSendComplete(r *goaio.AIOResult) {
@@ -344,9 +318,7 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 				s.netconn.(interface{ CloseWrite() error }).CloseWrite()
 			}
 		} else {
-			if !s.emitSendTask() {
-				sendOver = true
-			}
+			s.emitSendTask()
 		}
 	} else if !s.flag.Test(fclosed) {
 
@@ -367,9 +339,8 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 				s.muW.Lock()
 				//超时可能会发送部分数据
 				s.offset += r.Bytestransfer
-				if !s.emitSendTask() {
-					sendOver = true
-				}
+				s.emitSendTask()
+				sendOver = false
 				s.muW.Unlock()
 			}
 		} else {
@@ -486,15 +457,18 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 
 		s.flag.Set(fclosed)
 
-		if s.sendQueue.Len() > 0 {
-			delay = delay * time.Second
-		} else {
+		if s.flag.Test(fwclosed) {
 			delay = 0
+		} else {
+			delay = delay * time.Second
 		}
 
-		s.muW.Unlock()
-
 		if delay > 0 {
+			if !s.sendLock {
+				s.emitSendTask()
+			}
+			s.muW.Unlock()
+
 			s.ShutdownRead()
 			ticker := time.NewTicker(delay)
 			go func() {
@@ -507,6 +481,7 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 				s.aioConn.Close(nil)
 			}()
 		} else {
+			s.muW.Unlock()
 			s.aioConn.Close(nil)
 		}
 
@@ -527,11 +502,10 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 func NewSocket(service *SocketService, netConn net.Conn) kendynet.StreamSession {
 
 	s := &Socket{}
-	c, tq, err := service.bind(netConn)
+	c, err := service.bind(netConn)
 	if err != nil {
 		return nil
 	}
-	s.tq = tq
 	s.aioConn = c
 	s.sendQueueSize = 256
 	s.sendQueue = list.New()

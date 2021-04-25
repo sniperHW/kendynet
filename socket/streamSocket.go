@@ -60,10 +60,6 @@ func (this *StreamSocket) SetInBoundProcessor(in kendynet.InBoundProcessor) kend
 }
 
 func (this *StreamSocket) recvThreadFunc() {
-	if this.flag.Test(fclosed) {
-		return
-	}
-
 	defer this.ioDone()
 
 	oldTimeout := this.getRecvTimeout()
@@ -140,10 +136,6 @@ func (this *StreamSocket) recvThreadFunc() {
 }
 
 func (this *StreamSocket) sendThreadFunc() {
-	if this.flag.Test(fclosed) {
-		return
-	}
-
 	defer this.ioDone()
 	defer close(this.sendCloseChan)
 
@@ -189,24 +181,25 @@ func (this *StreamSocket) sendThreadFunc() {
 		if nil == b {
 			b = buffer.Get()
 			for i < size {
+				l := b.Len()
 				err = this.encoder.EnCode(localList[i], b)
 				localList[i] = nil
 				i++
 				if nil != err {
-					b.Free()
-					b = nil
-					if !this.flag.Test(fclosed) {
-						this.Close(err, 0)
-						if nil != this.errorCallback {
-							this.errorCallback(this, err)
-						}
-					}
-					return
+					//EnCode错误，这个包已经写入到b中的内容需要直接丢弃
+					b.ResetLen(l)
+					kendynet.GetLogger().Errorf("encode error:%v", err)
 				} else if b.Len() >= maxsendsize {
 					break
 				}
 			}
 			offset = 0
+		}
+
+		if len(b.Bytes()[offset:]) == 0 {
+			b.Free()
+			b = nil
+			continue
 		}
 
 		oldTimeout = timeout
@@ -270,10 +263,6 @@ func NewStreamSocket(conn net.Conn) kendynet.StreamSession {
 	})
 
 	return s
-}
-
-func (this *StreamSocket) Read(b []byte) (int, error) {
-	return this.conn.Read(b)
 }
 
 func (this *StreamSocket) GetNetConn() net.Conn {
