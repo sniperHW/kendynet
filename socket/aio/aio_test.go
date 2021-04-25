@@ -192,7 +192,9 @@ func TestAioSocket(t *testing.T) {
 
 			die := make(chan struct{})
 
-			session.SetEncoder(&errencoder{})
+			session.SetEncoder(&errencoder{}).SetRecvTimeout(time.Second).BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
+
+			})
 
 			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
 				fmt.Println("close", reason)

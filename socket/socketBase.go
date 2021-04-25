@@ -1,6 +1,7 @@
 package socket
 
 import (
+	"errors"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/util"
 	"net"
@@ -97,20 +98,6 @@ func (this *SocketBase) SetSendQueueSize(size int) kendynet.StreamSession {
 	return this.imp
 }
 
-func (this *SocketBase) ShutdownRead() {
-	this.flag.Set(frclosed)
-	this.imp.GetNetConn().(interface{ CloseRead() error }).CloseRead()
-}
-
-func (this *SocketBase) ShutdownWrite() {
-	if this.sendQue.Close() {
-		this.sendOnce.Do(func() {
-			this.addIO()
-			go this.imp.sendThreadFunc()
-		})
-	}
-}
-
 func (this *SocketBase) getRecvTimeout() time.Duration {
 	return time.Duration(atomic.LoadInt64(&this.recvTimeout))
 }
@@ -148,18 +135,18 @@ func (this *SocketBase) BeginRecv(cb func(kendynet.StreamSession, interface{})) 
 	this.beginOnce.Do(func() {
 
 		if nil == cb {
-			panic("BeginRecv cb is nil")
-		}
-
-		if this.flag.Test(fclosed | frclosed) {
-			err = kendynet.ErrSocketClose
+			err = errors.New("cb is nil")
 		} else {
-			if nil == this.imp.getInBoundProcessor() {
-				this.imp.SetInBoundProcessor(this.imp.defaultInBoundProcessor())
+			if this.flag.Test(fclosed | frclosed) {
+				err = kendynet.ErrSocketClose
+			} else {
+				if nil == this.imp.getInBoundProcessor() {
+					this.imp.SetInBoundProcessor(this.imp.defaultInBoundProcessor())
+				}
+				this.addIO()
+				this.inboundCallBack = cb
+				go this.imp.recvThreadFunc()
 			}
-			this.addIO()
-			this.inboundCallBack = cb
-			go this.imp.recvThreadFunc()
 		}
 	})
 
@@ -178,6 +165,20 @@ func (this *SocketBase) ioDone() {
 	}
 }
 
+func (this *SocketBase) ShutdownRead() {
+	this.flag.Set(frclosed)
+	this.imp.GetNetConn().(interface{ CloseRead() error }).CloseRead()
+}
+
+func (this *SocketBase) ShutdownWrite() {
+	if this.sendQue.Close() {
+		this.sendOnce.Do(func() {
+			this.addIO()
+			go this.imp.sendThreadFunc()
+		})
+	}
+}
+
 func (this *SocketBase) Close(reason error, delay time.Duration) {
 
 	this.closeOnce.Do(func() {
@@ -189,13 +190,20 @@ func (this *SocketBase) Close(reason error, delay time.Duration) {
 
 		this.sendQue.Close()
 
-		if wclosed || this.sendQue.Len() == 0 {
+		if wclosed {
 			delay = 0 //写端已经关闭，delay参数没有意义设置为0
 		} else if delay > 0 {
 			delay = delay * time.Second
 		}
 
 		if delay > 0 {
+			func() {
+				this.sendOnce.Do(func() {
+					this.addIO()
+					go this.imp.sendThreadFunc()
+				})
+			}()
+
 			this.ShutdownRead()
 			ticker := time.NewTicker(delay)
 			go func() {

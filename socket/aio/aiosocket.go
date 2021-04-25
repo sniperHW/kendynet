@@ -272,8 +272,6 @@ func (s *Socket) emitSendTask() {
 func (s *Socket) doSend() {
 	const maxsendsize = kendynet.SendBufferSize
 
-	var err error
-
 	s.muW.Lock()
 	//只有之前请求的buff全部发送完毕才填充新的buff
 	if nil == s.b {
@@ -281,10 +279,11 @@ func (s *Socket) doSend() {
 		for v := s.sendQueue.Front(); v != nil; v = s.sendQueue.Front() {
 			s.sendQueue.Remove(v)
 			l := s.b.Len()
-			if err = s.encoder.EnCode(v.Value, s.b); nil != err {
+			if err := s.encoder.EnCode(v.Value, s.b); nil != err {
 				//EnCode错误，这个包已经写入到b中的内容需要直接丢弃
 				s.b.ResetLen(l)
 				kendynet.GetLogger().Errorf("encode error:%v", err)
+
 			} else if s.b.Len() >= maxsendsize {
 				break
 			}
@@ -294,19 +293,14 @@ func (s *Socket) doSend() {
 
 	s.muW.Unlock()
 
-	if nil == err {
+	if len(s.b.Bytes()[s.offset:]) > 0 {
 		if nil != s.aioConn.Send(s.b.Bytes()[s.offset:], &s.sendContext) {
 			s.ioDone()
 		}
 	} else {
-		s.ioDone()
-		if !s.flag.Test(fclosed) {
-			s.Close(err, 0)
-			if nil != s.errorCallback {
-				s.errorCallback(s, err)
-			}
-		}
+		s.onSendComplete(&goaio.AIOResult{})
 	}
+
 }
 
 func (s *Socket) onSendComplete(r *goaio.AIOResult) {
@@ -463,15 +457,18 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 
 		s.flag.Set(fclosed)
 
-		if s.sendQueue.Len() > 0 {
-			delay = delay * time.Second
-		} else {
+		if s.flag.Test(fwclosed) {
 			delay = 0
+		} else {
+			delay = delay * time.Second
 		}
 
-		s.muW.Unlock()
-
 		if delay > 0 {
+			if !s.sendLock {
+				s.emitSendTask()
+			}
+			s.muW.Unlock()
+
 			s.ShutdownRead()
 			ticker := time.NewTicker(delay)
 			go func() {
@@ -484,6 +481,7 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 				s.aioConn.Close(nil)
 			}()
 		} else {
+			s.muW.Unlock()
 			s.aioConn.Close(nil)
 		}
 
