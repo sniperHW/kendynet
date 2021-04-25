@@ -63,6 +63,8 @@ func TestTimer(t *testing.T) {
 
 	}
 
+	fmt.Println("222222222222")
+
 	{
 
 		die := make(chan struct{})

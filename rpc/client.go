@@ -70,7 +70,7 @@ type RPCClient struct {
 	decoder        RPCMessageDecoder
 	channelReqMaps []channelReqMap
 	sequence       uint64
-	timerMgr       *timer.TimerMgr
+	indexMgr       timer.IndexMgr
 }
 
 func (this *RPCClient) addChannelReq(channel RPCChannel, req *reqContext) {
@@ -132,7 +132,7 @@ func (this *RPCClient) OnChannelDisconnect(channel RPCChannel) {
 				 * A线程继续执行,如果像OnRPCMessage一样判断CancelByIndex为true才执行onResponse,那么对于这个请求的onResponse将丢失
 				 * 因为这个req的onTimeout已经被执行，CancelByIndex必定返回false
 				 */
-				this.timerMgr.CancelByIndex(c.seq)
+				this.indexMgr.CancelByIndex(c.seq)
 				c.onResponse(nil, ErrChannelDisconnected)
 				c.listEle = nil
 
@@ -151,7 +151,7 @@ func (this *RPCClient) OnRPCMessage(message interface{}) {
 		kendynet.GetLogger().Errorf(util.FormatFileLine("RPCClient rpc message decode err:%s\n", err.Error()))
 	} else {
 		if resp, ok := msg.(*RPCResponse); ok {
-			if ok, ctx := this.timerMgr.CancelByIndex(resp.GetSeq()); ok {
+			if ok, ctx := this.indexMgr.CancelByIndex(resp.GetSeq()); ok {
 				if this.removeChannelReq(ctx.(*reqContext)) {
 					ctx.(*reqContext).onResponse(resp.Ret, resp.Err)
 				}
@@ -206,12 +206,12 @@ func (this *RPCClient) AsynCall(channel RPCChannel, method string, arg interface
 		context.channelUID = channel.UID()
 
 		this.addChannelReq(channel, context)
-		this.timerMgr.OnceWithIndex(timeout, onReqTimeout, context, context.seq)
+		this.indexMgr.OnceWithIndex(timeout, onReqTimeout, context, context.seq)
 		if err = channel.SendRequest(request); err == nil {
 			return nil
 		} else {
 			this.removeChannelReq(context)
-			this.timerMgr.CancelByIndex(req.Seq)
+			this.indexMgr.CancelByIndex(req.Seq)
 			return err
 		}
 	}
@@ -239,9 +239,8 @@ func NewClient(decoder RPCMessageDecoder, encoder RPCMessageEncoder) *RPCClient 
 	} else {
 
 		c := &RPCClient{
-			encoder:  encoder,
-			decoder:  decoder,
-			timerMgr: timer.NewTimerMgr(61),
+			encoder: encoder,
+			decoder: decoder,
 		}
 
 		for i := 0; i < 127; i++ {
