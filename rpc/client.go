@@ -23,6 +23,8 @@ type callContext struct {
 	onResponse    RPCResponseHandler
 	deadlineTimer *time.Timer
 	rpcCli        *RPCClient
+	pprev         *callContext
+	nnext         *callContext
 }
 
 var callContextPool = sync.Pool{
@@ -40,7 +42,30 @@ func releaseCallContext(c *callContext) {
 }
 
 type channelCalls struct {
-	calls map[uint64]*callContext
+	calls callContext
+}
+
+func (this *channelCalls) empty() bool {
+	return this.calls.nnext == &this.calls
+}
+
+func (this *channelCalls) add(c *callContext) {
+	next := this.calls.nnext
+	c.nnext = next
+	c.pprev = &this.calls
+	this.calls.nnext = c
+	if next != &this.calls {
+		next.pprev = c
+	}
+}
+
+func (this *channelCalls) remove(c *callContext) {
+	prev := c.pprev
+	next := c.nnext
+	prev.nnext = next
+	next.pprev = prev
+	c.pprev = nil
+	c.nnext = nil
 }
 
 type RPCClient struct {
@@ -65,12 +90,12 @@ func (this *RPCClient) addCall(call *callContext, timeout time.Duration) {
 	this.callContexts[call.seq] = call
 	cc, ok := this.channels[call.channelID]
 	if !ok {
-		cc = &channelCalls{
-			calls: map[uint64]*callContext{},
-		}
+		cc = &channelCalls{}
+		cc.calls.nnext = &cc.calls
+		cc.calls.pprev = &cc.calls
 		this.channels[call.channelID] = cc
 	}
-	cc.calls[call.seq] = call
+	cc.add(call)
 	call.deadlineTimer = time.AfterFunc(timeout, call.onTimeout)
 }
 
@@ -78,9 +103,10 @@ func (this *RPCClient) removeCallBySeqno(seq uint64) *callContext {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 	if call, ok := this.callContexts[seq]; ok {
+		delete(this.callContexts, seq)
 		cc := this.channels[call.channelID]
-		delete(cc.calls, call.channelID)
-		if len(cc.calls) == 0 {
+		cc.remove(call)
+		if cc.empty() {
 			delete(this.channels, call.channelID)
 		}
 		call.deadlineTimer.Stop()
@@ -112,16 +138,21 @@ func (this *RPCClient) OnChannelDisconnect(channel RPCChannel) {
 	}
 	this.mu.Unlock()
 
-	for k, v := range cc.calls {
-		this.mu.Lock()
-		if _, ok = this.callContexts[k]; ok {
-			delete(this.callContexts, k)
-		}
-		this.mu.Unlock()
-		if ok {
-			v.deadlineTimer.Stop()
-			v.onResponse(nil, ErrChannelDisconnected)
-			releaseCallContext(v)
+	if ok {
+		c := cc.calls.nnext
+		var next *callContext
+		for ; c != &cc.calls; c = next {
+			next = c.nnext
+			this.mu.Lock()
+			if _, ok = this.callContexts[c.seq]; ok {
+				delete(this.callContexts, c.seq)
+			}
+			this.mu.Unlock()
+			if ok {
+				c.deadlineTimer.Stop()
+				c.onResponse(nil, ErrChannelDisconnected)
+				releaseCallContext(c)
+			}
 		}
 	}
 }
