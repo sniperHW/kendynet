@@ -52,15 +52,6 @@ func TestTimer(t *testing.T) {
 		}, nil)
 
 		assert.Nil(t, tt.GetCTX())
-
-		assert.Nil(t, GetTimerByIndex(0))
-
-		index := uint64(1)
-
-		OnceWithIndex(time.Second, func(timer_ *Timer, ctx interface{}) {
-			CancelByIndex(index)
-		}, nil, index)
-
 	}
 
 	fmt.Println("222222222222")
@@ -138,42 +129,6 @@ func TestTimer(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 
 		assert.Equal(t, timer_.Cancel(), true)
-	}
-
-	{
-
-		OnceWithIndex(1*time.Second, func(_ *Timer, ctx interface{}) {
-			fmt.Println("Once timer")
-		}, nil, uint64(1))
-
-		time.Sleep(100 * time.Millisecond)
-
-		timer_ := GetTimerByIndex(uint64(1))
-
-		assert.NotNil(t, timer_)
-
-		assert.Equal(t, timer_.Cancel(), true)
-	}
-
-	{
-
-		OnceWithIndex(1*time.Second, func(_ *Timer, ctx interface{}) {
-			fmt.Println("Once timer")
-		}, 1, uint64(1))
-
-		assert.Nil(t, OnceWithIndex(1*time.Second, func(_ *Timer, ctx interface{}) {
-			fmt.Println("Once timer")
-		}, 1, uint64(1)))
-
-		time.Sleep(100 * time.Millisecond)
-
-		ok, ctx := CancelByIndex(uint64(1))
-		assert.Equal(t, true, ok)
-		assert.Equal(t, 1, ctx.(int))
-
-		ok, ctx = CancelByIndex(uint64(1))
-		assert.Equal(t, false, ok)
-
 	}
 
 	{

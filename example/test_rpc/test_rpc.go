@@ -158,6 +158,8 @@ func (this *RPCServer) Serve(service string) error {
 	return err
 }
 
+var client *rpc.RPCClient = rpc.NewClient(&TestDecoder{}, &TestEncoder{})
+
 type Caller struct {
 	client  *rpc.RPCClient
 	channel rpc.RPCChannel
@@ -174,7 +176,7 @@ func (this *Caller) Dial(service string, timeout time.Duration) error {
 		return err
 	}
 	this.channel = NewTcpStreamChannel(session)
-	this.client = rpc.NewClient(&TestDecoder{}, &TestEncoder{})
+	this.client = client //rpc.NewClient(&TestDecoder{}, &TestEncoder{})
 	session.SetEncoder(codec.NewPbEncoder(65535))
 	session.SetInBoundProcessor(codec.NewPBReceiver(65535))
 

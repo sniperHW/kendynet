@@ -1,5 +1,6 @@
 package main
 
+//go tool pprof --seconds 30 http://localhost:8899/debug/pprof/profile
 import (
 	"fmt"
 	"github.com/golang/protobuf/proto"
