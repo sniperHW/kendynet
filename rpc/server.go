@@ -1,6 +1,7 @@
 package rpc
 
 import (
+	"errors"
 	"fmt"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/util"
@@ -56,7 +57,7 @@ type RPCServer struct {
 	sync.RWMutex
 	encoder            RPCMessageEncoder
 	decoder            RPCMessageDecoder
-	methods            map[string]RPCMethodHandler
+	methods            sync.Map
 	lastSeq            uint64
 	pendingCount       int32
 	errOnMissingMethod atomic.Value
@@ -104,33 +105,28 @@ func (this *RPCServer) OnServiceStop(channel RPCChannel, message interface{}, er
 
 func (this *RPCServer) RegisterMethod(name string, method RPCMethodHandler) error {
 	if name == "" {
-		return fmt.Errorf("nams is nil")
+		return errors.New("nams is nil")
 	} else if nil == method {
-		return fmt.Errorf("method == nil")
+		return errors.New("method == nil")
 	} else {
-		defer this.Unlock()
-		this.Lock()
-		_, ok := this.methods[name]
-		if ok {
+		if _, ok := this.methods.LoadOrStore(name, method); ok {
 			return fmt.Errorf("duplicate method:%s", name)
-		} else {
-			this.methods[name] = method
-			return nil
 		}
+		return nil
 	}
 }
 
 func (this *RPCServer) UnRegisterMethod(name string) {
-	defer this.Unlock()
-	this.Lock()
-	delete(this.methods, name)
+	this.methods.Delete(name)
 }
 
 func (this *RPCServer) callMethod(method RPCMethodHandler, replyer *RPCReplyer, arg interface{}) {
-	if _, err := util.ProtectCall(method, replyer, arg); nil != err {
-		kendynet.GetLogger().Error(err.Error())
-		replyer.Reply(nil, err)
-	}
+	defer func() {
+		if r := recover(); r != nil {
+			replyer.Reply(nil, errors.New(fmt.Sprintf("%v", r)))
+		}
+	}()
+	method(replyer, arg)
 }
 
 /*
@@ -147,10 +143,7 @@ func (this *RPCServer) OnRPCMessage(channel RPCChannel, message interface{}) {
 	case *RPCRequest:
 		{
 			req := msg.(*RPCRequest)
-			this.RLock()
-			method, ok := this.methods[req.Method]
-			this.RUnlock()
-
+			m, ok := this.methods.Load(req.Method)
 			replyer := &RPCReplyer{encoder: this.encoder, channel: channel, req: req, s: this}
 			atomic.AddInt32(&this.pendingCount, 1)
 
@@ -163,7 +156,7 @@ func (this *RPCServer) OnRPCMessage(channel RPCChannel, message interface{}) {
 					replyer.Reply(nil, fmt.Errorf("invaild method:%s", req.Method))
 				}
 			} else {
-				this.callMethod(method, replyer, req.Arg)
+				this.callMethod(m.(RPCMethodHandler), replyer, req.Arg)
 			}
 		}
 	}
@@ -177,7 +170,6 @@ func NewRPCServer(decoder RPCMessageDecoder, encoder RPCMessageEncoder) *RPCServ
 		return &RPCServer{
 			decoder: decoder,
 			encoder: encoder,
-			methods: map[string]RPCMethodHandler{},
 		}
 	}
 }
