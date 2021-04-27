@@ -41,7 +41,7 @@ func (this *errencoder) EnCode(o interface{}, b *buffer.Buffer) error {
 var aioService *SocketService
 
 func init() {
-	aioService = NewSocketService(nil)
+	aioService = NewSocketService(ServiceOption{})
 }
 
 func TestAioSocket(t *testing.T) {

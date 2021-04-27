@@ -156,13 +156,13 @@ type Socket struct {
 	sendQueueSize    int
 	sendLock         bool
 	b                *buffer.Buffer
-	offset           int
-	sendOverChan     chan struct{}
-	netconn          net.Conn
-	sendContext      ioContext
-	recvContext      ioContext
-	closeReason      error
-	ioCount          int32
+	//offset           int
+	sendOverChan chan struct{}
+	netconn      net.Conn
+	sendContext  ioContext
+	recvContext  ioContext
+	closeReason  error
+	ioCount      int32
 }
 
 func (s *Socket) IsClosed() bool {
@@ -297,25 +297,25 @@ func (s *Socket) doSend() {
 	//只有之前请求的buff全部发送完毕才填充新的buff
 	if nil == s.b {
 		s.b = buffer.Get()
-		for v := s.sendQueue.Front(); v != nil; v = s.sendQueue.Front() {
-			s.sendQueue.Remove(v)
-			l := s.b.Len()
-			if err := s.encoder.EnCode(v.Value, s.b); nil != err {
-				//EnCode错误，这个包已经写入到b中的内容需要直接丢弃
-				s.b.ResetLen(l)
-				kendynet.GetLogger().Errorf("encode error:%v", err)
+	}
 
-			} else if s.b.Len() >= maxsendsize {
-				break
-			}
+	for v := s.sendQueue.Front(); v != nil; v = s.sendQueue.Front() {
+		s.sendQueue.Remove(v)
+		l := s.b.Len()
+		if err := s.encoder.EnCode(v.Value, s.b); nil != err {
+			//EnCode错误，这个包已经写入到b中的内容需要直接丢弃
+			s.b.SetLen(l)
+			kendynet.GetLogger().Errorf("encode error:%v", err)
+
+		} else if s.b.Len() >= maxsendsize {
+			break
 		}
-		s.offset = 0
 	}
 
 	s.muW.Unlock()
 
-	if len(s.b.Bytes()[s.offset:]) > 0 {
-		if nil != s.aioConn.Send(s.b.Bytes()[s.offset:], &s.sendContext) {
+	if s.b.Len() > 0 {
+		if nil != s.aioConn.Send(s.b.Bytes(), &s.sendContext) {
 			s.ioDone()
 		}
 	} else {
@@ -359,7 +359,7 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 			if r.Err == kendynet.ErrSendTimeout && !s.flag.Test(fclosed) {
 				s.muW.Lock()
 				//超时可能会发送部分数据
-				s.offset += r.Bytestransfer
+				s.b.DropFirstNBytes(r.Bytestransfer)
 				s.emitSendTask()
 				sendOver = false
 				s.muW.Unlock()

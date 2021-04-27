@@ -61,13 +61,6 @@ func AppendInt64(bs []byte, i64 int64) []byte {
 	return AppendUint64(bs, uint64(i64))
 }
 
-func (b *Buffer) ResetLen(l int) *Buffer {
-	if l < len(b.bs) {
-		b.bs = b.bs[:l]
-	}
-	return b
-}
-
 //implement io.Writer
 func (b *Buffer) Write(bytes []byte) (int, error) {
 	b.AppendBytes(bytes)
@@ -145,6 +138,27 @@ func (b *Buffer) Cap() int {
 
 func (b *Buffer) Reset() {
 	b.bs = b.bs[:0]
+}
+
+//将len设置为l,丢弃之后的字节
+func (b *Buffer) SetLen(l int) *Buffer {
+	if l < len(b.bs) {
+		b.bs = b.bs[:l]
+	}
+	return b
+}
+
+//丢弃前面n个字节
+func (b *Buffer) DropFirstNBytes(n int) *Buffer {
+	if n > 0 && n <= len(b.bs) {
+		if n == len(b.bs) {
+			b.bs = b.bs[:0]
+		} else {
+			copy(b.bs, b.bs[n:])
+			b.bs = b.bs[:len(b.bs)-n]
+		}
+	}
+	return b
 }
 
 func (b *Buffer) Free() {

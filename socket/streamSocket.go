@@ -145,98 +145,83 @@ func (this *StreamSocket) sendThreadFunc() {
 
 	closed := false
 
-	var i int
-
-	var size int
-
 	const maxsendsize = kendynet.SendBufferSize
 
-	var b *buffer.Buffer
-
-	var offset int
-
 	var n int
-
-	defer func() {
-		if nil != b {
-			b.Free()
-		}
-	}()
 
 	oldTimeout := this.getSendTimeout()
 	timeout := oldTimeout
 
 	for {
 
-		if i >= size {
-			closed, localList = this.sendQue.Swap(localList)
-			size = len(localList)
-			if closed && size == 0 {
-				this.conn.(interface{ CloseWrite() error }).CloseWrite()
-				break
-			}
-			i = 0
+		closed, localList = this.sendQue.Swap(localList)
+		size := len(localList)
+		if closed && size == 0 {
+			this.conn.(interface{ CloseWrite() error }).CloseWrite()
+			break
 		}
 
-		if nil == b {
-			b = buffer.Get()
-			for i < size {
-				l := b.Len()
-				err = this.encoder.EnCode(localList[i], b)
-				localList[i] = nil
-				i++
-				if nil != err {
-					//EnCode错误，这个包已经写入到b中的内容需要直接丢弃
-					b.ResetLen(l)
-					kendynet.GetLogger().Errorf("encode error:%v", err)
-				} else if b.Len() >= maxsendsize {
+		b := buffer.Get()
+		for i := 0; i < size; {
+			if b.Len() == 0 {
+				for i < size {
+					l := b.Len()
+					err = this.encoder.EnCode(localList[i], b)
+					localList[i] = nil
+					i++
+					if nil != err {
+						//EnCode错误，这个包已经写入到b中的内容需要直接丢弃
+						b.SetLen(l)
+						kendynet.GetLogger().Errorf("encode error:%v", err)
+					} else if b.Len() >= maxsendsize {
+						break
+					}
+				}
+
+				if b.Len() == 0 {
+					b.Free()
 					break
 				}
 			}
-			offset = 0
-		}
 
-		if len(b.Bytes()[offset:]) == 0 {
-			b.Free()
-			b = nil
-			continue
-		}
+			oldTimeout = timeout
+			timeout = this.getSendTimeout()
 
-		oldTimeout = timeout
-		timeout = this.getSendTimeout()
+			if oldTimeout != timeout && timeout == 0 {
+				this.conn.SetWriteDeadline(time.Time{})
+			}
 
-		if oldTimeout != timeout && timeout == 0 {
-			this.conn.SetWriteDeadline(time.Time{})
-		}
-
-		if timeout > 0 {
-			this.conn.SetWriteDeadline(time.Now().Add(timeout))
-			n, err = this.conn.Write(b.Bytes()[offset:])
-		} else {
-			n, err = this.conn.Write(b.Bytes()[offset:])
-		}
-
-		offset += n
-
-		if nil == err {
-			b.Free()
-			b = nil
-		} else if !this.flag.Test(fclosed) {
-			if kendynet.IsNetTimeout(err) {
-				err = kendynet.ErrSendTimeout
+			if timeout > 0 {
+				this.conn.SetWriteDeadline(time.Now().Add(timeout))
+				n, err = this.conn.Write(b.Bytes())
 			} else {
-				this.Close(err, 0)
+				n, err = this.conn.Write(b.Bytes())
 			}
 
-			if nil != this.errorCallback {
-				this.errorCallback(this, err)
-			}
+			if nil == err {
+				b.Reset()
+			} else if !this.flag.Test(fclosed) {
+				if kendynet.IsNetTimeout(err) {
+					err = kendynet.ErrSendTimeout
+				} else {
+					this.Close(err, 0)
+				}
 
-			if this.flag.Test(fclosed) {
+				if nil != this.errorCallback {
+					this.errorCallback(this, err)
+				}
+
+				if this.flag.Test(fclosed) {
+					b.Free()
+					return
+				} else {
+					//超时可能完成部分发送，将已经发送部分丢弃
+					b.DropFirstNBytes(n)
+				}
+			} else {
+				b.Free()
 				return
 			}
-		} else {
-			return
 		}
 	}
 }

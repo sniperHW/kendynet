@@ -4,6 +4,7 @@ package buffer
 //go tool cover -html=coverage.out
 
 import (
+	"fmt"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
@@ -36,4 +37,31 @@ func TestBuffer(t *testing.T) {
 
 	assert.Equal(t, len(b.Bytes()), b.Len())
 
+	b = Get()
+	b.AppendUint16(1)
+	b.AppendUint32(2)
+	fmt.Println(b.bs)
+	b.DropN(2)
+	fmt.Println(b.bs)
+	r = NewReader(b)
+	assert.Equal(t, uint32(2), r.GetUint32())
+	assert.Equal(t, b.Len(), 4)
+	b.AppendString("hello")
+	b.AppendUint64(3)
+	b.DropN(9)
+	r = NewReader(b)
+	assert.Equal(t, uint64(3), r.GetUint64())
+	assert.Equal(t, b.Len(), 8)
+	b.DropN(9)
+	assert.Equal(t, b.Len(), 8)
+	b.DropN(8)
+	assert.Equal(t, b.Len(), 0)
+
+	b.AppendString("hello")
+	b.ResetLen(6)
+	assert.Equal(t, b.Len(), 5)
+	b.ResetLen(5)
+	assert.Equal(t, b.Len(), 5)
+	b.ResetLen(4)
+	assert.Equal(t, b.Len(), 4)
 }
