@@ -162,15 +162,15 @@ type BufferReader struct {
 	offset int
 }
 
-func NewReader(b interface{}) *BufferReader {
+func NewReader(b interface{}) BufferReader {
 	switch b.(type) {
 	case *Buffer:
-		return &BufferReader{bs: b.(*Buffer).bs}
+		return BufferReader{bs: b.(*Buffer).bs}
 	case []byte:
-		return &BufferReader{bs: b.([]byte)}
+		return BufferReader{bs: b.([]byte)}
 	default:
 	}
-	return nil
+	return BufferReader{}
 }
 
 func (this *BufferReader) GetAll() []byte {
