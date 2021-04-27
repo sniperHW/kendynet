@@ -1,9 +1,9 @@
 package message
 
-import (
-	"fmt"
-	"github.com/sniperHW/kendynet"
-)
+//import (
+//"fmt"
+//"github.com/sniperHW/kendynet"
+//)
 
 // The message types are defined in RFC 6455, section 11.8.
 const (
@@ -33,44 +33,27 @@ const (
  */
 type WSMessage struct {
 	messageType int
-	buff        *kendynet.ByteBuffer
-}
-
-func (this *WSMessage) Bytes() []byte {
-	return this.buff.Bytes()
-}
-
-func (this *WSMessage) PutBytes(idx uint64, value []byte) error {
-	return this.buff.PutBytes(idx, value)
-}
-
-func (this *WSMessage) GetBytes(idx uint64, size uint64) ([]byte, error) {
-	return this.buff.GetBytes(idx, size)
-}
-
-func (this *WSMessage) PutString(idx uint64, value string) error {
-	return this.buff.PutString(idx, value)
-}
-
-func (this *WSMessage) GetString(idx uint64, size uint64) (string, error) {
-	return this.buff.GetString(idx, size)
+	data        interface{}
 }
 
 func (this *WSMessage) Type() int {
 	return this.messageType
 }
 
-func NewWSMessage(messageType int, optional ...interface{}) *WSMessage {
+func (this *WSMessage) Data() interface{} {
+	return this.data
+}
+
+func NewWSMessage(messageType int, data ...interface{}) *WSMessage {
 	switch messageType {
 	case WSTextMessage, WSBinaryMessage, WSCloseMessage, WSPingMessage, WSPongMessage:
 	default:
 		return nil
 	}
 
-	buff := kendynet.NewByteBuffer(optional...)
-	if nil == buff {
-		fmt.Printf("nil == buff\n")
-		return nil
+	if len(data) > 0 {
+		return &WSMessage{messageType: messageType, data: data[0]}
+	} else {
+		return &WSMessage{messageType: messageType}
 	}
-	return &WSMessage{messageType: messageType, buff: buff}
 }

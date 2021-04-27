@@ -14,7 +14,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
-	//"runtime"
+	"runtime"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -107,7 +107,11 @@ func client(service string, count int) {
 
 func main() {
 
-	aioService = aio.NewSocketService(nil)
+	aioService = aio.NewSocketService(aio.ServiceOption{
+		PollerCount:              2,
+		WorkerPerPoller:          runtime.NumCPU() / 2,
+		CompleteRoutinePerPoller: 1,
+	})
 
 	pb.Register(&testproto.Test{}, 1)
 	if len(os.Args) < 3 {

@@ -5,6 +5,7 @@
 package kendynet
 
 import (
+	"github.com/sniperHW/kendynet/buffer"
 	"net"
 	"time"
 )
@@ -31,39 +32,19 @@ const (
 	SendBufferSize = 65535 //64k
 )
 
-type Message interface {
-	Bytes() []byte
-}
-
 type InBoundProcessor interface {
-	//供aio socket使用
-	GetRecvBuff() []byte
-	OnData([]byte)
 	Unpack() (interface{}, error)
-	OnSocketClose()
-	//供阻塞式socket使用
-	ReceiveAndUnpack(StreamSession) (interface{}, error)
 }
 
 type EnCoder interface {
-	/*
-	 *  输入一个对象，输出可供session发送的Message对象
-	 */
-	EnCode(o interface{}) (Message, error)
+	EnCode(o interface{}, b *buffer.Buffer) error
 }
 
 type StreamSession interface {
-	//SetWaitMode(bool)
-
 	/*
-		发送一个对象，使用encoder将对象编码成一个Message调用SendMessage
+		发送一个对象，使用encoder将对象编码
 	*/
 	Send(o interface{}) error
-
-	/*
-		直接发送Message
-	*/
-	SendMessage(msg Message) error
 
 	/*
 		关闭会话,如果会话中还有待发送的数据且timeout > 0
@@ -74,6 +55,8 @@ type StreamSession interface {
 	Close(reason error, timeout time.Duration)
 
 	ShutdownRead()
+
+	ShutdownWrite()
 
 	IsClosed() bool
 

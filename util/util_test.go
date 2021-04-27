@@ -13,15 +13,15 @@ type fmtLogger struct {
 }
 
 func (this *fmtLogger) Debugf(format string, v ...interface{}) { fmt.Printf(format, v...) }
-func (this *fmtLogger) Debugln(v ...interface{})               { fmt.Println(v...) }
+func (this *fmtLogger) Debug(v ...interface{})                 { fmt.Println(v...) }
 func (this *fmtLogger) Infof(format string, v ...interface{})  { fmt.Printf(format, v...) }
-func (this *fmtLogger) Infoln(v ...interface{})                { fmt.Println(v...) }
+func (this *fmtLogger) Info(v ...interface{})                  { fmt.Println(v...) }
 func (this *fmtLogger) Warnf(format string, v ...interface{})  { fmt.Printf(format, v...) }
-func (this *fmtLogger) Warnln(v ...interface{})                { fmt.Println(v...) }
+func (this *fmtLogger) Warn(v ...interface{})                  { fmt.Println(v...) }
 func (this *fmtLogger) Errorf(format string, v ...interface{}) { fmt.Printf(format, v...) }
-func (this *fmtLogger) Errorln(v ...interface{})               { fmt.Println(v...) }
+func (this *fmtLogger) Error(v ...interface{})                 { fmt.Println(v...) }
 func (this *fmtLogger) Fatalf(format string, v ...interface{}) { fmt.Printf(format, v...) }
-func (this *fmtLogger) Fatalln(v ...interface{})               { fmt.Println(v...) }
+func (this *fmtLogger) Fatal(v ...interface{})                 { fmt.Println(v...) }
 func (this *fmtLogger) SetLevelByString(level string)          {}
 
 func TestPCall(t *testing.T) {
@@ -58,15 +58,6 @@ func TestRecover(t *testing.T) {
 	}
 
 	f1()
-
-	f2 := func() {
-		defer RecoverAndCall(func() { fmt.Println("hello") }, &fmtLogger{})
-		var ptr *int
-		*ptr = 1
-	}
-
-	f2()
-
 }
 
 func TestFormatFileLine(t *testing.T) {

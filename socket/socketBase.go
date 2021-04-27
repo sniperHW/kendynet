@@ -1,6 +1,7 @@
 package socket
 
 import (
+	"errors"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/util"
 	"net"
@@ -11,53 +12,43 @@ import (
 )
 
 const (
-	fclosed  = int32(1 << 1) //是否已经调用Close
-	frclosed = int32(1 << 2) //调用来了shutdownRead
+	fclosed  = uint32(1 << 1) //是否已经调用Close
+	frclosed = uint32(1 << 2) //调用来了shutdownRead
+	fdoclose = uint32(1 << 3)
 )
 
 type SocketImpl interface {
 	kendynet.StreamSession
 	recvThreadFunc()
 	sendThreadFunc()
-	sendMessage(kendynet.Message) error
 	defaultInBoundProcessor() kendynet.InBoundProcessor
+	getInBoundProcessor() kendynet.InBoundProcessor
+	SetInBoundProcessor(kendynet.InBoundProcessor) kendynet.StreamSession
 }
 
 type SocketBase struct {
-	flag          int32
+	flag          util.Flag
 	ud            atomic.Value
 	sendQue       *util.BlockQueue
-	sendTimeout   atomic.Value
-	recvTimeout   atomic.Value
+	sendTimeout   int64
+	recvTimeout   int64
 	sendCloseChan chan struct{}
 	imp           SocketImpl
 	closeOnce     sync.Once
 	beginOnce     sync.Once
 	sendOnce      sync.Once
-	ioWait        sync.WaitGroup
+	ioCount       int32
+	closeReason   error
+	//ioWait        sync.WaitGroup
 
-	encoder          kendynet.EnCoder
-	inboundProcessor kendynet.InBoundProcessor
-	errorCallback    func(kendynet.StreamSession, error)
-	closeCallBack    func(kendynet.StreamSession, error)
-	inboundCallBack  func(kendynet.StreamSession, interface{})
-}
-
-func (this *SocketBase) setFlag(flag int32) {
-	for {
-		f := atomic.LoadInt32(&this.flag)
-		if atomic.CompareAndSwapInt32(&this.flag, f, f|flag) {
-			break
-		}
-	}
-}
-
-func (this *SocketBase) testFlag(flag int32) bool {
-	return atomic.LoadInt32(&this.flag)&flag > 0
+	encoder         kendynet.EnCoder
+	errorCallback   func(kendynet.StreamSession, error)
+	closeCallBack   func(kendynet.StreamSession, error)
+	inboundCallBack func(kendynet.StreamSession, interface{})
 }
 
 func (this *SocketBase) IsClosed() bool {
-	return this.testFlag(fclosed)
+	return this.flag.Test(fclosed)
 }
 
 func (this *SocketBase) LocalAddr() net.Addr {
@@ -78,12 +69,12 @@ func (this *SocketBase) GetUserData() interface{} {
 }
 
 func (this *SocketBase) SetRecvTimeout(timeout time.Duration) kendynet.StreamSession {
-	this.recvTimeout.Store(timeout)
+	atomic.StoreInt64(&this.recvTimeout, int64(timeout))
 	return this.imp
 }
 
 func (this *SocketBase) SetSendTimeout(timeout time.Duration) kendynet.StreamSession {
-	this.sendTimeout.Store(timeout)
+	atomic.StoreInt64(&this.sendTimeout, int64(timeout))
 	return this.imp
 }
 
@@ -102,123 +93,90 @@ func (this *SocketBase) SetEncoder(encoder kendynet.EnCoder) kendynet.StreamSess
 	return this.imp
 }
 
-func (this *SocketBase) SetInBoundProcessor(in kendynet.InBoundProcessor) kendynet.StreamSession {
-	this.inboundProcessor = in
-	return this.imp
-}
-
 func (this *SocketBase) SetSendQueueSize(size int) kendynet.StreamSession {
 	this.sendQue.SetFullSize(size)
 	return this.imp
 }
 
-func (this *SocketBase) ShutdownRead() {
-	this.setFlag(frclosed)
-	this.imp.GetNetConn().(interface{ CloseRead() error }).CloseRead()
-}
-
 func (this *SocketBase) getRecvTimeout() time.Duration {
-	t := this.recvTimeout.Load()
-	if nil == t {
-		return 0
-	} else {
-		return t.(time.Duration)
-	}
+	return time.Duration(atomic.LoadInt64(&this.recvTimeout))
 }
 
 func (this *SocketBase) getSendTimeout() time.Duration {
-	t := this.sendTimeout.Load()
-	if nil == t {
-		return 0
-	} else {
-		return t.(time.Duration)
-	}
+	return time.Duration(atomic.LoadInt64(&this.sendTimeout))
 }
 
 func (this *SocketBase) Send(o interface{}) error {
-	if this.encoder == nil {
-		panic("Send s.encoder == nil")
-	} else if nil == o {
-		panic("Send o == nil")
-	}
-
-	msg, err := this.encoder.EnCode(o)
-
-	if err != nil {
-		return err
-	}
-
-	return this.imp.sendMessage(msg)
-}
-
-func (this *SocketBase) SendMessage(msg kendynet.Message) error {
-	return this.imp.sendMessage(msg)
-}
-
-func (this *SocketBase) recvThreadFunc() {
-	defer this.ioWait.Done()
-
-	conn := this.imp.GetNetConn()
-
-	for {
-		var (
-			p   interface{}
-			err error
-		)
-
-		recvTimeout := this.getRecvTimeout()
-
-		if recvTimeout > 0 {
-			conn.SetReadDeadline(time.Now().Add(recvTimeout))
-			p, err = this.inboundProcessor.ReceiveAndUnpack(this.imp)
-			conn.SetReadDeadline(time.Time{})
-		} else {
-			p, err = this.inboundProcessor.ReceiveAndUnpack(this.imp)
-		}
-
-		if !this.testFlag(fclosed | frclosed) {
-			if nil != err {
-				if kendynet.IsNetTimeout(err) {
-					err = kendynet.ErrRecvTimeout
-				}
-
-				if nil != this.errorCallback {
-					if err != kendynet.ErrRecvTimeout {
-						this.Close(err, 0)
-					}
-					this.errorCallback(this.imp, err)
-				} else {
-					this.Close(err, 0)
-				}
-			} else if p != nil {
-				this.inboundCallBack(this.imp, p)
+	if nil == o {
+		return kendynet.ErrInvaildObject
+	} else if nil == this.encoder {
+		return kendynet.ErrInvaildEncoder
+	} else {
+		fullReturn := true
+		err := this.sendQue.AddNoWait(o, fullReturn)
+		if nil != err {
+			if err == util.ErrQueueClosed {
+				err = kendynet.ErrSocketClose
+			} else if err == util.ErrQueueFull {
+				err = kendynet.ErrSendQueFull
 			}
-		} else {
-			break
+			return err
 		}
+		this.sendOnce.Do(func() {
+			this.addIO()
+			go this.imp.sendThreadFunc()
+		})
+		return nil
 	}
 }
 
 func (this *SocketBase) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err error) {
 
 	this.beginOnce.Do(func() {
-		if nil == cb {
-			panic("BeginRecv cb is nil")
-		}
 
-		if this.testFlag(fclosed | frclosed) {
-			err = kendynet.ErrSocketClose
+		if nil == cb {
+			err = errors.New("cb is nil")
 		} else {
-			if nil == this.inboundProcessor {
-				this.inboundProcessor = this.imp.defaultInBoundProcessor()
+			if this.flag.Test(fclosed | frclosed) {
+				err = kendynet.ErrSocketClose
+			} else {
+				if nil == this.imp.getInBoundProcessor() {
+					this.imp.SetInBoundProcessor(this.imp.defaultInBoundProcessor())
+				}
+				this.addIO()
+				this.inboundCallBack = cb
+				go this.imp.recvThreadFunc()
 			}
-			this.inboundCallBack = cb
-			this.ioWait.Add(1)
-			go this.imp.recvThreadFunc()
 		}
 	})
 
 	return
+}
+
+func (this *SocketBase) addIO() {
+	atomic.AddInt32(&this.ioCount, 1)
+}
+
+func (this *SocketBase) ioDone() {
+	if 0 == atomic.AddInt32(&this.ioCount, -1) && this.flag.Test(fdoclose) {
+		if nil != this.closeCallBack {
+			this.closeCallBack(this.imp, this.closeReason)
+		}
+	}
+}
+
+func (this *SocketBase) ShutdownRead() {
+	this.flag.Set(frclosed)
+	this.imp.GetNetConn().(interface{ CloseRead() error }).CloseRead()
+}
+
+func (this *SocketBase) ShutdownWrite() {
+	if this.sendQue.Close() {
+		this.sendOnce.Do(func() {
+			this.addIO()
+			go this.imp.sendThreadFunc()
+		})
+	}
 }
 
 func (this *SocketBase) Close(reason error, delay time.Duration) {
@@ -226,19 +184,20 @@ func (this *SocketBase) Close(reason error, delay time.Duration) {
 	this.closeOnce.Do(func() {
 		runtime.SetFinalizer(this.imp, nil)
 
-		this.setFlag(fclosed)
+		this.flag.Set(fclosed)
 
 		wclosed := this.sendQue.Closed()
 
 		this.sendQue.Close()
 
-		if wclosed || this.sendQue.Len() == 0 {
-			delay = 0 //写端已经关闭，delay参数没有意义设置为0
-		} else if delay > 0 {
-			delay = delay * time.Second
-		}
+		if !wclosed && delay > 0 {
+			func() {
+				this.sendOnce.Do(func() {
+					this.addIO()
+					go this.imp.sendThreadFunc()
+				})
+			}()
 
-		if delay > 0 {
 			this.ShutdownRead()
 			ticker := time.NewTicker(delay)
 			go func() {
@@ -255,17 +214,16 @@ func (this *SocketBase) Close(reason error, delay time.Duration) {
 			}()
 
 		} else {
-			this.sendQue.Clear()
 			this.imp.GetNetConn().Close()
 		}
 
-		go func() {
-			this.ioWait.Wait()
+		this.closeReason = reason
+		this.flag.Set(fdoclose)
+
+		if atomic.LoadInt32(&this.ioCount) == 0 {
 			if nil != this.closeCallBack {
 				this.closeCallBack(this.imp, reason)
 			}
-		}()
-
+		}
 	})
-
 }

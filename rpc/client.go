@@ -1,10 +1,9 @@
 package rpc
 
 import (
-	"container/list"
+	"errors"
 	"fmt"
 	"github.com/sniperHW/kendynet"
-	"github.com/sniperHW/kendynet/timer"
 	"github.com/sniperHW/kendynet/util"
 	"sync"
 	"sync/atomic"
@@ -13,141 +12,146 @@ import (
 
 var ErrCallTimeout error = fmt.Errorf("rpc call timeout")
 var ErrChannelDisconnected error = fmt.Errorf("channel disconnected")
+
 var sequence uint64
-var client_once sync.Once
-var timerMgrs []*timer.TimerMgr
 
 type RPCResponseHandler func(interface{}, error)
 
-type reqContext struct {
-	seq        uint64
-	onResponse RPCResponseHandler
-	listEle    *list.Element
-	channelUID uint64
-	c          *RPCClient
+type callContext struct {
+	seq           uint64
+	channelID     uint64
+	onResponse    RPCResponseHandler
+	deadlineTimer *time.Timer
+	rpcCli        *RPCClient
+	pprev         *callContext
+	nnext         *callContext
 }
 
-type channelReqContexts struct {
-	reqs *list.List
+var callContextPool = sync.Pool{
+	New: func() interface{} {
+		return &callContext{}
+	},
 }
 
-func (this *channelReqContexts) add(req *reqContext) {
-	req.listEle = this.reqs.PushBack(req)
+func getCallContext() *callContext {
+	return callContextPool.Get().(*callContext)
 }
 
-func (this *channelReqContexts) remove(req *reqContext) bool {
-	if nil != req.listEle {
-		this.reqs.Remove(req.listEle)
-		req.listEle = nil
-		return true
-	} else {
-		return false
+func releaseCallContext(c *callContext) {
+	callContextPool.Put(c)
+}
+
+type channelCalls struct {
+	calls callContext
+}
+
+func (this *channelCalls) empty() bool {
+	return this.calls.nnext == &this.calls
+}
+
+func (this *channelCalls) add(c *callContext) {
+	next := this.calls.nnext
+	c.nnext = next
+	c.pprev = &this.calls
+	this.calls.nnext = c
+	if next != &this.calls {
+		next.pprev = c
 	}
 }
 
-func (this *reqContext) onTimeout(_ *timer.Timer, _ interface{}) {
-	kendynet.GetLogger().Info("req timeout", this.seq, time.Now())
-	if this.c.removeChannelReq(this) {
-		this.onResponse(nil, ErrCallTimeout)
-	}
-}
-
-type channelReqMap struct {
-	sync.Mutex
-	m map[uint64]*channelReqContexts
+func (this *channelCalls) remove(c *callContext) {
+	prev := c.pprev
+	next := c.nnext
+	prev.nnext = next
+	next.pprev = prev
+	c.pprev = nil
+	c.nnext = nil
 }
 
 type RPCClient struct {
-	encoder        RPCMessageEncoder
-	decoder        RPCMessageDecoder
-	channelReqMaps []channelReqMap
+	encoder RPCMessageEncoder
+	decoder RPCMessageDecoder
+
+	mu           sync.Mutex
+	callContexts map[uint64]*callContext
+	channels     map[uint64]*channelCalls
 }
 
-func (this *RPCClient) addChannelReq(channel RPCChannel, req *reqContext) {
-	uid := channel.UID()
-	m := this.channelReqMaps[int(uid)%len(this.channelReqMaps)]
+func (this *callContext) onTimeout() {
+	if nil != this.rpcCli.removeCallBySeqno(this.seq) {
+		this.onResponse(nil, ErrCallTimeout)
+		releaseCallContext(this)
+	}
+}
 
-	m.Lock()
-	defer m.Unlock()
-	c, ok := m.m[uid]
+func (this *RPCClient) addCall(call *callContext, timeout time.Duration) {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	this.callContexts[call.seq] = call
+	cc, ok := this.channels[call.channelID]
 	if !ok {
-		c = &channelReqContexts{
-			reqs: list.New(),
-		}
-		m.m[uid] = c
+		cc = &channelCalls{}
+		cc.calls.nnext = &cc.calls
+		cc.calls.pprev = &cc.calls
+		this.channels[call.channelID] = cc
 	}
-	c.add(req)
+	cc.add(call)
+	call.deadlineTimer = time.AfterFunc(timeout, call.onTimeout)
 }
 
-func (this *RPCClient) removeChannelReq(req *reqContext) bool {
-	uid := req.channelUID
-	m := this.channelReqMaps[int(uid)%len(this.channelReqMaps)]
-
-	m.Lock()
-	defer m.Unlock()
-
-	c, ok := m.m[uid]
-	if ok {
-		ret := c.remove(req)
-		if c.reqs.Len() == 0 {
-			delete(m.m, uid)
+func (this *RPCClient) removeCallBySeqno(seq uint64) *callContext {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	if call, ok := this.callContexts[seq]; ok {
+		delete(this.callContexts, seq)
+		cc := this.channels[call.channelID]
+		cc.remove(call)
+		if cc.empty() {
+			delete(this.channels, call.channelID)
 		}
-		return ret
-	} else {
-		return false
+		call.deadlineTimer.Stop()
+		return call
 	}
+	return nil
 }
 
-func (this *RPCClient) OnChannelDisconnect(channel RPCChannel) {
-	uid := channel.UID()
-	m := this.channelReqMaps[int(uid)%len(this.channelReqMaps)]
-
-	var tmp []*reqContext
-
-	m.Lock()
-	c, ok := m.m[uid]
-	if ok {
-		delete(m.m, uid)
-		tmp = make([]*reqContext, 0, c.reqs.Len())
-		for {
-			if v := c.reqs.Front(); nil != v {
-				v.Value.(*reqContext).listEle = nil
-				tmp = append(tmp, v.Value.(*reqContext))
-				c.reqs.Remove(v)
-			} else {
-				break
-			}
-		}
-	}
-	m.Unlock()
-
-	for _, v := range tmp {
-		/*
-		 * 不管CancelByIndex是否返回true都应该调用onResponse
-		 * 考虑如下onResponse调用丢失的场景
-		 * A线程执行OnChannelDisconnect,走到m.Unlock()之后的代码
-		 * B线程执行onTimeout的removeChannelReq,此时removeChannelReq必然返回false,因此onResponse不会执行。
-		 * A线程继续执行,如果像OnRPCMessage一样判断CancelByIndex为true才执行onResponse,那么对于这个请求的onResponse将丢失
-		 * 因为这个req的onTimeout已经被执行，CancelByIndex必定返回false
-		 */
-		timerMgrs[v.seq%uint64(len(timerMgrs))].CancelByIndex(v.seq)
-		v.onResponse(nil, ErrChannelDisconnected)
-	}
-}
-
-//收到RPC消息后调用
 func (this *RPCClient) OnRPCMessage(message interface{}) {
 	if msg, err := this.decoder.Decode(message); nil != err {
 		kendynet.GetLogger().Errorf(util.FormatFileLine("RPCClient rpc message decode err:%s\n", err.Error()))
 	} else {
 		if resp, ok := msg.(*RPCResponse); ok {
-			mgr := timerMgrs[msg.GetSeq()%uint64(len(timerMgrs))]
-			if ok, ctx := mgr.CancelByIndex(resp.GetSeq()); ok {
-				if this.removeChannelReq(ctx.(*reqContext)) {
-					ctx.(*reqContext).onResponse(resp.Ret, resp.Err)
-				}
-			} else if nil == ctx {
+			if call := this.removeCallBySeqno(resp.GetSeq()); nil != call {
+				call.onResponse(resp.Ret, resp.Err)
+				releaseCallContext(call)
+			} else {
 				kendynet.GetLogger().Info("onResponse with no reqContext", resp.GetSeq())
+			}
+		}
+	}
+}
+
+func (this *RPCClient) OnChannelDisconnect(channel RPCChannel) {
+	this.mu.Lock()
+	cc, ok := this.channels[channel.UID()]
+	if ok {
+		delete(this.channels, channel.UID())
+	}
+	this.mu.Unlock()
+
+	if ok {
+		c := cc.calls.nnext
+		var next *callContext
+		for ; c != &cc.calls; c = next {
+			next = c.nnext
+			this.mu.Lock()
+			if _, ok = this.callContexts[c.seq]; ok {
+				delete(this.callContexts, c.seq)
+			}
+			this.mu.Unlock()
+			if ok {
+				c.deadlineTimer.Stop()
+				c.onResponse(nil, ErrChannelDisconnected)
+				releaseCallContext(c)
 			}
 		}
 	}
@@ -177,7 +181,7 @@ func (this *RPCClient) Post(channel RPCChannel, method string, arg interface{}) 
 func (this *RPCClient) AsynCall(channel RPCChannel, method string, arg interface{}, timeout time.Duration, cb RPCResponseHandler) error {
 
 	if cb == nil {
-		panic("cb == nil")
+		return errors.New("cb == nil")
 	}
 
 	req := &RPCRequest{
@@ -187,24 +191,21 @@ func (this *RPCClient) AsynCall(channel RPCChannel, method string, arg interface
 		NeedResp: true,
 	}
 
-	context := &reqContext{
-		onResponse: cb,
-		seq:        req.Seq,
-		c:          this,
-		channelUID: channel.UID(),
-	}
-
 	if request, err := this.encoder.Encode(req); err != nil {
 		return err
 	} else {
-		mgr := timerMgrs[req.Seq%uint64(len(timerMgrs))]
-		this.addChannelReq(channel, context)
-		mgr.OnceWithIndex(timeout, context.onTimeout, context, context.seq)
+		context := getCallContext()
+		context.onResponse = cb
+		context.seq = req.Seq
+		context.rpcCli = this
+		context.channelID = channel.UID()
+		this.addCall(context, timeout)
 		if err = channel.SendRequest(request); err == nil {
 			return nil
 		} else {
-			this.removeChannelReq(context)
-			mgr.CancelByIndex(context.seq)
+			if nil != this.removeCallBySeqno(context.seq) {
+				releaseCallContext(context)
+			}
 			return err
 		}
 	}
@@ -231,25 +232,12 @@ func NewClient(decoder RPCMessageDecoder, encoder RPCMessageEncoder) *RPCClient 
 		return nil
 	} else {
 
-		client_once.Do(func() {
-			timerMgrs = make([]*timer.TimerMgr, 61)
-			for i, _ := range timerMgrs {
-				timerMgrs[i] = timer.NewTimerMgr(1)
-			}
-		})
-
 		c := &RPCClient{
-			encoder:        encoder,
-			decoder:        decoder,
-			channelReqMaps: make([]channelReqMap, 127, 127),
+			encoder:      encoder,
+			decoder:      decoder,
+			callContexts: map[uint64]*callContext{},
+			channels:     map[uint64]*channelCalls{},
 		}
-
-		for k, _ := range c.channelReqMaps {
-			c.channelReqMaps[k] = channelReqMap{
-				m: map[uint64]*channelReqContexts{},
-			}
-		}
-
 		return c
 	}
 }

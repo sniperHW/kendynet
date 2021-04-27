@@ -143,18 +143,20 @@ func (self *BlockQueue) Swap(swaped []interface{}) (closed bool, datas []interfa
 	return
 }
 
-func (self *BlockQueue) Close() {
+func (self *BlockQueue) Close() bool {
 	self.listGuard.Lock()
 
 	if self.closed {
 		self.listGuard.Unlock()
-		return
+		return false
 	}
 
 	self.closed = true
 	self.listGuard.Unlock()
 	self.emptyCond.Broadcast()
 	self.fullCond.Broadcast()
+
+	return true
 }
 
 func (self *BlockQueue) Len() int {

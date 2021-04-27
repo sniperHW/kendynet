@@ -1,24 +1,40 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/buffer"
+	"github.com/sniperHW/kendynet/golog"
 	"github.com/sniperHW/kendynet/socket/aio"
 	connector "github.com/sniperHW/kendynet/socket/connector/aio"
 	listener "github.com/sniperHW/kendynet/socket/listener/aio"
 	"github.com/sniperHW/kendynet/timer"
-	"os"
-	"runtime"
-	"sync/atomic"
-	//"syscall"
-	"github.com/sniperHW/kendynet/golog"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
+	"runtime"
 	"strconv"
+	"sync/atomic"
 	"time"
 )
 
 var aioService *aio.SocketService
+
+type encoder struct {
+}
+
+func (this *encoder) EnCode(o interface{}, b *buffer.Buffer) error {
+	switch o.(type) {
+	case string:
+		b.AppendString(o.(string))
+	case []byte:
+		b.AppendBytes(o.([]byte))
+	default:
+		return errors.New("invaild o")
+	}
+	return nil
+}
 
 func server(service string) {
 
@@ -42,15 +58,17 @@ func server(service string) {
 
 			session.SetRecvTimeout(time.Second * 5)
 
+			session.SetEncoder(&encoder{})
+
 			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
 				atomic.AddInt32(&clientcount, -1)
 				fmt.Println("client close:", reason, sess.GetUnderConn(), atomic.LoadInt32(&clientcount))
 			})
 
 			session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
-				atomic.AddInt32(&bytescount, int32(len(msg.(kendynet.Message).Bytes())))
+				atomic.AddInt32(&bytescount, int32(len(msg.([]byte))))
 				atomic.AddInt32(&packetcount, int32(1))
-				s.SendMessage(msg.(kendynet.Message))
+				s.Send(msg)
 			})
 		})
 
@@ -81,14 +99,16 @@ func client(service string, count int) {
 				fmt.Printf("client close:%s\n", reason)
 			})
 
+			session.SetEncoder(&encoder{})
+
 			session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
-				s.SendMessage(msg.(kendynet.Message))
+				s.Send(msg)
 			})
 			//send the first messge
-			msg := kendynet.NewByteBuffer("hello")
-			session.SendMessage(msg)
-			session.SendMessage(msg)
-			session.SendMessage(msg)
+			msg := "hello"
+			session.Send(msg)
+			session.Send(msg)
+			session.Send(msg)
 		}
 	}
 }
@@ -104,7 +124,11 @@ func main() {
 
 	_ = runtime.NumCPU() * 2
 
-	aioService = aio.NewSocketService(nil)
+	aioService = aio.NewSocketService(aio.ServiceOption{
+		PollerCount:              1,
+		WorkerPerPoller:          runtime.NumCPU(),
+		CompleteRoutinePerPoller: 1,
+	})
 
 	if len(os.Args) < 3 {
 		fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")

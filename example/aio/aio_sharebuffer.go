@@ -14,6 +14,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -52,8 +53,8 @@ var makeBuffCount int32 = 0
 
 type InBoundProcessor struct {
 	buffer []byte
-	w      uint64
-	r      uint64
+	w      int
+	r      int
 	name   string
 }
 
@@ -72,7 +73,7 @@ func (this *InBoundProcessor) OnData(data []byte) {
 	if len(this.buffer) == 0 {
 		this.buffer = data
 	}
-	this.w += uint64(len(data))
+	this.w += len(data)
 }
 
 func (this *InBoundProcessor) Unpack() (interface{}, error) {
@@ -200,7 +201,12 @@ func client(service string, count int) {
 
 func main() {
 
-	aioService = aio.NewSocketService(bufferpool)
+	aioService = aio.NewSocketService(aio.ServiceOption{
+		PollerCount:              2,
+		WorkerPerPoller:          runtime.NumCPU() / 2,
+		CompleteRoutinePerPoller: 1,
+		ShareBuffer:              bufferpool,
+	})
 
 	pb.Register(&testproto.Test{}, 1)
 	if len(os.Args) < 3 {

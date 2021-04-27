@@ -1,23 +1,38 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/buffer"
 	"github.com/sniperHW/kendynet/golog"
 	connector "github.com/sniperHW/kendynet/socket/connector/tcp"
 	listener "github.com/sniperHW/kendynet/socket/listener/tcp"
 	"github.com/sniperHW/kendynet/timer"
-	"os"
-	"os/signal"
-	//"runtime"
-	//"runtime/pprof"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
+	"os/signal"
 	"strconv"
 	"sync/atomic"
 	"syscall"
 	"time"
 )
+
+type encoder struct {
+}
+
+func (this *encoder) EnCode(o interface{}, b *buffer.Buffer) error {
+	switch o.(type) {
+	case string:
+		b.AppendString(o.(string))
+	case []byte:
+		b.AppendBytes(o.([]byte))
+	default:
+		return errors.New("invaild o")
+	}
+	return nil
+}
 
 func server(service string) {
 
@@ -43,15 +58,16 @@ func server(service string) {
 		err = server.Serve(func(session kendynet.StreamSession) {
 			atomic.AddInt32(&clientcount, 1)
 			session.SetRecvTimeout(time.Second * 5)
+			session.SetEncoder(&encoder{})
 			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
 				atomic.AddInt32(&clientcount, -1)
 				fmt.Println("client close:", reason, session.GetUnderConn(), atomic.LoadInt32(&clientcount))
 			})
 
 			session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
-				atomic.AddInt32(&bytescount, int32(len(msg.(kendynet.Message).Bytes())))
+				atomic.AddInt32(&bytescount, int32(len(msg.([]byte))))
 				atomic.AddInt32(&packetcount, int32(1))
-				s.SendMessage(msg.(kendynet.Message))
+				s.Send(msg)
 			})
 
 		})
@@ -79,19 +95,21 @@ func client(service string, count int) {
 		if err != nil {
 			fmt.Printf("Dial error:%s\n", err.Error())
 		} else {
+			session.SetEncoder(&encoder{})
+
 			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
 				fmt.Printf("client close:%s\n", reason)
 			})
 
 			session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
-				s.SendMessage(msg.(kendynet.Message))
+				s.Send(msg)
 			})
 
 			//send the first messge
-			msg := kendynet.NewByteBuffer("hello")
-			session.SendMessage(msg)
-			session.SendMessage(msg)
-			session.SendMessage(msg)
+			msg := "hello"
+			session.Send(msg)
+			session.Send(msg)
+			session.Send(msg)
 		}
 	}
 }
