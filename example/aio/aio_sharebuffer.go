@@ -52,8 +52,8 @@ var makeBuffCount int32 = 0
 
 type InBoundProcessor struct {
 	buffer []byte
-	w      uint64
-	r      uint64
+	w      int
+	r      int
 	name   string
 }
 
@@ -72,7 +72,7 @@ func (this *InBoundProcessor) OnData(data []byte) {
 	if len(this.buffer) == 0 {
 		this.buffer = data
 	}
-	this.w += uint64(len(data))
+	this.w += len(data)
 }
 
 func (this *InBoundProcessor) Unpack() (interface{}, error) {
