@@ -163,6 +163,7 @@ func (this *WebSocket) sendThreadFunc() {
 			break
 		}
 
+		b := buffer.Get()
 		for i := 0; i < size; i++ {
 			var err error
 			msg, ok := localList[i].(*message.WSMessage)
@@ -170,16 +171,13 @@ func (this *WebSocket) sendThreadFunc() {
 				panic("invaild ws message")
 			}
 			localList[i] = nil
-			var buff []byte
-			var b *buffer.Buffer
+
 			if nil != msg.Data() {
 				b = buffer.Get()
 				if err = this.encoder.EnCode(msg.Data(), b); nil != err {
 					kendynet.GetLogger().Errorf("encode error:%v", err)
-					b.Free()
+					b.Reset()
 					continue
-				} else {
-					buff = b.Bytes()
 				}
 			}
 
@@ -192,15 +190,13 @@ func (this *WebSocket) sendThreadFunc() {
 
 			if timeout > 0 {
 				this.conn.SetWriteDeadline(time.Now().Add(timeout))
-				err = this.conn.WriteMessage(msg.Type(), buff)
+				err = this.conn.WriteMessage(msg.Type(), b.Bytes())
 				this.conn.SetWriteDeadline(time.Time{})
 			} else {
-				err = this.conn.WriteMessage(msg.Type(), buff)
+				err = this.conn.WriteMessage(msg.Type(), b.Bytes())
 			}
 
-			if nil != b {
-				b.Free()
-			}
+			b.Reset()
 
 			if err != nil && !this.flag.Test(fclosed) {
 
