@@ -63,15 +63,36 @@ func (this *SocketService) Close() {
 	}
 }
 
-func NewSocketService(shareBuffer goaio.ShareBuffer) *SocketService {
+type ServiceOption struct {
+	PollerCount              int
+	WorkerPerPoller          int
+	CompleteRoutinePerPoller int
+	ShareBuffer              goaio.ShareBuffer
+}
+
+func NewSocketService(o ServiceOption) *SocketService {
 	s := &SocketService{
-		shareBuffer: shareBuffer,
+		shareBuffer: o.ShareBuffer,
 	}
 
-	for i := 0; i < runtime.NumCPU()/2; i++ {
-		se := goaio.NewAIOService(2)
+	if o.PollerCount == 0 {
+		o.PollerCount = 1
+	}
+
+	if o.WorkerPerPoller == 0 {
+		o.WorkerPerPoller = 1
+	}
+
+	if o.CompleteRoutinePerPoller == 0 {
+		o.CompleteRoutinePerPoller = 1
+	}
+
+	for i := 0; i < o.PollerCount; i++ {
+		se := goaio.NewAIOService(o.WorkerPerPoller)
 		s.services = append(s.services, se)
-		go s.completeRoutine(se)
+		for j := 0; j < o.CompleteRoutinePerPoller; j++ {
+			go s.completeRoutine(se)
+		}
 	}
 
 	return s

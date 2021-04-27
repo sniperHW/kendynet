@@ -14,6 +14,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -200,7 +201,12 @@ func client(service string, count int) {
 
 func main() {
 
-	aioService = aio.NewSocketService(bufferpool)
+	aioService = aio.NewSocketService(aio.ServiceOption{
+		PollerCount:              2,
+		WorkerPerPoller:          runtime.NumCPU() / 2,
+		CompleteRoutinePerPoller: 1,
+		ShareBuffer:              bufferpool,
+	})
 
 	pb.Register(&testproto.Test{}, 1)
 	if len(os.Args) < 3 {

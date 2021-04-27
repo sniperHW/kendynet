@@ -1,22 +1,21 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/buffer"
+	"github.com/sniperHW/kendynet/golog"
 	"github.com/sniperHW/kendynet/socket/aio"
 	connector "github.com/sniperHW/kendynet/socket/connector/aio"
 	listener "github.com/sniperHW/kendynet/socket/listener/aio"
 	"github.com/sniperHW/kendynet/timer"
-	"os"
-	"runtime"
-	"sync/atomic"
-	//"syscall"
-	"errors"
-	"github.com/sniperHW/kendynet/buffer"
-	"github.com/sniperHW/kendynet/golog"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
+	"runtime"
 	"strconv"
+	"sync/atomic"
 	"time"
 )
 
@@ -125,7 +124,11 @@ func main() {
 
 	_ = runtime.NumCPU() * 2
 
-	aioService = aio.NewSocketService(nil)
+	aioService = aio.NewSocketService(aio.ServiceOption{
+		PollerCount:              1,
+		WorkerPerPoller:          runtime.NumCPU(),
+		CompleteRoutinePerPoller: 1,
+	})
 
 	if len(os.Args) < 3 {
 		fmt.Printf("usage ./pingpong [server|client|both] ip:port clientcount\n")
