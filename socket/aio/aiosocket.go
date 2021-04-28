@@ -155,14 +155,13 @@ type Socket struct {
 	closeOnce        sync.Once
 	sendQueueSize    int
 	sendLock         bool
-	b                *buffer.Buffer
-	//offset           int
-	sendOverChan chan struct{}
-	netconn      net.Conn
-	sendContext  ioContext
-	recvContext  ioContext
-	closeReason  error
-	ioCount      int32
+	sendOverChan     chan struct{}
+	netconn          net.Conn
+	sendContext      ioContext
+	recvContext      ioContext
+	closeReason      error
+	ioCount          int32
+	sendingCount     int
 }
 
 func (s *Socket) IsClosed() bool {
@@ -291,37 +290,34 @@ func (s *Socket) emitSendTask() {
 }
 
 func (s *Socket) doSend() {
-	const maxsendsize = kendynet.SendBufferSize
 
 	s.muW.Lock()
-	//只有之前请求的buff全部发送完毕才填充新的buff
-	if nil == s.b {
-		s.b = buffer.Get()
-	}
 
 	for v := s.sendQueue.Front(); v != nil; v = s.sendQueue.Front() {
 		s.sendQueue.Remove(v)
-		l := s.b.Len()
-		if err := s.encoder.EnCode(v.Value, s.b); nil != err {
+		b := buffer.New()
+		if err := s.encoder.EnCode(v.Value, &b); nil != err {
 			//EnCode错误，这个包已经写入到b中的内容需要直接丢弃
-			s.b.SetLen(l)
 			kendynet.GetLogger().Errorf("encode error:%v", err)
-
-		} else if s.b.Len() >= maxsendsize {
-			break
+		} else {
+			s.addIO()
+			if nil != s.aioConn.Send(b.Bytes(), &s.sendContext) {
+				s.ioDone()
+				break
+			} else {
+				s.sendingCount++
+			}
 		}
 	}
 
+	sendingCount := s.sendingCount
 	s.muW.Unlock()
 
-	if s.b.Len() > 0 {
-		if nil != s.aioConn.Send(s.b.Bytes(), &s.sendContext) {
-			s.ioDone()
-		}
-	} else {
+	if sendingCount == 0 {
 		s.onSendComplete(&goaio.AIOResult{})
+	} else {
+		s.ioDone()
 	}
-
 }
 
 func (s *Socket) onSendComplete(r *goaio.AIOResult) {
@@ -330,17 +326,23 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 	if nil == r.Err {
 		s.muW.Lock()
 		defer s.muW.Unlock()
-		//发送完成释放发送buff
-		s.b.Free()
-		s.b = nil
-		if s.sendQueue.Len() == 0 {
-			s.sendLock = false
-			if s.flag.Test(fclosed | fwclosed) {
-				s.netconn.(interface{ CloseWrite() error }).CloseWrite()
-			}
-		} else {
-			s.emitSendTask()
+
+		if nil != r.Buff {
+			s.sendingCount--
 		}
+
+		//发送完成释放发送buff
+		if s.sendingCount == 0 {
+			if s.sendQueue.Len() == 0 {
+				s.sendLock = false
+				if s.flag.Test(fclosed | fwclosed) {
+					s.netconn.(interface{ CloseWrite() error }).CloseWrite()
+				}
+			} else {
+				s.emitSendTask()
+			}
+		}
+
 	} else if !s.flag.Test(fclosed) {
 
 		if r.Err == goaio.ErrSendTimeout {
@@ -357,12 +359,11 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 
 			//如果是发送超时且用户没有关闭socket,再次请求发送
 			if r.Err == kendynet.ErrSendTimeout && !s.flag.Test(fclosed) {
-				s.muW.Lock()
-				//超时可能会发送部分数据
-				s.b.DropFirstNBytes(r.Bytestransfer)
-				s.emitSendTask()
-				sendOver = false
-				s.muW.Unlock()
+				s.addIO()
+				if nil != s.aioConn.Send(r.Buff[r.Bytestransfer:], &s.sendContext) {
+					sendOver = true
+					s.ioDone()
+				}
 			}
 		} else {
 			s.Close(r.Err, 0)
