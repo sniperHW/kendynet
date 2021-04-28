@@ -50,7 +50,7 @@ func (this *SocketService) completeRoutine(s *goaio.AIOService) {
 func (this *SocketService) bind(conn net.Conn) (*goaio.AIOConn, error) {
 	idx := rand.Int() % len(this.services)
 	c, err := this.services[idx].Bind(conn, goaio.AIOConnOption{
-		SendqueSize: 1,
+		SendqueSize: 256,
 		RecvqueSize: 1,
 		ShareBuff:   this.shareBuffer,
 	})
@@ -294,9 +294,9 @@ func (s *Socket) doSend() {
 	s.muW.Lock()
 
 	for v := s.sendQueue.Front(); v != nil; v = s.sendQueue.Front() {
-		s.sendQueue.Remove(v)
 		b := buffer.New()
-		if err := s.encoder.EnCode(v.Value, &b); nil != err {
+		if err := s.encoder.EnCode(v.Value, b); nil != err {
+			s.sendQueue.Remove(v)
 			//EnCode错误，这个包已经写入到b中的内容需要直接丢弃
 			kendynet.GetLogger().Errorf("encode error:%v", err)
 		} else {
@@ -305,6 +305,7 @@ func (s *Socket) doSend() {
 				s.ioDone()
 				break
 			} else {
+				s.sendQueue.Remove(v)
 				s.sendingCount++
 			}
 		}

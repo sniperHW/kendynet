@@ -72,8 +72,7 @@ func Encode(o interface{}, b *buffer.Buffer, maxMsgSize int) (r *buffer.Buffer, 
 	totalLen := PBHeaderSize + pbIdSize + dataLen
 
 	if nil == b {
-		buff := buffer.New(make([]byte, 0, totalLen))
-		b = &buff
+		b = buffer.New(make([]byte, 0, totalLen))
 		r = b
 	}
 
