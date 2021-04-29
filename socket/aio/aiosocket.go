@@ -314,10 +314,8 @@ func (s *Socket) doSend() {
 
 	s.muW.Unlock()
 
-	if s.b.Len() > 0 {
-		if nil != s.aioConn.Send(s.b.Bytes(), &s.sendContext) {
-			s.ioDone()
-		}
+	if s.b.Len() > 0 && nil == s.aioConn.Send(s.b.Bytes(), &s.sendContext) {
+		return
 	} else {
 		s.onSendComplete(&goaio.AIOResult{})
 	}
