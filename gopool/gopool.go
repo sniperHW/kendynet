@@ -5,13 +5,18 @@ import (
 	"sync"
 )
 
+type task struct {
+	fn   func(...interface{})
+	args []interface{}
+}
+
 type routine struct {
-	taskCh chan func()
+	taskCh chan task
 }
 
 func (r *routine) run(p *Pool) {
-	for task := range r.taskCh {
-		task()
+	for t := range r.taskCh {
+		t.fn(t.args...)
 		p.free(r)
 	}
 }
@@ -132,7 +137,7 @@ func (p *Pool) free(r *routine) {
 	case QueueMode:
 		f := p.queue.pop()
 		if nil != f {
-			r.taskCh <- f.(func())
+			r.taskCh <- f.(task)
 			return
 		}
 	}
@@ -147,34 +152,34 @@ func (p *Pool) popFree() *routine {
 	}
 }
 
-func (p *Pool) Go(f func()) error {
+func (p *Pool) Go(f func(...interface{}), args ...interface{}) error {
 	p.Lock()
 	defer p.Unlock()
 	r := p.popFree()
 	if nil != r {
-		r.taskCh <- f
+		r.taskCh <- task{fn: f, args: args}
 	} else {
 		if p.count == p.o.MaxRoutineCount {
 			switch p.o.Mode {
 			case GoMode:
-				go f()
+				go f(args...)
 			case QueueMode:
-				if !p.queue.push(f) {
+				if !p.queue.push(task{fn: f, args: args}) {
 					return errors.New("exceed MaxQueueSize")
 				}
 			}
 		} else {
 			p.count++
 			r = &routine{
-				taskCh: make(chan func(), 1),
+				taskCh: make(chan task, 1),
 			}
-			r.taskCh <- f
+			r.taskCh <- task{fn: f, args: args}
 			go r.run(p)
 		}
 	}
 	return nil
 }
 
-func Go(f func()) error {
-	return defaultPool.Go(f)
+func Go(f func(...interface{}), args ...interface{}) error {
+	return defaultPool.Go(f, args...)
 }
