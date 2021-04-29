@@ -16,6 +16,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -95,7 +96,7 @@ func client(service string, count int) {
 
 			//send the first messge
 			o := &testproto.Test{}
-			o.A = proto.String("hello")
+			o.A = proto.String(strings.Repeat("a", 100))
 			o.B = proto.Int32(17)
 			for i := 0; i < 50; i++ {
 				session.Send(o)
