@@ -161,6 +161,7 @@ type Socket struct {
 	recvContext      ioContext
 	closeReason      error
 	ioCount          int32
+	sendBuffs        [goaio.MaxIovecSize][]byte
 }
 
 func (s *Socket) IsClosed() bool {
@@ -294,8 +295,7 @@ func (s *Socket) doSend(args ...interface{}) {
 	if len(args) == 0 {
 
 		s.muW.Lock()
-
-		buffs := [][]byte{}
+		i := 0
 		total := 0
 
 		for v := s.sendQueue.Front(); v != nil; v = s.sendQueue.Front() {
@@ -305,9 +305,10 @@ func (s *Socket) doSend(args ...interface{}) {
 				//EnCode错误，这个包已经写入到b中的内容需要直接丢弃
 				kendynet.GetLogger().Errorf("encode error:%v", err)
 			} else {
-				buffs = append(buffs, b.Bytes())
+				s.sendBuffs[i] = b.Bytes()
+				i++
 				total += b.Len()
-				if total >= maxsendsize {
+				if total >= maxsendsize || i >= goaio.MaxIovecSize {
 					break
 				}
 			}
@@ -316,7 +317,7 @@ func (s *Socket) doSend(args ...interface{}) {
 		s.muW.Unlock()
 
 		if total > 0 {
-			if nil != s.aioConn.Send(&s.sendContext, buffs...) {
+			if nil != s.aioConn.Send(&s.sendContext, s.sendBuffs[:i]...) {
 				s.onSendComplete(&goaio.AIOResult{})
 			}
 		} else {
@@ -540,6 +541,7 @@ func NewSocket(service *SocketService, netConn net.Conn) kendynet.StreamSession 
 	s.sendOverChan = make(chan struct{})
 	s.sendContext = ioContext{s: s, t: 's'}
 	s.recvContext = ioContext{s: s, t: 'r'}
+	//s.sendBuffs = make([][]byte, goaio.MaxIovecSize)
 
 	runtime.SetFinalizer(s, func(s *Socket) {
 		s.Close(errors.New("gc"), 0)
