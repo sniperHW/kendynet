@@ -13,9 +13,13 @@ type Buffer struct {
 	pool *Pool
 }
 
-func New(o []byte) *Buffer {
-	return &Buffer{
-		bs: o,
+func New(o ...[]byte) *Buffer {
+	if len(o) > 0 {
+		return &Buffer{
+			bs: o[0],
+		}
+	} else {
+		return &Buffer{}
 	}
 }
 

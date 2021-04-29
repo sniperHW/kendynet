@@ -240,7 +240,7 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 		defer func() {
 			if !s.flag.Test(fclosed|frclosed) && recvAgain {
 				b := s.inboundProcessor.GetRecvBuff()
-				if nil != s.aioConn.Recv(b, &s.recvContext) {
+				if nil != s.aioConn.Recv(&s.recvContext, b) {
 					s.ioDone()
 				}
 			} else {
@@ -264,7 +264,7 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 			}
 
 		} else {
-			s.inboundProcessor.OnData(r.Buff[:r.Bytestransfer])
+			s.inboundProcessor.OnData(r.Buffs[0][:r.Bytestransfer])
 			for !s.flag.Test(fclosed | frclosed) {
 				msg, err := s.inboundProcessor.Unpack()
 				if nil != err {
@@ -314,7 +314,7 @@ func (s *Socket) doSend() {
 
 	s.muW.Unlock()
 
-	if s.b.Len() > 0 && nil == s.aioConn.Send(s.b.Bytes(), &s.sendContext) {
+	if s.b.Len() > 0 && nil == s.aioConn.Send(&s.sendContext, s.b.Bytes()) {
 		return
 	} else {
 		s.onSendComplete(&goaio.AIOResult{})
@@ -439,7 +439,7 @@ func (s *Socket) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err er
 					}
 				}
 				s.inboundCallBack = cb
-				if err = s.aioConn.Recv(s.inboundProcessor.GetRecvBuff(), &s.recvContext); nil != err {
+				if err = s.aioConn.Recv(&s.recvContext, s.inboundProcessor.GetRecvBuff()); nil != err {
 					s.ioDone()
 				}
 			}
