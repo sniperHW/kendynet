@@ -1,7 +1,7 @@
 package aio
 
 import (
-	"container/list"
+	//"container/list"
 	"errors"
 	"github.com/sniperHW/goaio"
 	"github.com/sniperHW/kendynet"
@@ -143,7 +143,7 @@ const (
 type Socket struct {
 	ud               atomic.Value
 	muW              sync.Mutex
-	sendQueue        *list.List
+	sendQueue        sendqueue //*list.List
 	flag             util.Flag
 	aioConn          *goaio.AIOConn
 	encoder          kendynet.EnCoder
@@ -153,7 +153,6 @@ type Socket struct {
 	inboundCallBack  func(kendynet.StreamSession, interface{})
 	beginOnce        sync.Once
 	closeOnce        sync.Once
-	sendQueueSize    int
 	sendLock         bool
 	b                *buffer.Buffer
 	sendOverChan     chan struct{}
@@ -176,7 +175,7 @@ func (s *Socket) SetEncoder(e kendynet.EnCoder) kendynet.StreamSession {
 func (s *Socket) SetSendQueueSize(size int) kendynet.StreamSession {
 	s.muW.Lock()
 	defer s.muW.Unlock()
-	s.sendQueueSize = size
+	s.sendQueue.setMax(size)
 	return s
 }
 
@@ -289,10 +288,21 @@ func (s *Socket) doSend() {
 		s.b = buffer.Get()
 	}
 
-	for v := s.sendQueue.Front(); v != nil; v = s.sendQueue.Front() {
+	/*for v := s.sendQueue.Front(); v != nil; v = s.sendQueue.Front() {
 		s.sendQueue.Remove(v)
 		l := s.b.Len()
 		if err := s.encoder.EnCode(v.Value, s.b); nil != err {
+			//EnCode错误，这个包已经写入到b中的内容需要直接丢弃
+			s.b.SetLen(l)
+			kendynet.GetLogger().Errorf("encode error:%v", err)
+
+		} else if s.b.Len() >= maxsendsize {
+			break
+		}
+	}*/
+	for v := s.sendQueue.pop(); nil != v; v = s.sendQueue.pop() {
+		l := s.b.Len()
+		if err := s.encoder.EnCode(v, s.b); nil != err {
 			//EnCode错误，这个包已经写入到b中的内容需要直接丢弃
 			s.b.SetLen(l)
 			kendynet.GetLogger().Errorf("encode error:%v", err)
@@ -320,7 +330,7 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 		//发送完成释放发送buff
 		s.b.Free()
 		s.b = nil
-		if s.sendQueue.Len() == 0 {
+		if s.sendQueue.empty() {
 			s.sendLock = false
 			if s.flag.Test(fclosed | fwclosed) {
 				s.netconn.(interface{ CloseWrite() error }).CloseWrite()
@@ -374,11 +384,9 @@ func (s *Socket) Send(o interface{}) error {
 			return kendynet.ErrSocketClose
 		}
 
-		if s.sendQueue.Len() > s.sendQueueSize {
+		if !s.sendQueue.push(o) {
 			return kendynet.ErrSendQueFull
 		}
-
-		s.sendQueue.PushBack(o)
 
 		if !s.sendLock {
 			s.emitSendTask()
@@ -399,7 +407,7 @@ func (s *Socket) ShutdownWrite() {
 		return
 	} else {
 		s.flag.AtomicSet(fwclosed)
-		if s.sendQueue.Len() == 0 {
+		if s.sendQueue.empty() {
 			s.netconn.(interface{ CloseWrite() error }).CloseWrite()
 		} else {
 			if !s.sendLock {
@@ -507,8 +515,7 @@ func NewSocket(service *SocketService, netConn net.Conn) kendynet.StreamSession 
 		return nil
 	}
 	s.aioConn = c
-	s.sendQueueSize = 256
-	s.sendQueue = list.New()
+	s.sendQueue = newring(256)
 	s.netconn = netConn
 	s.sendOverChan = make(chan struct{})
 	s.sendContext = ioContext{s: s, t: 's'}
