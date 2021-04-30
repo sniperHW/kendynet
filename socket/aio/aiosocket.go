@@ -302,12 +302,11 @@ func (s *Socket) doSend() {
 
 	s.muW.Unlock()
 
-	if s.b.Len() > 0 && nil == s.aioConn.Send(&s.sendContext, s.b.Bytes()) {
-		return
-	} else {
+	if s.b.Len() == 0 {
 		s.onSendComplete(&goaio.AIOResult{})
+	} else if nil != s.aioConn.Send(&s.sendContext, s.b.Bytes()) {
+		s.onSendComplete(&goaio.AIOResult{Err: kendynet.ErrSocketClose})
 	}
-
 }
 
 func (s *Socket) onSendComplete(r *goaio.AIOResult) {
