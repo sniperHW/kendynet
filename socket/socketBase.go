@@ -48,7 +48,7 @@ type SocketBase struct {
 }
 
 func (this *SocketBase) IsClosed() bool {
-	return this.flag.Test(fclosed)
+	return this.flag.AtomicTest(fclosed)
 }
 
 func (this *SocketBase) LocalAddr() net.Addr {
@@ -166,7 +166,7 @@ func (this *SocketBase) ioDone() {
 }
 
 func (this *SocketBase) ShutdownRead() {
-	this.flag.Set(frclosed)
+	this.flag.AtomicSet(frclosed)
 	this.imp.GetNetConn().(interface{ CloseRead() error }).CloseRead()
 }
 
@@ -184,7 +184,7 @@ func (this *SocketBase) Close(reason error, delay time.Duration) {
 	this.closeOnce.Do(func() {
 		runtime.SetFinalizer(this.imp, nil)
 
-		this.flag.Set(fclosed)
+		this.flag.AtomicSet(fclosed)
 
 		wclosed := this.sendQue.Closed()
 
@@ -218,7 +218,7 @@ func (this *SocketBase) Close(reason error, delay time.Duration) {
 		}
 
 		this.closeReason = reason
-		this.flag.Set(fdoclose)
+		this.flag.AtomicSet(fdoclose)
 
 		if atomic.LoadInt32(&this.ioCount) == 0 {
 			if nil != this.closeCallBack {

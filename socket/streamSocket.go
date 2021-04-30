@@ -65,7 +65,7 @@ func (this *StreamSocket) recvThreadFunc() {
 	oldTimeout := this.getRecvTimeout()
 	timeout := oldTimeout
 
-	for !this.flag.Test(fclosed | frclosed) {
+	for !this.flag.AtomicTest(fclosed | frclosed) {
 
 		var (
 			p   interface{}
@@ -107,7 +107,7 @@ func (this *StreamSocket) recvThreadFunc() {
 			}
 		}
 
-		if !this.flag.Test(fclosed | frclosed) {
+		if !this.flag.AtomicTest(fclosed | frclosed) {
 			if nil != err {
 				if kendynet.IsNetTimeout(err) {
 					err = kendynet.ErrRecvTimeout
@@ -118,7 +118,7 @@ func (this *StreamSocket) recvThreadFunc() {
 					if isUnpackError {
 						this.Close(err, 0)
 					} else if err != kendynet.ErrRecvTimeout {
-						this.flag.Set(frclosed)
+						this.flag.AtomicSet(frclosed)
 					}
 
 					this.errorCallback(this, err)
@@ -200,7 +200,7 @@ func (this *StreamSocket) sendThreadFunc() {
 
 			if nil == err {
 				b.Reset()
-			} else if !this.flag.Test(fclosed) {
+			} else if !this.flag.AtomicTest(fclosed) {
 				if kendynet.IsNetTimeout(err) {
 					err = kendynet.ErrSendTimeout
 				} else {
@@ -211,7 +211,7 @@ func (this *StreamSocket) sendThreadFunc() {
 					this.errorCallback(this, err)
 				}
 
-				if this.flag.Test(fclosed) {
+				if this.flag.AtomicTest(fclosed) {
 					b.Free()
 					return
 				} else {

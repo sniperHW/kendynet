@@ -72,7 +72,7 @@ func (this *WebSocket) recvThreadFunc() {
 	oldTimeout := this.getRecvTimeout()
 	timeout := oldTimeout
 
-	for !this.flag.Test(fclosed | frclosed) {
+	for !this.flag.AtomicTest(fclosed | frclosed) {
 
 		var (
 			p           interface{}
@@ -114,7 +114,7 @@ func (this *WebSocket) recvThreadFunc() {
 			}
 		}
 
-		if !this.flag.Test(fclosed | frclosed) {
+		if !this.flag.AtomicTest(fclosed | frclosed) {
 			if nil != err {
 				if kendynet.IsNetTimeout(err) {
 					err = kendynet.ErrRecvTimeout
@@ -125,7 +125,7 @@ func (this *WebSocket) recvThreadFunc() {
 					if isUnpackError {
 						this.Close(err, 0)
 					} else if err != kendynet.ErrRecvTimeout {
-						this.flag.Set(frclosed)
+						this.flag.AtomicSet(frclosed)
 					}
 
 					this.errorCallback(this, err)
@@ -198,7 +198,7 @@ func (this *WebSocket) sendThreadFunc() {
 
 			b.Reset()
 
-			if err != nil && !this.flag.Test(fclosed) {
+			if err != nil && !this.flag.AtomicTest(fclosed) {
 
 				if kendynet.IsNetTimeout(err) {
 					err = kendynet.ErrSendTimeout
@@ -210,7 +210,7 @@ func (this *WebSocket) sendThreadFunc() {
 					this.errorCallback(this, err)
 				}
 
-				if this.flag.Test(fclosed) {
+				if this.flag.AtomicTest(fclosed) {
 					return
 				}
 			}
