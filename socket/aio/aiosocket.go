@@ -288,18 +288,6 @@ func (s *Socket) doSend() {
 		s.b = buffer.Get()
 	}
 
-	/*for v := s.sendQueue.Front(); v != nil; v = s.sendQueue.Front() {
-		s.sendQueue.Remove(v)
-		l := s.b.Len()
-		if err := s.encoder.EnCode(v.Value, s.b); nil != err {
-			//EnCode错误，这个包已经写入到b中的内容需要直接丢弃
-			s.b.SetLen(l)
-			kendynet.GetLogger().Errorf("encode error:%v", err)
-
-		} else if s.b.Len() >= maxsendsize {
-			break
-		}
-	}*/
 	for v := s.sendQueue.pop(); nil != v; v = s.sendQueue.pop() {
 		l := s.b.Len()
 		if err := s.encoder.EnCode(v, s.b); nil != err {
