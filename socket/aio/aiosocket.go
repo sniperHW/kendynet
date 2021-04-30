@@ -156,17 +156,16 @@ type Socket struct {
 	sendQueueSize    int
 	sendLock         bool
 	b                *buffer.Buffer
-	//offset           int
-	sendOverChan chan struct{}
-	netconn      net.Conn
-	sendContext  ioContext
-	recvContext  ioContext
-	closeReason  error
-	ioCount      int32
+	sendOverChan     chan struct{}
+	netconn          net.Conn
+	sendContext      ioContext
+	recvContext      ioContext
+	closeReason      error
+	ioCount          int32
 }
 
 func (s *Socket) IsClosed() bool {
-	return s.flag.Test(fclosed)
+	return s.flag.AtomicTest(fclosed)
 }
 
 func (s *Socket) SetEncoder(e kendynet.EnCoder) kendynet.StreamSession {
@@ -232,29 +231,16 @@ func (s *Socket) SetInBoundProcessor(in kendynet.InBoundProcessor) kendynet.Stre
 }
 
 func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
-	if s.flag.Test(fclosed | frclosed) {
+	if s.flag.AtomicTest(fclosed | frclosed) {
 		s.ioDone()
 	} else {
 		recvAgain := false
-
-		defer func() {
-			if !s.flag.Test(fclosed|frclosed) && recvAgain {
-				b := s.inboundProcessor.GetRecvBuff()
-				if nil != s.aioConn.Recv(&s.recvContext, b) {
-					s.ioDone()
-				}
-			} else {
-				s.ioDone()
-			}
-		}()
-
 		if nil != r.Err {
-
 			if r.Err == goaio.ErrRecvTimeout {
 				r.Err = kendynet.ErrRecvTimeout
 				recvAgain = true
 			} else {
-				s.flag.Set(frclosed)
+				s.flag.AtomicSet(frclosed)
 			}
 
 			if nil != s.errorCallback {
@@ -265,7 +251,7 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 
 		} else {
 			s.inboundProcessor.OnData(r.Buffs[0][:r.Bytestransfer])
-			for !s.flag.Test(fclosed | frclosed) {
+			for !s.flag.AtomicTest(fclosed | frclosed) {
 				msg, err := s.inboundProcessor.Unpack()
 				if nil != err {
 					s.Close(err, 0)
@@ -280,6 +266,10 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 					break
 				}
 			}
+		}
+
+		if !recvAgain || s.flag.AtomicTest(fclosed|frclosed) || nil != s.aioConn.Recv(&s.recvContext, s.inboundProcessor.GetRecvBuff()) {
+			s.ioDone()
 		}
 	}
 }
@@ -339,7 +329,7 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 			s.emitSendTask()
 			return
 		}
-	} else if !s.flag.Test(fclosed) {
+	} else if !s.flag.AtomicTest(fclosed) {
 
 		if r.Err == goaio.ErrSendTimeout {
 			r.Err = kendynet.ErrSendTimeout
@@ -353,7 +343,7 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 			s.errorCallback(s, r.Err)
 
 			//如果是发送超时且用户没有关闭socket,再次请求发送
-			if r.Err == kendynet.ErrSendTimeout && !s.flag.Test(fclosed) {
+			if r.Err == kendynet.ErrSendTimeout && !s.flag.AtomicTest(fclosed) {
 				s.muW.Lock()
 				//超时可能会发送部分数据
 				s.b.DropFirstNBytes(r.Bytestransfer)
@@ -366,7 +356,7 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 		}
 	}
 
-	if s.flag.Test(fclosed | fwclosed) {
+	if s.flag.AtomicTest(fclosed | fwclosed) {
 		close(s.sendOverChan)
 	}
 }
@@ -398,17 +388,17 @@ func (s *Socket) Send(o interface{}) error {
 }
 
 func (s *Socket) ShutdownRead() {
-	s.flag.Set(frclosed)
+	s.flag.AtomicSet(frclosed)
 	s.netconn.(interface{ CloseRead() error }).CloseRead()
 }
 
 func (s *Socket) ShutdownWrite() {
 	s.muW.Lock()
 	defer s.muW.Unlock()
-	if s.flag.Test(fwclosed | fclosed) {
+	if s.flag.AtomicTest(fwclosed | fclosed) {
 		return
 	} else {
-		s.flag.Set(fwclosed)
+		s.flag.AtomicSet(fwclosed)
 		if s.sendQueue.Len() == 0 {
 			s.netconn.(interface{ CloseWrite() error }).CloseWrite()
 		} else {
@@ -428,7 +418,7 @@ func (s *Socket) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err er
 
 			s.addIO()
 
-			if s.flag.Test(fclosed | frclosed) {
+			if s.flag.AtomicTest(fclosed | frclosed) {
 				s.ioDone()
 				err = kendynet.ErrSocketClose
 			} else {
@@ -453,7 +443,7 @@ func (s *Socket) addIO() {
 }
 
 func (s *Socket) ioDone() {
-	if 0 == atomic.AddInt32(&s.ioCount, -1) && s.flag.Test(fdoclose) {
+	if 0 == atomic.AddInt32(&s.ioCount, -1) && s.flag.AtomicTest(fdoclose) {
 
 		if nil != s.inboundProcessor {
 			s.inboundProcessor.OnSocketClose()
@@ -471,9 +461,9 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 
 		s.muW.Lock()
 
-		s.flag.Set(fclosed)
+		s.flag.AtomicSet(fclosed)
 
-		if !s.flag.Test(fwclosed) && delay > 0 {
+		if !s.flag.AtomicTest(fwclosed) && delay > 0 {
 			if !s.sendLock {
 				s.emitSendTask()
 			}
@@ -496,7 +486,7 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 		}
 
 		s.closeReason = reason
-		s.flag.Set(fdoclose)
+		s.flag.AtomicSet(fdoclose)
 
 		if atomic.LoadInt32(&s.ioCount) == 0 {
 			if nil != s.inboundProcessor {
