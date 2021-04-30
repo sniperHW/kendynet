@@ -175,7 +175,7 @@ func (s *Socket) SetEncoder(e kendynet.EnCoder) kendynet.StreamSession {
 func (s *Socket) SetSendQueueSize(size int) kendynet.StreamSession {
 	s.muW.Lock()
 	defer s.muW.Unlock()
-	s.sendQueue.setMax(size)
+	s.sendQueue.setCap(size)
 	return s
 }
 
@@ -515,7 +515,7 @@ func NewSocket(service *SocketService, netConn net.Conn) kendynet.StreamSession 
 		return nil
 	}
 	s.aioConn = c
-	s.sendQueue = newring(256)
+	s.sendQueue = newSendQueue(256)
 	s.netconn = netConn
 	s.sendOverChan = make(chan struct{})
 	s.sendContext = ioContext{s: s, t: 's'}
