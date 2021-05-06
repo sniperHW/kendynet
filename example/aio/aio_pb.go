@@ -52,7 +52,7 @@ func server(service string) {
 			})
 
 			session.SetEncoder(codec.NewPbEncoder(4096))
-			session.SetInBoundProcessor(codec.NewPBReceiver(4096))
+			session.SetInBoundProcessor(codec.NewPBReceiver(65535))
 
 			session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
 				atomic.AddInt32(&packetcount, int32(1))
@@ -85,7 +85,7 @@ func client(service string, count int) {
 			fmt.Printf("Dial error:%s\n", err.Error())
 		} else {
 			session.SetEncoder(codec.NewPbEncoder(4096))
-			session.SetInBoundProcessor(codec.NewPBReceiver(4096))
+			session.SetInBoundProcessor(codec.NewPBReceiver(65535))
 			session.SetCloseCallBack(func(sess kendynet.StreamSession, reason error) {
 				fmt.Printf("client client close:%s\n", reason)
 			})

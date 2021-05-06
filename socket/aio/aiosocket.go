@@ -320,7 +320,15 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 		s.muW.Lock()
 		defer s.muW.Unlock()
 		//发送完成释放发送buff
-		s.b.Reset()
+		s.b.Free()
+		s.b = nil
+		if s.sendQueue.empty() {
+			s.sendLock = false
+		} else {
+			s.emitSendTask()
+			return
+		}
+		/*s.b.Reset()
 		s.prepareSendBuff()
 		if s.b.Len() == 0 {
 			s.b.Free()
@@ -329,7 +337,7 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 		} else if nil == s.aioConn.Send(&s.sendContext, s.b.Bytes()) {
 			s.addIO()
 			return
-		}
+		}*/
 	} else if !s.flag.AtomicTest(fclosed) {
 
 		if r.Err == goaio.ErrSendTimeout {
