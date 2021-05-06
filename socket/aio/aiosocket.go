@@ -279,10 +279,9 @@ func (s *Socket) emitSendTask() {
 	sendRoutinePool.Go(s.doSend)
 }
 
-func (s *Socket) doSend() {
+func (s *Socket) prepareSendBuff() {
 	const maxsendsize = kendynet.SendBufferSize
 
-	s.muW.Lock()
 	//只有之前请求的buff全部发送完毕才填充新的buff
 	if nil == s.b {
 		s.b = buffer.Get()
@@ -300,6 +299,12 @@ func (s *Socket) doSend() {
 		}
 	}
 
+}
+
+func (s *Socket) doSend() {
+
+	s.muW.Lock()
+	s.prepareSendBuff()
 	s.muW.Unlock()
 
 	if s.b.Len() == 0 {
@@ -315,15 +320,14 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 		s.muW.Lock()
 		defer s.muW.Unlock()
 		//发送完成释放发送buff
-		s.b.Free()
-		s.b = nil
-		if s.sendQueue.empty() {
+		s.b.Reset()
+		s.prepareSendBuff()
+		if s.b.Len() == 0 {
+			s.b.Free()
+			s.b = nil
 			s.sendLock = false
-			if s.flag.Test(fclosed | fwclosed) {
-				s.netconn.(interface{ CloseWrite() error }).CloseWrite()
-			}
-		} else {
-			s.emitSendTask()
+		} else if nil == s.aioConn.Send(&s.sendContext, s.b.Bytes()) {
+			s.addIO()
 			return
 		}
 	} else if !s.flag.AtomicTest(fclosed) {
@@ -354,6 +358,7 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 	}
 
 	if s.flag.AtomicTest(fclosed | fwclosed) {
+		s.netconn.(interface{ CloseWrite() error }).CloseWrite()
 		close(s.sendOverChan)
 	}
 }

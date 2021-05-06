@@ -109,9 +109,9 @@ func client(service string, count int) {
 func main() {
 
 	aioService = aio.NewSocketService(aio.ServiceOption{
-		PollerCount:              2,
-		WorkerPerPoller:          runtime.NumCPU() / 2,
-		CompleteRoutinePerPoller: 1,
+		PollerCount:              1,
+		WorkerPerPoller:          runtime.NumCPU(),
+		CompleteRoutinePerPoller: runtime.NumCPU(),
 	})
 
 	pb.Register(&testproto.Test{}, 1)

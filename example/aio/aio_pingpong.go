@@ -127,7 +127,7 @@ func main() {
 	aioService = aio.NewSocketService(aio.ServiceOption{
 		PollerCount:              1,
 		WorkerPerPoller:          runtime.NumCPU(),
-		CompleteRoutinePerPoller: 1,
+		CompleteRoutinePerPoller: runtime.NumCPU(),
 	})
 
 	if len(os.Args) < 3 {

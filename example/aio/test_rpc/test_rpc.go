@@ -23,7 +23,7 @@ var aioService *aio.SocketService = aio.NewSocketService(aio.ServiceOption{
 	CompleteRoutinePerPoller: 4,*/
 	PollerCount:              1,
 	WorkerPerPoller:          runtime.NumCPU(),
-	CompleteRoutinePerPoller: 4,
+	CompleteRoutinePerPoller: runtime.NumCPU(),
 })
 
 type TcpStreamChannel struct {
