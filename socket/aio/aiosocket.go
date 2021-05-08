@@ -3,6 +3,7 @@ package aio
 import (
 	//"container/list"
 	"errors"
+	//"fmt"
 	"github.com/sniperHW/goaio"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/buffer"
@@ -273,14 +274,16 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 	}
 }
 
-func (s *Socket) emitSendTask() {
+/*func (s *Socket) emitSendTask() {
 	s.addIO()
 	s.sendLock = true
 	sendRoutinePool.Go(s.doSend)
-}
+}*/
 
-func (s *Socket) prepareSendBuff() {
+func (s *Socket) doSend() {
 	const maxsendsize = kendynet.SendBufferSize
+
+	s.muW.Lock()
 
 	//只有之前请求的buff全部发送完毕才填充新的buff
 	if nil == s.b {
@@ -299,12 +302,6 @@ func (s *Socket) prepareSendBuff() {
 		}
 	}
 
-}
-
-func (s *Socket) doSend() {
-
-	s.muW.Lock()
-	s.prepareSendBuff()
 	s.muW.Unlock()
 
 	if s.b.Len() == 0 {
@@ -318,24 +315,18 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 	defer s.ioDone()
 	if nil == r.Err {
 		s.muW.Lock()
-		defer s.muW.Unlock()
 		//发送完成释放发送buff
-		/*s.b.Free()
-		s.b = nil
 		if s.sendQueue.empty() {
-			s.sendLock = false
-		} else {
-			s.emitSendTask()
-			return
-		}*/
-		s.b.Reset()
-		s.prepareSendBuff()
-		if s.b.Len() == 0 {
 			s.b.Free()
 			s.b = nil
 			s.sendLock = false
-		} else if nil == s.aioConn.Send(&s.sendContext, s.b.Bytes()) {
+			s.muW.Unlock()
+		} else {
+			s.b.Reset()
 			s.addIO()
+			s.sendLock = true
+			s.muW.Unlock()
+			sendRoutinePool.Go(s.doSend)
 			return
 		}
 	} else if !s.flag.AtomicTest(fclosed) {
@@ -356,15 +347,16 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 				s.muW.Lock()
 				//超时可能会发送部分数据
 				s.b.DropFirstNBytes(r.Bytestransfer)
-				s.emitSendTask()
+				s.addIO()
+				s.sendLock = true
 				s.muW.Unlock()
+				sendRoutinePool.Go(s.doSend)
 				return
 			}
 		} else {
 			s.Close(r.Err, 0)
 		}
 	}
-
 	if s.flag.AtomicTest(fclosed | fwclosed) {
 		s.netconn.(interface{ CloseWrite() error }).CloseWrite()
 		close(s.sendOverChan)
@@ -378,18 +370,24 @@ func (s *Socket) Send(o interface{}) error {
 		return kendynet.ErrInvaildObject
 	} else {
 		s.muW.Lock()
-		defer s.muW.Unlock()
 
 		if s.flag.Test(fclosed | fwclosed) {
+			s.muW.Unlock()
 			return kendynet.ErrSocketClose
 		}
 
 		if !s.sendQueue.push(o) {
+			s.muW.Unlock()
 			return kendynet.ErrSendQueFull
 		}
 
 		if !s.sendLock {
-			s.emitSendTask()
+			s.addIO()
+			s.sendLock = true
+			s.muW.Unlock()
+			sendRoutinePool.Go(s.doSend)
+		} else {
+			s.muW.Unlock()
 		}
 		return nil
 	}
@@ -411,7 +409,9 @@ func (s *Socket) ShutdownWrite() {
 			s.netconn.(interface{ CloseWrite() error }).CloseWrite()
 		} else {
 			if !s.sendLock {
-				s.emitSendTask()
+				s.addIO()
+				s.sendLock = true
+				sendRoutinePool.Go(s.doSend)
 			}
 		}
 	}
@@ -473,7 +473,9 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 
 		if !s.flag.AtomicTest(fwclosed) && delay > 0 {
 			if !s.sendLock {
-				s.emitSendTask()
+				s.addIO()
+				s.sendLock = true
+				sendRoutinePool.Go(s.doSend)
 			}
 			s.muW.Unlock()
 
