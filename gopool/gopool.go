@@ -193,10 +193,18 @@ func (p *Pool) gogo(f interface{}) error {
 	return nil
 }
 
+func (p *Pool) Go(f func()) error {
+	return p.gogo(f)
+}
+
+func (p *Pool) GoTask(t Task) error {
+	return p.gogo(t)
+}
+
 func Go(f func()) error {
-	return defaultPool.gogo(f)
+	return defaultPool.Go(f)
 }
 
 func GoTask(t Task) error {
-	return defaultPool.gogo(t)
+	return defaultPool.GoTask(t)
 }
