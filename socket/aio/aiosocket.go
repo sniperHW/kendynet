@@ -1,9 +1,7 @@
 package aio
 
 import (
-	//"container/list"
 	"errors"
-	//"fmt"
 	"github.com/sniperHW/goaio"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/buffer"
@@ -274,6 +272,14 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 	}
 }
 
+/*
+ *  实现gopool.Task接口,避免无谓的闭包创建
+ */
+
+func (s *Socket) Do() {
+	s.doSend()
+}
+
 func (s *Socket) doSend() {
 	const maxsendsize = kendynet.SendBufferSize
 
@@ -320,7 +326,7 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 			s.addIO()
 			s.sendLock = true
 			s.muW.Unlock()
-			sendRoutinePool.Go(s.doSend)
+			sendRoutinePool.GoTask(s)
 			return
 		}
 	} else if !s.flag.AtomicTest(fclosed) {
@@ -344,7 +350,7 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 				s.addIO()
 				s.sendLock = true
 				s.muW.Unlock()
-				sendRoutinePool.Go(s.doSend)
+				sendRoutinePool.GoTask(s)
 				return
 			}
 		} else {
@@ -379,7 +385,7 @@ func (s *Socket) Send(o interface{}) error {
 			s.addIO()
 			s.sendLock = true
 			s.muW.Unlock()
-			sendRoutinePool.Go(s.doSend)
+			sendRoutinePool.GoTask(s)
 		} else {
 			s.muW.Unlock()
 		}
@@ -405,7 +411,7 @@ func (s *Socket) ShutdownWrite() {
 			if !s.sendLock {
 				s.addIO()
 				s.sendLock = true
-				sendRoutinePool.Go(s.doSend)
+				sendRoutinePool.GoTask(s)
 			}
 		}
 	}
@@ -469,7 +475,7 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 			if !s.sendLock {
 				s.addIO()
 				s.sendLock = true
-				sendRoutinePool.Go(s.doSend)
+				sendRoutinePool.GoTask(s)
 			}
 			s.muW.Unlock()
 
