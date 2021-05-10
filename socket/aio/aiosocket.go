@@ -250,7 +250,7 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 			}
 
 		} else {
-			s.inboundProcessor.OnData(r.Buffs[0][:r.Bytestransfer])
+			s.inboundProcessor.OnData(r.Buff[:r.Bytestransfer])
 			for !s.flag.AtomicTest(fclosed | frclosed) {
 				msg, err := s.inboundProcessor.Unpack()
 				if nil != err {
@@ -273,12 +273,6 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 		}
 	}
 }
-
-/*func (s *Socket) emitSendTask() {
-	s.addIO()
-	s.sendLock = true
-	sendRoutinePool.Go(s.doSend)
-}*/
 
 func (s *Socket) doSend() {
 	const maxsendsize = kendynet.SendBufferSize
