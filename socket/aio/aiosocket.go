@@ -46,9 +46,9 @@ func (this *SocketService) completeRoutine(s *goaio.AIOService) {
 	}
 }
 
-func (this *SocketService) bind(conn net.Conn) (*goaio.AIOConn, error) {
+func (this *SocketService) createAIOConn(conn net.Conn) (*goaio.AIOConn, error) {
 	idx := rand.Int() % len(this.services)
-	c, err := this.services[idx].Bind(conn, goaio.AIOConnOption{
+	c, err := this.services[idx].CreateAIOConn(conn, goaio.AIOConnOption{
 		SendqueSize: 1,
 		RecvqueSize: 1,
 		ShareBuff:   this.shareBuffer,
@@ -512,7 +512,7 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 func NewSocket(service *SocketService, netConn net.Conn) kendynet.StreamSession {
 
 	s := &Socket{}
-	c, err := service.bind(netConn)
+	c, err := service.createAIOConn(netConn)
 	if err != nil {
 		return nil
 	}
