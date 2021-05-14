@@ -65,6 +65,10 @@ func AppendInt64(bs []byte, i64 int64) []byte {
 	return AppendUint64(bs, uint64(i64))
 }
 
+func AppendInt(bs []byte, i32 int) []byte {
+	return AppendUint32(bs, uint32(i32))
+}
+
 //implement io.Writer
 func (b *Buffer) Write(bytes []byte) (int, error) {
 	b.AppendBytes(bytes)
@@ -125,6 +129,11 @@ func (b *Buffer) AppendInt32(i32 int32) *Buffer {
 
 func (b *Buffer) AppendInt64(i64 int64) *Buffer {
 	b.AppendUint64(uint64(i64))
+	return b
+}
+
+func (b *Buffer) AppendInt(i32 int) *Buffer {
+	b.AppendUint32(uint32(i32))
 	return b
 }
 
@@ -286,6 +295,19 @@ func (this *BufferReader) CheckGetInt32() (int32, error) {
 		return 0, err
 	} else {
 		return int32(u), nil
+	}
+}
+
+func (this *BufferReader) GetInt() int {
+	return int(this.GetUint32())
+}
+
+func (this *BufferReader) CheckGetInt() (int, error) {
+	u, err := this.CheckGetUint32()
+	if nil != err {
+		return 0, err
+	} else {
+		return int(u), nil
 	}
 }
 
