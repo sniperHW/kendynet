@@ -3,6 +3,7 @@ package socket
 import (
 	"errors"
 	"github.com/sniperHW/kendynet"
+	"github.com/sniperHW/kendynet/buffer"
 	"github.com/sniperHW/kendynet/util"
 	"net"
 	"runtime"
@@ -27,20 +28,18 @@ type SocketImpl interface {
 }
 
 type SocketBase struct {
-	flag          util.Flag
-	ud            atomic.Value
-	sendQue       *util.BlockQueue
-	sendTimeout   int64
-	recvTimeout   int64
-	sendCloseChan chan struct{}
-	imp           SocketImpl
-	closeOnce     sync.Once
-	beginOnce     sync.Once
-	sendOnce      sync.Once
-	ioCount       int32
-	closeReason   error
-	//ioWait        sync.WaitGroup
-
+	flag            util.Flag
+	ud              atomic.Value
+	sendQue         *SendQueue
+	sendTimeout     int64
+	recvTimeout     int64
+	sendCloseChan   chan struct{}
+	imp             SocketImpl
+	closeOnce       sync.Once
+	beginOnce       sync.Once
+	sendOnce        sync.Once
+	ioCount         int32
+	closeReason     error
 	encoder         kendynet.EnCoder
 	errorCallback   func(kendynet.StreamSession, error)
 	closeCallBack   func(kendynet.StreamSession, error)
@@ -112,12 +111,11 @@ func (this *SocketBase) Send(o interface{}) error {
 	} else if nil == this.encoder {
 		return kendynet.ErrInvaildEncoder
 	} else {
-		fullReturn := true
-		err := this.sendQue.AddNoWait(o, fullReturn)
+		err := this.sendQue.Add(o)
 		if nil != err {
-			if err == util.ErrQueueClosed {
+			if err == ErrQueueClosed {
 				err = kendynet.ErrSocketClose
-			} else if err == util.ErrQueueFull {
+			} else if err == ErrQueueFull {
 				err = kendynet.ErrSendQueFull
 			}
 			return err
@@ -127,6 +125,39 @@ func (this *SocketBase) Send(o interface{}) error {
 			go this.imp.sendThreadFunc()
 		})
 		return nil
+	}
+}
+
+func (this *SocketBase) SyncSend(o interface{}, timeout ...time.Duration) error {
+	if nil == o {
+		return kendynet.ErrInvaildObject
+	} else if nil == this.encoder {
+		return kendynet.ErrInvaildEncoder
+	} else {
+		b := buffer.New(make([]byte, 0, 128))
+		if err := this.encoder.EnCode(o, b); nil != err {
+			return err
+		}
+
+		var ttimeout time.Duration
+		if len(timeout) > 0 {
+			ttimeout = timeout[0]
+		}
+
+		if err := this.sendQue.AddWithTimeout(b.Bytes(), ttimeout); nil != err {
+			if err == ErrQueueClosed {
+				err = kendynet.ErrSocketClose
+			} else if err == ErrQueueFull {
+				err = kendynet.ErrSendQueFull
+			}
+			return err
+		} else {
+			this.sendOnce.Do(func() {
+				this.addIO()
+				go this.imp.sendThreadFunc()
+			})
+			return nil
+		}
 	}
 }
 

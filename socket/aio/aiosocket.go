@@ -6,6 +6,7 @@ import (
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/buffer"
 	"github.com/sniperHW/kendynet/gopool"
+	"github.com/sniperHW/kendynet/socket"
 	"github.com/sniperHW/kendynet/util"
 	"math/rand"
 	"net"
@@ -142,7 +143,7 @@ const (
 type Socket struct {
 	ud               atomic.Value
 	muW              sync.Mutex
-	sendQueue        sendqueue //*list.List
+	sendQueue        *socket.SendQueue //sendqueue //*list.List
 	flag             util.Flag
 	aioConn          *goaio.AIOConn
 	encoder          kendynet.EnCoder
@@ -160,6 +161,7 @@ type Socket struct {
 	recvContext      ioContext
 	closeReason      error
 	ioCount          int32
+	swaped           []interface{}
 }
 
 func (s *Socket) IsClosed() bool {
@@ -172,9 +174,7 @@ func (s *Socket) SetEncoder(e kendynet.EnCoder) kendynet.StreamSession {
 }
 
 func (s *Socket) SetSendQueueSize(size int) kendynet.StreamSession {
-	s.muW.Lock()
-	defer s.muW.Unlock()
-	s.sendQueue.setCap(size)
+	s.sendQueue.SetFullSize(size)
 	return s
 }
 
@@ -281,8 +281,6 @@ func (s *Socket) Do() {
 }
 
 func (s *Socket) doSend() {
-	const maxsendsize = kendynet.SendBufferSize
-
 	s.muW.Lock()
 
 	//只有之前请求的buff全部发送完毕才填充新的buff
@@ -290,16 +288,21 @@ func (s *Socket) doSend() {
 		s.b = buffer.Get()
 	}
 
-	for v := s.sendQueue.pop(); nil != v; v = s.sendQueue.pop() {
-		l := s.b.Len()
-		if err := s.encoder.EnCode(v, s.b); nil != err {
-			//EnCode错误，这个包已经写入到b中的内容需要直接丢弃
-			s.b.SetLen(l)
-			kendynet.GetLogger().Errorf("encode error:%v", err)
+	_, s.swaped = s.sendQueue.Get(s.swaped)
 
-		} else if s.b.Len() >= maxsendsize {
-			break
+	for i := 0; i < len(s.swaped); i++ {
+		l := s.b.Len()
+		switch s.swaped[i].(type) {
+		case []byte:
+			s.b.AppendBytes(s.swaped[i].([]byte))
+		default:
+			if err := s.encoder.EnCode(s.swaped[i], s.b); nil != err {
+				//EnCode错误，这个包已经写入到b中的内容需要直接丢弃
+				s.b.SetLen(l)
+				kendynet.GetLogger().Errorf("encode error:%v", err)
+			}
 		}
+		s.swaped[i] = nil
 	}
 
 	s.muW.Unlock()
@@ -316,7 +319,7 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 	if nil == r.Err {
 		s.muW.Lock()
 		//发送完成释放发送buff
-		if s.sendQueue.empty() {
+		if s.sendQueue.Empty() {
 			s.b.Free()
 			s.b = nil
 			s.sendLock = false
@@ -376,7 +379,7 @@ func (s *Socket) Send(o interface{}) error {
 			return kendynet.ErrSocketClose
 		}
 
-		if !s.sendQueue.push(o) {
+		if nil != s.sendQueue.Add(o) {
 			s.muW.Unlock()
 			return kendynet.ErrSendQueFull
 		}
@@ -393,6 +396,51 @@ func (s *Socket) Send(o interface{}) error {
 	}
 }
 
+func (s *Socket) SyncSend(o interface{}, timeout ...time.Duration) error {
+	if s.encoder == nil {
+		return kendynet.ErrInvaildEncoder
+	} else if nil == o {
+		return kendynet.ErrInvaildObject
+	} else {
+		b := buffer.New(make([]byte, 0, 128))
+		if err := s.encoder.EnCode(o, b); nil != err {
+			return err
+		}
+
+		var ttimeout time.Duration
+		if len(timeout) > 0 {
+			ttimeout = timeout[0]
+		}
+
+		s.muW.Lock()
+
+		if s.flag.Test(fclosed | fwclosed) {
+			s.muW.Unlock()
+			return kendynet.ErrSocketClose
+		}
+
+		if err := s.sendQueue.AddWithTimeout(b.Bytes(), ttimeout); nil != err {
+			s.muW.Unlock()
+			if err == ErrQueueClosed {
+				err = kendynet.ErrSocketClose
+			} else if err == ErrQueueFull {
+				err = kendynet.ErrSendQueFull
+			}
+			return err
+		} else {
+			if !s.sendLock {
+				s.addIO()
+				s.sendLock = true
+				s.muW.Unlock()
+				sendRoutinePool.GoTask(s)
+			} else {
+				s.muW.Unlock()
+			}
+			return nil
+		}
+	}
+}
+
 func (s *Socket) ShutdownRead() {
 	s.flag.AtomicSet(frclosed)
 	s.netconn.(interface{ CloseRead() error }).CloseRead()
@@ -405,7 +453,7 @@ func (s *Socket) ShutdownWrite() {
 		return
 	} else {
 		s.flag.AtomicSet(fwclosed)
-		if s.sendQueue.empty() {
+		if s.sendQueue.Empty() {
 			s.netconn.(interface{ CloseWrite() error }).CloseWrite()
 		} else {
 			if !s.sendLock {
@@ -517,7 +565,7 @@ func NewSocket(service *SocketService, netConn net.Conn) kendynet.StreamSession 
 		return nil
 	}
 	s.aioConn = c
-	s.sendQueue = newSendQueue(256)
+	s.sendQueue = socket.NewSendQueue(1024)
 	s.netconn = netConn
 	s.sendOverChan = make(chan struct{})
 	s.sendContext = ioContext{s: s, t: 's'}

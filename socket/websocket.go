@@ -11,7 +11,6 @@ import (
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/buffer"
 	"github.com/sniperHW/kendynet/message"
-	"github.com/sniperHW/kendynet/util"
 	"net"
 	"runtime"
 	"time"
@@ -156,7 +155,7 @@ func (this *WebSocket) sendThreadFunc() {
 
 	for {
 
-		closed, localList = this.sendQue.Swap(localList)
+		closed, localList = this.sendQue.Get(localList)
 		size := len(localList)
 		if closed && size == 0 {
 			this.conn.UnderlyingConn().(interface{ CloseWrite() error }).CloseWrite()
@@ -166,20 +165,29 @@ func (this *WebSocket) sendThreadFunc() {
 		b := buffer.Get()
 		for i := 0; i < size; i++ {
 			var err error
-			msg, ok := localList[i].(*message.WSMessage)
-			if !ok {
-				panic("invaild ws message")
-			}
-			localList[i] = nil
 
-			if nil != msg.Data() {
-				b = buffer.Get()
-				if err = this.encoder.EnCode(msg.Data(), b); nil != err {
-					kendynet.GetLogger().Errorf("encode error:%v", err)
-					b.Reset()
-					continue
+			var msgType int
+
+			switch localList[i].(type) {
+			case []byte:
+				b.AppendBytes(localList[i].([]byte))
+				msgType = message.WSBinaryMessage
+			case *message.WSMessage:
+				msg := localList[i].(*message.WSMessage)
+				msgType = msg.Type()
+				if nil != msg.Data() {
+					b = buffer.Get()
+					if err = this.encoder.EnCode(msg.Data(), b); nil != err {
+						kendynet.GetLogger().Errorf("encode error:%v", err)
+						b.Reset()
+						continue
+					}
 				}
+			default:
+				panic("invaild message")
 			}
+
+			localList[i] = nil
 
 			oldTimeout = timeout
 			timeout = this.getSendTimeout()
@@ -190,10 +198,10 @@ func (this *WebSocket) sendThreadFunc() {
 
 			if timeout > 0 {
 				this.conn.SetWriteDeadline(time.Now().Add(timeout))
-				err = this.conn.WriteMessage(msg.Type(), b.Bytes())
+				err = this.conn.WriteMessage(msgType, b.Bytes())
 				this.conn.SetWriteDeadline(time.Time{})
 			} else {
-				err = this.conn.WriteMessage(msg.Type(), b.Bytes())
+				err = this.conn.WriteMessage(msgType, b.Bytes())
 			}
 
 			b.Reset()
@@ -232,7 +240,7 @@ func NewWSSocket(conn *gorilla.Conn) kendynet.StreamSession {
 			conn: conn,
 		}
 		s.SocketBase = SocketBase{
-			sendQue:       util.NewBlockQueue(1024),
+			sendQue:       NewSendQueue(1024),
 			sendCloseChan: make(chan struct{}),
 			imp:           s,
 		}

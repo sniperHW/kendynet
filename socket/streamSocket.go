@@ -8,7 +8,6 @@ import (
 	"errors"
 	"github.com/sniperHW/kendynet"
 	"github.com/sniperHW/kendynet/buffer"
-	"github.com/sniperHW/kendynet/util"
 	"net"
 	"runtime"
 	"time"
@@ -145,8 +144,6 @@ func (this *StreamSocket) sendThreadFunc() {
 
 	closed := false
 
-	const maxsendsize = kendynet.SendBufferSize
-
 	var n int
 
 	oldTimeout := this.getSendTimeout()
@@ -154,7 +151,7 @@ func (this *StreamSocket) sendThreadFunc() {
 
 	for {
 
-		closed, localList = this.sendQue.Swap(localList)
+		closed, localList = this.sendQue.Get(localList)
 		size := len(localList)
 		if closed && size == 0 {
 			this.conn.(interface{ CloseWrite() error }).CloseWrite()
@@ -166,22 +163,26 @@ func (this *StreamSocket) sendThreadFunc() {
 			if b.Len() == 0 {
 				for i < size {
 					l := b.Len()
-					err = this.encoder.EnCode(localList[i], b)
+
+					switch localList[i].(type) {
+					case []byte:
+						b.AppendBytes(localList[i].([]byte))
+					default:
+						err = this.encoder.EnCode(localList[i], b)
+					}
 					localList[i] = nil
 					i++
 					if nil != err {
 						//EnCode错误，这个包已经写入到b中的内容需要直接丢弃
 						b.SetLen(l)
 						kendynet.GetLogger().Errorf("encode error:%v", err)
-					} else if b.Len() >= maxsendsize {
-						break
 					}
 				}
+			}
 
-				if b.Len() == 0 {
-					b.Free()
-					break
-				}
+			if b.Len() == 0 {
+				b.Free()
+				break
 			}
 
 			oldTimeout = timeout
@@ -238,7 +239,7 @@ func NewStreamSocket(conn net.Conn) kendynet.StreamSession {
 		conn: conn,
 	}
 	s.SocketBase = SocketBase{
-		sendQue:       util.NewBlockQueue(1024),
+		sendQue:       NewSendQueue(1024),
 		sendCloseChan: make(chan struct{}),
 		imp:           s,
 	}
