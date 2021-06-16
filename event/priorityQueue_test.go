@@ -4,7 +4,6 @@ package event
 //go tool cover -html=coverage.out
 import (
 	"fmt"
-	"github.com/sniperHW/kendynet/util"
 	"github.com/stretchr/testify/assert"
 	"math/rand"
 	"testing"
@@ -76,15 +75,15 @@ func TestPushPop2(t *testing.T) {
 }
 
 func TestPushPop3(t *testing.T) {
-	q := util.NewBlockQueue(10000)
+	q := make(chan interface{}, 10000)
 	var pushBegin time.Time
 
 	die := make(chan struct{})
 
 	go func() {
 		for {
-			closed, _ := q.Get()
-			if closed {
+			_, ok := <-q
+			if !ok {
 				break
 			}
 		}
@@ -94,9 +93,9 @@ func TestPushPop3(t *testing.T) {
 	go func() {
 		pushBegin = time.Now()
 		for i := 0; i < 1000000; i++ {
-			q.Add(i)
+			q <- i
 		}
-		q.Close()
+		close(q)
 	}()
 
 	<-die
@@ -108,8 +107,6 @@ func TestPushPop3(t *testing.T) {
 }
 
 func TestPriorityQueue(t *testing.T) {
-
-	poolSize = 5
 
 	{
 		q := NewPriorityQueue(3)
