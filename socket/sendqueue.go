@@ -23,6 +23,7 @@ type stWait struct {
 	ch      chan struct{}
 }
 
+//实现cond以支持带timeout的wait
 type Cond struct {
 	sync.Mutex
 	mu   *sync.Mutex

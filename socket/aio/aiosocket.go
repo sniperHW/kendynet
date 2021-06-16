@@ -421,10 +421,12 @@ func (s *Socket) SyncSend(o interface{}, timeout ...time.Duration) error {
 
 		if err := s.sendQueue.AddWithTimeout(b.Bytes(), ttimeout); nil != err {
 			s.muW.Unlock()
-			if err == ErrQueueClosed {
+			if err == socket.ErrQueueClosed {
 				err = kendynet.ErrSocketClose
-			} else if err == ErrQueueFull {
+			} else if err == socket.ErrQueueFull {
 				err = kendynet.ErrSendQueFull
+			} else if err == socket.ErrAddTimeout {
+				err = kendynet.ErrSendTimeout
 			}
 			return err
 		} else {
@@ -465,6 +467,10 @@ func (s *Socket) ShutdownWrite() {
 	}
 }
 
+/*
+ *  应该避免在cb中直接调用SyncSend,因为cb是从completeRoutine直接回调上来的，如果SyncSend阻塞将导致
+ *  completeRoutine阻塞
+ */
 func (s *Socket) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err error) {
 	s.beginOnce.Do(func() {
 

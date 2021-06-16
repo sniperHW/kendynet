@@ -149,6 +149,8 @@ func (this *SocketBase) SyncSend(o interface{}, timeout ...time.Duration) error 
 				err = kendynet.ErrSocketClose
 			} else if err == ErrQueueFull {
 				err = kendynet.ErrSendQueFull
+			} else if err == ErrAddTimeout {
+				err = kendynet.ErrSendTimeout
 			}
 			return err
 		} else {

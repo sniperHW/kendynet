@@ -190,9 +190,14 @@ func TestSendTimeout(t *testing.T) {
 
 		session.SetSendQueueSize(1)
 
+		timeoutCount := 0
+
 		session.SetErrorCallBack(func(sess kendynet.StreamSession, err error) {
 			assert.Equal(t, kendynet.ErrSendTimeout, err)
-			sess.Close(err, 0)
+			timeoutCount++
+			if timeoutCount > 1 {
+				sess.Close(err, 0)
+			}
 		})
 
 		session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
@@ -208,6 +213,56 @@ func TestSendTimeout(t *testing.T) {
 			}
 		}()
 		<-die
+
+		holdSession.Close(nil, 0)
+
+		listener.Close()
+	}
+	fmt.Println("StreamSocket2")
+	{
+
+		tcpAddr, _ := net.ResolveTCPAddr("tcp", "localhost:8110")
+
+		listener, _ := net.ListenTCP("tcp", tcpAddr)
+
+		var holdSession kendynet.StreamSession
+
+		go func() {
+			for {
+				conn, err := listener.Accept()
+				if err != nil {
+					return
+				} else {
+					conn.(*net.TCPConn).SetReadBuffer(0)
+					holdSession = NewStreamSocket(conn)
+					//不启动接收
+				}
+			}
+		}()
+
+		dialer := &net.Dialer{}
+		conn, _ := dialer.Dial("tcp", "localhost:8110")
+		conn.(*net.TCPConn).SetWriteBuffer(0)
+		session := NewStreamSocket(conn)
+
+		session.SetInBoundProcessor(session.(*StreamSocket).defaultInBoundProcessor())
+
+		session.SetEncoder(&encoder{})
+
+		session.SetSendQueueSize(1)
+
+		session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
+
+		})
+
+		for {
+			err := session.SyncSend(strings.Repeat("a", 65536), time.Second)
+			if nil != err {
+				assert.Equal(t, kendynet.ErrSendTimeout, err)
+				session.Close(err, 0)
+				break
+			}
+		}
 
 		holdSession.Close(nil, 0)
 
