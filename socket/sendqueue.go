@@ -38,13 +38,13 @@ func NewCond(mu *sync.Mutex) *Cond {
 }
 
 func (c *Cond) Wait() {
-	c.mu.Unlock()
 	w := &stWait{
 		ch: make(chan struct{}),
 	}
 	c.Lock()
 	w.listEle = c.wait.PushBack(w)
 	c.Unlock()
+	c.mu.Unlock()
 	<-w.ch
 	c.mu.Lock()
 }
@@ -54,7 +54,6 @@ func (c *Cond) WaitWithTimeout(timeout time.Duration) bool {
 		return false
 	}
 
-	c.mu.Unlock()
 	w := &stWait{
 		ch: make(chan struct{}),
 	}
@@ -62,6 +61,8 @@ func (c *Cond) WaitWithTimeout(timeout time.Duration) bool {
 	c.Lock()
 	w.listEle = c.wait.PushBack(w)
 	c.Unlock()
+
+	c.mu.Unlock()
 
 	ticker := time.NewTicker(timeout)
 

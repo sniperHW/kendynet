@@ -13,6 +13,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"net/url"
 	"runtime"
 	"strings"
@@ -22,6 +23,9 @@ import (
 
 func init() {
 	kendynet.InitLogger(&kendynet.EmptyLogger{})
+	go func() {
+		http.ListenAndServe("localhost:8899", nil)
+	}()
 }
 
 type encoder struct {
@@ -132,8 +136,8 @@ func TestSendTimeout(t *testing.T) {
 
 		go func() {
 			for {
-				err := session.Send(message.NewWSMessage(message.WSTextMessage, strings.Repeat("a", 65536)))
-				if nil != err && err != kendynet.ErrSendQueFull {
+				err := session.Send(message.NewWSMessage(message.WSTextMessage, strings.Repeat("a", 65536)), -1)
+				if nil != err {
 					break
 				}
 			}
@@ -196,6 +200,7 @@ func TestSendTimeout(t *testing.T) {
 			assert.Equal(t, kendynet.ErrSendTimeout, err)
 			timeoutCount++
 			if timeoutCount > 1 {
+				fmt.Println("timeout close")
 				sess.Close(err, 0)
 			}
 		})
@@ -206,8 +211,8 @@ func TestSendTimeout(t *testing.T) {
 		go func() {
 
 			for {
-				err := session.Send(strings.Repeat("a", 65536))
-				if nil != err && err != kendynet.ErrSendQueFull {
+				err := session.Send(strings.Repeat("a", 65536), -1)
+				if nil != err {
 					break
 				}
 			}

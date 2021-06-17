@@ -139,9 +139,7 @@ func (this *StreamSocket) recvThreadFunc() {
 				if kendynet.IsNetTimeout(err) {
 					err = kendynet.ErrRecvTimeout
 				}
-
 				if nil != this.errorCallback {
-
 					if isUnpackError {
 						this.Close(err, 0)
 					} else if err != kendynet.ErrRecvTimeout {
@@ -152,7 +150,6 @@ func (this *StreamSocket) recvThreadFunc() {
 				} else {
 					this.Close(err, 0)
 				}
-
 			} else if p != nil {
 				this.inboundCallBack(this, p)
 			}

@@ -370,12 +370,9 @@ func TestSendTimeout(t *testing.T) {
 		session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
 		})
 
-		fmt.Println("--------------------")
 		for {
-			err := session.Send(strings.Repeat("a", 65536))
-			//fmt.Println(err)
-			if nil != err && err != kendynet.ErrSendQueFull {
-				fmt.Println("break here")
+			err := session.Send(strings.Repeat("a", 65536), -1)
+			if nil != err {
 				break
 			}
 		}
@@ -419,7 +416,6 @@ func TestSendTimeout(t *testing.T) {
 
 		})
 
-		fmt.Println("--------------------")
 		for {
 			err := session.Send(strings.Repeat("a", 65536), time.Second)
 			if nil != err {

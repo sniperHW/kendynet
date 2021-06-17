@@ -141,6 +141,7 @@ type Socket struct {
 	inboundCallBack  func(kendynet.StreamSession, interface{})
 	beginOnce        sync.Once
 	closeOnce        sync.Once
+	doCloseOnce      sync.Once
 	sendLock         bool
 	b                *buffer.Buffer
 	sendOverChan     chan struct{}
@@ -305,14 +306,20 @@ func (s *Socket) doSend() {
 	}
 }
 
+func (s *Socket) releaseb() {
+	if nil != s.b {
+		s.b.Free()
+		s.b = nil
+	}
+}
+
 func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 	defer s.ioDone()
 	if nil == r.Err {
 		s.muW.Lock()
 		//发送完成释放发送buff
 		if s.sendQueue.Empty() {
-			s.b.Free()
-			s.b = nil
+			s.releaseb()
 			s.sendLock = false
 			if s.flag.AtomicTest(fwclosed) {
 				s.netconn.(interface{ CloseWrite() error }).CloseWrite()
@@ -334,9 +341,10 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 
 		if nil != s.errorCallback {
 			if r.Err != kendynet.ErrSendTimeout {
-				s.errorCallback(s, r.Err)
 				close(s.sendOverChan)
 				s.Close(r.Err, 0)
+				s.errorCallback(s, r.Err)
+				s.releaseb()
 			} else {
 				s.errorCallback(s, r.Err)
 				//如果是发送超时且用户没有关闭socket,再次请求发送
@@ -347,12 +355,16 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 					sendRoutinePool.GoTask(s)
 				} else {
 					close(s.sendOverChan)
+					s.releaseb()
 				}
 			}
 		} else {
 			close(s.sendOverChan)
 			s.Close(r.Err, 0)
+			s.releaseb()
 		}
+	} else {
+		s.releaseb()
 	}
 }
 
@@ -496,14 +508,14 @@ func (s *Socket) addIO() {
 
 func (s *Socket) ioDone() {
 	if 0 == atomic.AddInt32(&s.ioCount, -1) && s.flag.AtomicTest(fdoclose) {
-
-		if nil != s.inboundProcessor {
-			s.inboundProcessor.OnSocketClose()
-		}
-
-		if nil != s.closeCallBack {
-			s.closeCallBack(s, s.closeReason)
-		}
+		s.doCloseOnce.Do(func() {
+			if nil != s.inboundProcessor {
+				s.inboundProcessor.OnSocketClose()
+			}
+			if nil != s.closeCallBack {
+				s.closeCallBack(s, s.closeReason)
+			}
+		})
 	}
 }
 
@@ -534,12 +546,14 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 		s.flag.AtomicSet(fdoclose)
 
 		if atomic.LoadInt32(&s.ioCount) == 0 {
-			if nil != s.inboundProcessor {
-				s.inboundProcessor.OnSocketClose()
-			}
-			if nil != s.closeCallBack {
-				s.closeCallBack(s, reason)
-			}
+			s.doCloseOnce.Do(func() {
+				if nil != s.inboundProcessor {
+					s.inboundProcessor.OnSocketClose()
+				}
+				if nil != s.closeCallBack {
+					s.closeCallBack(s, reason)
+				}
+			})
 		}
 	})
 }

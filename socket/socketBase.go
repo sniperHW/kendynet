@@ -38,6 +38,7 @@ type SocketBase struct {
 	closeOnce       sync.Once
 	beginOnce       sync.Once
 	sendOnce        sync.Once
+	doCloseOnce     sync.Once
 	ioCount         int32
 	closeReason     error
 	encoder         kendynet.EnCoder
@@ -175,9 +176,11 @@ func (this *SocketBase) addIO() {
 
 func (this *SocketBase) ioDone() {
 	if 0 == atomic.AddInt32(&this.ioCount, -1) && this.flag.Test(fdoclose) {
-		if nil != this.closeCallBack {
-			this.closeCallBack(this.imp, this.closeReason)
-		}
+		this.doCloseOnce.Do(func() {
+			if nil != this.closeCallBack {
+				this.closeCallBack(this.imp, this.closeReason)
+			}
+		})
 	}
 }
 
@@ -202,18 +205,7 @@ func (this *SocketBase) Close(reason error, delay time.Duration) {
 
 		this.flag.AtomicSet(fclosed)
 
-		wclosed := this.sendQue.Closed()
-
-		this.sendQue.Close()
-
-		if !wclosed && delay > 0 {
-			func() {
-				this.sendOnce.Do(func() {
-					this.addIO()
-					go this.imp.sendThreadFunc()
-				})
-			}()
-
+		if this.sendQue.Close() && delay > 0 {
 			this.ShutdownRead()
 			ticker := time.NewTicker(delay)
 			go func() {
@@ -237,9 +229,11 @@ func (this *SocketBase) Close(reason error, delay time.Duration) {
 		this.flag.AtomicSet(fdoclose)
 
 		if atomic.LoadInt32(&this.ioCount) == 0 {
-			if nil != this.closeCallBack {
-				this.closeCallBack(this.imp, reason)
-			}
+			this.doCloseOnce.Do(func() {
+				if nil != this.closeCallBack {
+					this.closeCallBack(this.imp, reason)
+				}
+			})
 		}
 	})
 }
