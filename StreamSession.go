@@ -24,15 +24,20 @@ type EnCoder interface {
 }
 
 type StreamSession interface {
-	/*
-	 * 异步发送一个对象，使用encoder将对象编码，编码过程在网络网络线程执行（如果编码发生错误丢弃待o），如果发送队列满返回busy。
-	 */
-	Send(o interface{}) error
 
 	/*
-	 * 同步发送一个对象，使用encoder将对象编码，编码过程在当前线程执行(如果编码错误返回错误)，如果发送队列满阻塞(如果有timeout参数则阻塞到timeout)。
+	 * 将o投递到发送队列
+	 * timeout:如果没有设置timeout,当发送队列满不将o投递到队列，直接返回busy
+	 * timeout <= 0,如果发送队列满，永久阻塞
+	 * timeout > 0,如果发送队列满阻塞到timeout
 	 */
-	SyncSend(o interface{}, timeout ...time.Duration) error
+
+	Send(o interface{}, timeout ...time.Duration) error
+
+	/*
+	 * 阻塞式直接发送[]byte,不应与Send混用
+	 */
+	DirectSend([]byte, ...time.Duration) (int, error)
 
 	/*
 		关闭会话,如果会话中还有待发送的数据且timeout > 0
@@ -87,8 +92,6 @@ type StreamSession interface {
 	GetUserData() interface{}
 
 	GetUnderConn() interface{}
-
-	GetNetConn() net.Conn
 
 	SetRecvTimeout(time.Duration) StreamSession
 
