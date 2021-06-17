@@ -58,6 +58,34 @@ func (this *StreamSocket) SetInBoundProcessor(in kendynet.InBoundProcessor) kend
 	return this
 }
 
+func (this *StreamSocket) DirectSend(bytes []byte, timeout ...time.Duration) (int, error) {
+	if this.flag.AtomicTest(fclosed | frclosed) {
+		return 0, kendynet.ErrSocketClose
+	} else {
+		var ttimeout time.Duration
+		if timeout[0] > 0 {
+			ttimeout = timeout[0]
+		}
+
+		var n int
+		var err error
+
+		if ttimeout > 0 {
+			this.conn.SetWriteDeadline(time.Now().Add(ttimeout))
+			n, err = this.conn.Write(bytes)
+			this.conn.SetWriteDeadline(time.Time{})
+		} else {
+			n, err = this.conn.Write(bytes)
+		}
+
+		if kendynet.IsNetTimeout(err) {
+			err = kendynet.ErrSendTimeout
+		}
+
+		return n, err
+	}
+}
+
 func (this *StreamSocket) recvThreadFunc() {
 	defer this.ioDone()
 
@@ -251,12 +279,12 @@ func NewStreamSocket(conn net.Conn) kendynet.StreamSession {
 	return s
 }
 
-func (this *StreamSocket) GetNetConn() net.Conn {
+func (this *StreamSocket) getNetConn() net.Conn {
 	return this.conn
 }
 
 func (this *StreamSocket) GetUnderConn() interface{} {
-	return this.GetNetConn()
+	return this.conn
 }
 
 func (this *StreamSocket) defaultInBoundProcessor() kendynet.InBoundProcessor {

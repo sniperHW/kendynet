@@ -3,7 +3,6 @@ package socket
 import (
 	"errors"
 	"github.com/sniperHW/kendynet"
-	"github.com/sniperHW/kendynet/buffer"
 	"github.com/sniperHW/kendynet/util"
 	"net"
 	"runtime"
@@ -25,6 +24,7 @@ type SocketImpl interface {
 	defaultInBoundProcessor() kendynet.InBoundProcessor
 	getInBoundProcessor() kendynet.InBoundProcessor
 	SetInBoundProcessor(kendynet.InBoundProcessor) kendynet.StreamSession
+	getNetConn() net.Conn
 }
 
 type SocketBase struct {
@@ -51,11 +51,11 @@ func (this *SocketBase) IsClosed() bool {
 }
 
 func (this *SocketBase) LocalAddr() net.Addr {
-	return this.imp.GetNetConn().LocalAddr()
+	return this.imp.getNetConn().LocalAddr()
 }
 
 func (this *SocketBase) RemoteAddr() net.Addr {
-	return this.imp.GetNetConn().RemoteAddr()
+	return this.imp.getNetConn().RemoteAddr()
 }
 
 func (this *SocketBase) SetUserData(ud interface{}) kendynet.StreamSession {
@@ -105,61 +105,44 @@ func (this *SocketBase) getSendTimeout() time.Duration {
 	return time.Duration(atomic.LoadInt64(&this.sendTimeout))
 }
 
-func (this *SocketBase) Send(o interface{}) error {
+func (this *SocketBase) Send(o interface{}, timeout ...time.Duration) error {
 	if nil == o {
 		return kendynet.ErrInvaildObject
-	} else if nil == this.encoder {
+	} else if _, ok := o.([]byte); !ok && nil == this.encoder {
 		return kendynet.ErrInvaildEncoder
 	} else {
-		err := this.sendQue.Add(o)
-		if nil != err {
-			if err == ErrQueueClosed {
-				err = kendynet.ErrSocketClose
-			} else if err == ErrQueueFull {
-				err = kendynet.ErrSendQueFull
+		if len(timeout) == 0 {
+			if err := this.sendQue.Add(o); nil != err {
+				if err == ErrQueueClosed {
+					err = kendynet.ErrSocketClose
+				} else if err == ErrQueueFull {
+					err = kendynet.ErrSendQueFull
+				}
+				return err
 			}
-			return err
+		} else {
+			var ttimeout time.Duration
+			if timeout[0] > 0 {
+				ttimeout = timeout[0]
+			}
+
+			if err := this.sendQue.AddWithTimeout(o, ttimeout); nil != err {
+				if err == ErrQueueClosed {
+					err = kendynet.ErrSocketClose
+				} else if err == ErrQueueFull {
+					err = kendynet.ErrSendQueFull
+				} else if err == ErrAddTimeout {
+					err = kendynet.ErrSendTimeout
+				}
+				return err
+			}
 		}
+
 		this.sendOnce.Do(func() {
 			this.addIO()
 			go this.imp.sendThreadFunc()
 		})
 		return nil
-	}
-}
-
-func (this *SocketBase) SyncSend(o interface{}, timeout ...time.Duration) error {
-	if nil == o {
-		return kendynet.ErrInvaildObject
-	} else if nil == this.encoder {
-		return kendynet.ErrInvaildEncoder
-	} else {
-		b := buffer.New(make([]byte, 0, 128))
-		if err := this.encoder.EnCode(o, b); nil != err {
-			return err
-		}
-
-		var ttimeout time.Duration
-		if len(timeout) > 0 {
-			ttimeout = timeout[0]
-		}
-
-		if err := this.sendQue.AddWithTimeout(b.Bytes(), ttimeout); nil != err {
-			if err == ErrQueueClosed {
-				err = kendynet.ErrSocketClose
-			} else if err == ErrQueueFull {
-				err = kendynet.ErrSendQueFull
-			} else if err == ErrAddTimeout {
-				err = kendynet.ErrSendTimeout
-			}
-			return err
-		} else {
-			this.sendOnce.Do(func() {
-				this.addIO()
-				go this.imp.sendThreadFunc()
-			})
-			return nil
-		}
 	}
 }
 
@@ -200,7 +183,7 @@ func (this *SocketBase) ioDone() {
 
 func (this *SocketBase) ShutdownRead() {
 	this.flag.AtomicSet(frclosed)
-	this.imp.GetNetConn().(interface{ CloseRead() error }).CloseRead()
+	this.imp.getNetConn().(interface{ CloseRead() error }).CloseRead()
 }
 
 func (this *SocketBase) ShutdownWrite() {
@@ -243,11 +226,11 @@ func (this *SocketBase) Close(reason error, delay time.Duration) {
 				case <-ticker.C:
 				}
 				ticker.Stop()
-				this.imp.GetNetConn().Close()
+				this.imp.getNetConn().Close()
 			}()
 
 		} else {
-			this.imp.GetNetConn().Close()
+			this.imp.getNetConn().Close()
 		}
 
 		this.closeReason = reason

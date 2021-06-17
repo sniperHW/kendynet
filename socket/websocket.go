@@ -65,6 +65,36 @@ func (this *WebSocket) SetInBoundProcessor(in kendynet.InBoundProcessor) kendyne
 	return this
 }
 
+func (this *WebSocket) DirectSend(bytes []byte, timeout ...time.Duration) (int, error) {
+	if this.flag.AtomicTest(fclosed | frclosed) {
+		return 0, kendynet.ErrSocketClose
+	} else {
+		var ttimeout time.Duration
+		if timeout[0] > 0 {
+			ttimeout = timeout[0]
+		}
+
+		var n int
+		var err error
+
+		if ttimeout > 0 {
+			this.conn.SetWriteDeadline(time.Now().Add(ttimeout))
+			err = this.conn.WriteMessage(message.WSBinaryMessage, bytes)
+			this.conn.SetWriteDeadline(time.Time{})
+		} else {
+			err = this.conn.WriteMessage(message.WSBinaryMessage, bytes)
+		}
+
+		if nil == err {
+			n = len(bytes)
+		} else if kendynet.IsNetTimeout(err) {
+			err = kendynet.ErrSendTimeout
+		}
+
+		return n, err
+	}
+}
+
 func (this *WebSocket) recvThreadFunc() {
 	defer this.ioDone()
 
@@ -265,7 +295,7 @@ func (this *WebSocket) GetUnderConn() interface{} {
 	return this.conn
 }
 
-func (this *WebSocket) GetNetConn() net.Conn {
+func (this *WebSocket) getNetConn() net.Conn {
 	return this.conn.UnderlyingConn()
 }
 

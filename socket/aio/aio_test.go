@@ -421,7 +421,7 @@ func TestSendTimeout(t *testing.T) {
 
 		fmt.Println("--------------------")
 		for {
-			err := session.SyncSend(strings.Repeat("a", 65536), time.Second)
+			err := session.Send(strings.Repeat("a", 65536), time.Second)
 			if nil != err {
 				assert.Equal(t, kendynet.ErrSendTimeout, err)
 				session.Close(err, 0)
@@ -435,6 +435,57 @@ func TestSendTimeout(t *testing.T) {
 
 		listener.Close()
 	}
+
+	fmt.Println("TestSendTimeout3")
+	{
+
+		tcpAddr, _ := net.ResolveTCPAddr("tcp", "localhost:8110")
+
+		listener, _ := net.ListenTCP("tcp", tcpAddr)
+
+		var holdSession kendynet.StreamSession
+
+		go func() {
+			for {
+				conn, err := listener.Accept()
+				if err != nil {
+					return
+				} else {
+					conn.(*net.TCPConn).SetReadBuffer(0)
+					holdSession = NewSocket(aioService, conn)
+					//不启动接收
+				}
+			}
+		}()
+
+		dialer := &net.Dialer{}
+		conn, _ := dialer.Dial("tcp", "localhost:8110")
+		conn.(*net.TCPConn).SetWriteBuffer(0)
+		session := NewSocket(aioService, conn)
+
+		session.SetEncoder(&encoder{})
+
+		session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
+
+		})
+
+		fmt.Println("--------------------")
+		for {
+			_, err := session.DirectSend([]byte(strings.Repeat("a", 65536)), time.Second)
+			if nil != err {
+				assert.Equal(t, kendynet.ErrSendTimeout, err)
+				session.Close(err, 0)
+				break
+			}
+		}
+
+		//<-die
+
+		holdSession.Close(nil, 0)
+
+		listener.Close()
+	}
+
 }
 
 func TestShutDownWrite(t *testing.T) {
@@ -484,9 +535,12 @@ func TestShutDownWrite(t *testing.T) {
 		<-die
 	}
 
+	fmt.Println("111111111111111")
+
 	{
 		dialer := &net.Dialer{}
 		conn, _ := dialer.Dial("tcp", "localhost:8110")
+
 		session := NewSocket(aioService, conn)
 
 		die := make(chan struct{})
@@ -500,11 +554,12 @@ func TestShutDownWrite(t *testing.T) {
 			close(die)
 		})
 
-		fmt.Println(session.Send("hello"))
+		fmt.Println("client send", session.Send("hello"))
 
 		session.ShutdownWrite()
 
 		<-die
+
 	}
 
 	listener.Close()
