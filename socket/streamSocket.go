@@ -87,7 +87,7 @@ func (this *StreamSocket) DirectSend(bytes []byte, timeout ...time.Duration) (in
 }
 
 func (this *StreamSocket) recvThreadFunc() {
-	defer this.ioDone(fdoingR)
+	defer this.ioDone()
 
 	oldTimeout := this.getRecvTimeout()
 	timeout := oldTimeout
@@ -160,8 +160,10 @@ func (this *StreamSocket) recvThreadFunc() {
 }
 
 func (this *StreamSocket) sendThreadFunc() {
-	defer this.ioDone(fdoingW)
-	defer close(this.sendCloseChan)
+	defer func() {
+		close(this.sendCloseChan)
+		this.ioDone()
+	}()
 
 	var err error
 

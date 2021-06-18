@@ -32,6 +32,7 @@ type SocketImpl interface {
 type SocketBase struct {
 	flag            util.Flag
 	ud              atomic.Value
+	ioCount         int32
 	sendQue         *SendQueue
 	sendTimeout     int64
 	recvTimeout     int64
@@ -141,7 +142,7 @@ func (this *SocketBase) Send(o interface{}, timeout ...time.Duration) error {
 		}
 
 		this.sendOnce.Do(func() {
-			this.addIO(fdoingW)
+			this.addIO()
 			go this.imp.sendThreadFunc()
 		})
 		return nil
@@ -155,13 +156,13 @@ func (this *SocketBase) BeginRecv(cb func(kendynet.StreamSession, interface{})) 
 		if nil == cb {
 			err = errors.New("cb is nil")
 		} else {
-			if this.flag.Test(fclosed | frclosed) {
+			if this.flag.AtomicTest(fclosed | frclosed) {
 				err = kendynet.ErrSocketClose
 			} else {
 				if nil == this.imp.getInBoundProcessor() {
 					this.imp.SetInBoundProcessor(this.imp.defaultInBoundProcessor())
 				}
-				this.addIO(fdoingR)
+				this.addIO()
 				this.inboundCallBack = cb
 				go this.imp.recvThreadFunc()
 			}
@@ -171,13 +172,12 @@ func (this *SocketBase) BeginRecv(cb func(kendynet.StreamSession, interface{})) 
 	return
 }
 
-func (this *SocketBase) addIO(tt uint32) {
-	this.flag.AtomicSet(tt)
+func (this *SocketBase) addIO() {
+	atomic.AddInt32(&this.ioCount, 1)
 }
 
-func (this *SocketBase) ioDone(tt uint32) {
-	v := this.flag.AtomicClear(tt)
-	if (v&fdoclose > 0) && (v&(fdoingW|fdoingR) == 0) {
+func (this *SocketBase) ioDone() {
+	if atomic.AddInt32(&this.ioCount, -1) == 0 && this.flag.AtomicTest(fdoclose) {
 		this.doCloseOnce.Do(func() {
 			if nil != this.closeCallBack {
 				this.closeCallBack(this.imp, this.closeReason)
@@ -228,8 +228,9 @@ func (this *SocketBase) Close(reason error, delay time.Duration) {
 		}
 
 		this.closeReason = reason
+		this.flag.AtomicSet(fdoclose)
 
-		if this.flag.AtomicSet(fdoclose)&(fdoingW|fdoingR) == 0 {
+		if atomic.LoadInt32(&this.ioCount) == 0 {
 			this.doCloseOnce.Do(func() {
 				if nil != this.closeCallBack {
 					this.closeCallBack(this.imp, reason)

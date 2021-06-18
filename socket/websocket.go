@@ -96,7 +96,7 @@ func (this *WebSocket) DirectSend(bytes []byte, timeout ...time.Duration) (int, 
 }
 
 func (this *WebSocket) recvThreadFunc() {
-	defer this.ioDone(fdoingR)
+	defer this.ioDone()
 
 	oldTimeout := this.getRecvTimeout()
 	timeout := oldTimeout
@@ -173,8 +173,10 @@ func (this *WebSocket) recvThreadFunc() {
 
 func (this *WebSocket) sendThreadFunc() {
 
-	defer this.ioDone(fdoingW)
-	defer close(this.sendCloseChan)
+	defer func() {
+		close(this.sendCloseChan)
+		this.ioDone()
+	}()
 
 	localList := make([]interface{}, 0, 32)
 
