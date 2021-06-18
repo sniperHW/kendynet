@@ -497,24 +497,20 @@ func (s *Socket) ShutdownWrite() {
 
 func (s *Socket) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err error) {
 	s.beginOnce.Do(func() {
-
 		if nil == cb {
 			err = errors.New("BeginRecv cb is nil")
+		} else if s.flag.AtomicTest(fclosed | frclosed) {
+			err = kendynet.ErrSocketClose
 		} else {
-			if s.flag.AtomicTest(fclosed | frclosed) {
-				err = kendynet.ErrSocketClose
-			} else {
-				//发起第一个recv
-				if nil == s.inboundProcessor {
-					s.inboundProcessor = &defaultInBoundProcessor{
-						buffer: make([]byte, 4096),
-					}
+			if nil == s.inboundProcessor {
+				s.inboundProcessor = &defaultInBoundProcessor{
+					buffer: make([]byte, 4096),
 				}
-				s.inboundCallBack = cb
-				s.addIO()
-				if err = s.aioConn.Recv(s.recvCB, s.inboundProcessor.GetRecvBuff(), s.getRecvTimeout()); nil != err {
-					s.ioDone()
-				}
+			}
+			s.inboundCallBack = cb
+			s.addIO()
+			if err = s.aioConn.Recv(s.recvCB, s.inboundProcessor.GetRecvBuff(), s.getRecvTimeout()); nil != err {
+				s.ioDone()
 			}
 		}
 	})
@@ -583,7 +579,7 @@ func NewSocket(service *SocketService, netConn net.Conn) kendynet.StreamSession 
 		return nil
 	}
 	s.aioConn = c
-	s.sendQueue = socket.NewSendQueue(1024)
+	s.sendQueue = socket.NewSendQueue(128)
 	s.netconn = netConn
 	s.sendOverChan = make(chan struct{})
 	s.sendBuffer.Store(emptySendBuffer)

@@ -262,7 +262,7 @@ func NewStreamSocket(conn net.Conn) kendynet.StreamSession {
 		conn: conn,
 	}
 	s.SocketBase = SocketBase{
-		sendQue:       NewSendQueue(1024),
+		sendQue:       NewSendQueue(128),
 		sendCloseChan: make(chan struct{}),
 		imp:           s,
 	}
