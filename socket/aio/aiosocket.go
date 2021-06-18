@@ -124,14 +124,14 @@ func (this *defaultInBoundProcessor) OnSocketClose() {
 const (
 	fclosed  = uint32(1 << 1)
 	frclosed = uint32(1 << 2)
-	fwclosed = uint32(1 << 3)
-	fdoclose = uint32(1 << 4)
+	fdoclose = uint32(1 << 3)
+	fdoingW  = uint32(1 << 4)
+	fdoingR  = uint32(1 << 5)
 )
 
 type Socket struct {
 	ud               atomic.Value
-	muW              sync.Mutex
-	sendQueue        *socket.SendQueue //sendqueue //*list.List
+	sendQueue        *socket.SendQueue
 	flag             util.Flag
 	aioConn          *goaio.AIOConn
 	encoder          kendynet.EnCoder
@@ -142,14 +142,13 @@ type Socket struct {
 	beginOnce        sync.Once
 	closeOnce        sync.Once
 	doCloseOnce      sync.Once
-	sendLock         bool
-	b                *buffer.Buffer
+	sendLock         int32
+	sendBuffer       atomic.Value
 	sendOverChan     chan struct{}
 	netconn          net.Conn
 	sendCB           func(*goaio.AIOResult)
 	recvCB           func(*goaio.AIOResult)
 	closeReason      error
-	ioCount          int32
 	swaped           []interface{}
 	sendTimeout      int64
 	recvTimeout      int64
@@ -225,7 +224,7 @@ func (s *Socket) SetInBoundProcessor(in kendynet.InBoundProcessor) kendynet.Stre
 
 func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 	if s.flag.AtomicTest(fclosed | frclosed) {
-		s.ioDone()
+		s.ioDone(fdoingR)
 	} else {
 		recvAgain := false
 		if nil != r.Err {
@@ -262,7 +261,7 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 		}
 
 		if !recvAgain || s.flag.AtomicTest(fclosed|frclosed) || nil != s.aioConn.Recv(s.recvCB, s.inboundProcessor.GetRecvBuff(), s.getRecvTimeout()) {
-			s.ioDone()
+			s.ioDone(fdoingR)
 		}
 	}
 }
@@ -278,93 +277,48 @@ func (s *Socket) Do() {
 func (s *Socket) doSend() {
 
 	//只有之前请求的buff全部发送完毕才填充新的buff
-	if nil == s.b {
-		s.b = buffer.Get()
-	}
+	b := s.getSendBuffer()
 
 	_, s.swaped = s.sendQueue.Get(s.swaped)
 
 	for i := 0; i < len(s.swaped); i++ {
-		l := s.b.Len()
+		l := b.Len()
 		switch s.swaped[i].(type) {
 		case []byte:
-			s.b.AppendBytes(s.swaped[i].([]byte))
+			b.AppendBytes(s.swaped[i].([]byte))
 		default:
-			if err := s.encoder.EnCode(s.swaped[i], s.b); nil != err {
+			if err := s.encoder.EnCode(s.swaped[i], b); nil != err {
 				//EnCode错误，这个包已经写入到b中的内容需要直接丢弃
-				s.b.SetLen(l)
+				b.SetLen(l)
 				kendynet.GetLogger().Errorf("encode error:%v", err)
 			}
 		}
 		s.swaped[i] = nil
 	}
 
-	if s.b.Len() == 0 {
+	if b.Len() == 0 {
 		s.onSendComplete(&goaio.AIOResult{})
-	} else if nil != s.aioConn.Send(s.sendCB, s.b.Bytes(), s.getSendTimeout()) {
+	} else if nil != s.aioConn.Send(s.sendCB, b.Bytes(), s.getSendTimeout()) {
 		s.onSendComplete(&goaio.AIOResult{Err: kendynet.ErrSocketClose})
 	}
 }
 
-func (s *Socket) releaseb() {
-	if nil != s.b {
-		s.b.Free()
-		s.b = nil
+var emptySendBuffer *buffer.Buffer
+
+func (s *Socket) getSendBuffer() *buffer.Buffer {
+	b := s.sendBuffer.Load().(*buffer.Buffer)
+	if nil == b {
+		b = buffer.Get()
+		s.sendBuffer.Store(b)
 	}
+	return b
 }
 
-func (s *Socket) onSendComplete(r *goaio.AIOResult) {
-	defer s.ioDone()
-	if nil == r.Err {
-		s.muW.Lock()
-		//发送完成释放发送buff
-		if s.sendQueue.Empty() {
-			s.releaseb()
-			s.sendLock = false
-			if s.flag.AtomicTest(fwclosed) {
-				s.netconn.(interface{ CloseWrite() error }).CloseWrite()
-				close(s.sendOverChan)
-			}
-			s.muW.Unlock()
-		} else {
-			s.muW.Unlock()
-			s.b.Reset()
-			s.addIO()
-			sendRoutinePool.GoTask(s)
-			return
-		}
-	} else if !s.flag.AtomicTest(fclosed) {
-
-		if r.Err == goaio.ErrSendTimeout {
-			r.Err = kendynet.ErrSendTimeout
-		}
-
-		if nil != s.errorCallback {
-			if r.Err != kendynet.ErrSendTimeout {
-				close(s.sendOverChan)
-				s.Close(r.Err, 0)
-				s.errorCallback(s, r.Err)
-				s.releaseb()
-			} else {
-				s.errorCallback(s, r.Err)
-				//如果是发送超时且用户没有关闭socket,再次请求发送
-				if !s.flag.AtomicTest(fclosed) {
-					//超时可能会发送部分数据
-					s.b.DropFirstNBytes(r.Bytestransfer)
-					s.addIO()
-					sendRoutinePool.GoTask(s)
-				} else {
-					close(s.sendOverChan)
-					s.releaseb()
-				}
-			}
-		} else {
-			close(s.sendOverChan)
-			s.Close(r.Err, 0)
-			s.releaseb()
-		}
-	} else {
-		s.releaseb()
+func (s *Socket) releaseSendBuffer() {
+	b := s.sendBuffer.Load().(*buffer.Buffer)
+	if nil != b {
+		b.Free()
+		s.sendBuffer.Store(emptySendBuffer)
 	}
 }
 
@@ -379,6 +333,7 @@ func (s *Socket) Send(o interface{}, timeout ...time.Duration) error {
 	} else if _, ok := o.([]byte); !ok && nil == s.encoder {
 		return kendynet.ErrInvaildEncoder
 	} else {
+		//send:1
 		if len(timeout) == 0 {
 			if err := s.sendQueue.Add(o); nil != err {
 				if err == socket.ErrQueueFull {
@@ -408,24 +363,18 @@ func (s *Socket) Send(o interface{}, timeout ...time.Duration) error {
 			}
 		}
 
-		s.muW.Lock()
-		if !s.sendLock {
-			s.addIO()
-			s.sendLock = true
-			s.muW.Unlock()
+		//send:2
+		if atomic.CompareAndSwapInt32(&s.sendLock, 0, 1) {
+			//send:3
+			s.addIO(fdoingW)
 			sendRoutinePool.GoTask(s)
-		} else {
-			s.muW.Unlock()
 		}
+
 		return nil
 	}
 }
 
 func (s *Socket) DirectSend(bytes []byte, timeout ...time.Duration) (int, error) {
-	if s.flag.AtomicTest(fwclosed | fclosed) {
-		return 0, kendynet.ErrSocketClose
-	}
-
 	var ttimeout time.Duration
 	if timeout[0] > 0 {
 		ttimeout = timeout[0]
@@ -455,21 +404,91 @@ func (s *Socket) DirectSend(bytes []byte, timeout ...time.Duration) (int, error)
 
 }
 
+func (s *Socket) onSendComplete(r *goaio.AIOResult) {
+	defer s.ioDone(fdoingW)
+	if nil == r.Err {
+		s.releaseSendBuffer()
+		if s.sendQueue.Empty() {
+			//onSendComplete:1
+			atomic.StoreInt32(&s.sendLock, 0)
+			//onSendComplete:2
+			if !s.sendQueue.Empty() && atomic.CompareAndSwapInt32(&s.sendLock, 0, 1) {
+				/*
+				 * 如果a routine执行到onSendComplete:1处暂停
+				 * 此时b routine执行到send:2
+				 *
+				 * 现在有两种情况
+				 *
+				 * 情况1
+				 * b routine先执行完后面的代码，此时sendLock==1,因此 b不会执行send:3里面的代码
+				 * a 恢复执行，发现!s.sendQueue.Empty() && atomic.CompareAndSwapInt32(&s.sendLock, 0, 1) == true
+				 * 由a继续触发sendRoutinePool.GoTask(s)
+				 *
+				 * 情况2
+				 *
+				 * a routine执行到onSendComplete:2暂停
+				 * b routine继续执行，此时sendLock==0，b执行send:3里面的代码
+				 * a 恢复执行，发现!s.sendQueue.Empty()但是,atomic.CompareAndSwapInt32(&s.sendLock, 0, 1)失败,执行onSendComplete:3
+				 *
+				 */
+				s.addIO(fdoingW)
+				sendRoutinePool.GoTask(s)
+			} else {
+				//onSendComplete:3
+				if s.sendQueue.Closed() {
+					s.netconn.(interface{ CloseWrite() error }).CloseWrite()
+					close(s.sendOverChan)
+				}
+			}
+		} else {
+			s.addIO(fdoingW)
+			sendRoutinePool.GoTask(s)
+		}
+	} else if !s.flag.AtomicTest(fclosed) {
+
+		if r.Err == goaio.ErrSendTimeout {
+			r.Err = kendynet.ErrSendTimeout
+		}
+
+		if nil != s.errorCallback {
+			if r.Err != kendynet.ErrSendTimeout {
+				close(s.sendOverChan)
+				s.Close(r.Err, 0)
+				s.errorCallback(s, r.Err)
+				s.releaseSendBuffer()
+			} else {
+				s.errorCallback(s, r.Err)
+				//如果是发送超时且用户没有关闭socket,再次请求发送
+				if !s.flag.AtomicTest(fclosed) {
+					//超时可能会发送部分数据
+					b := s.getSendBuffer()
+					b.DropFirstNBytes(r.Bytestransfer)
+					s.addIO(fdoingW)
+					sendRoutinePool.GoTask(s)
+				} else {
+					close(s.sendOverChan)
+					s.releaseSendBuffer()
+				}
+			}
+		} else {
+			close(s.sendOverChan)
+			s.Close(r.Err, 0)
+			s.releaseSendBuffer()
+		}
+	} else {
+		s.releaseSendBuffer()
+	}
+}
+
 func (s *Socket) ShutdownRead() {
 	s.flag.AtomicSet(frclosed)
 	s.netconn.(interface{ CloseRead() error }).CloseRead()
 }
 
 func (s *Socket) ShutdownWrite() {
-	if s.flag.AtomicTest(fwclosed | fclosed) {
-		return
-	} else {
-		s.flag.AtomicSet(fwclosed)
-		s.muW.Lock()
-		defer s.muW.Unlock()
-		if s.sendQueue.Empty() && !s.sendLock {
-			s.netconn.(interface{ CloseWrite() error }).CloseWrite()
-		}
+	closeOK, remain := s.sendQueue.Close()
+	if closeOK && remain == 0 && atomic.LoadInt32(&s.sendLock) == 0 {
+		s.netconn.(interface{ CloseWrite() error }).CloseWrite()
 	}
 }
 
@@ -479,11 +498,7 @@ func (s *Socket) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err er
 		if nil == cb {
 			err = errors.New("BeginRecv cb is nil")
 		} else {
-
-			s.addIO()
-
 			if s.flag.AtomicTest(fclosed | frclosed) {
-				s.ioDone()
 				err = kendynet.ErrSocketClose
 			} else {
 				//发起第一个recv
@@ -493,8 +508,9 @@ func (s *Socket) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err er
 					}
 				}
 				s.inboundCallBack = cb
+				s.addIO(fdoingR)
 				if err = s.aioConn.Recv(s.recvCB, s.inboundProcessor.GetRecvBuff(), s.getRecvTimeout()); nil != err {
-					s.ioDone()
+					s.ioDone(fdoingR)
 				}
 			}
 		}
@@ -502,12 +518,13 @@ func (s *Socket) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err er
 	return
 }
 
-func (s *Socket) addIO() {
-	atomic.AddInt32(&s.ioCount, 1)
+func (s *Socket) addIO(tt uint32) {
+	s.flag.AtomicSet(tt)
 }
 
-func (s *Socket) ioDone() {
-	if 0 == atomic.AddInt32(&s.ioCount, -1) && s.flag.AtomicTest(fdoclose) {
+func (s *Socket) ioDone(tt uint32) {
+	v := s.flag.AtomicClear(tt)
+	if (v&fdoclose > 0) && (v&(fdoingW|fdoingR) == 0) {
 		s.doCloseOnce.Do(func() {
 			if nil != s.inboundProcessor {
 				s.inboundProcessor.OnSocketClose()
@@ -522,11 +539,9 @@ func (s *Socket) ioDone() {
 func (s *Socket) Close(reason error, delay time.Duration) {
 	s.closeOnce.Do(func() {
 		runtime.SetFinalizer(s, nil)
-
-		s.sendQueue.Close()
 		s.flag.AtomicSet(fclosed)
-
-		if !s.flag.AtomicTest(fwclosed) && delay > 0 {
+		_, remain := s.sendQueue.Close()
+		if remain > 0 && delay > 0 {
 			s.ShutdownRead()
 			ticker := time.NewTicker(delay)
 			go func() {
@@ -545,7 +560,7 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 		s.closeReason = reason
 		s.flag.AtomicSet(fdoclose)
 
-		if atomic.LoadInt32(&s.ioCount) == 0 {
+		if s.flag.AtomicSet(fdoclose)&(fdoingW|fdoingR) == 0 {
 			s.doCloseOnce.Do(func() {
 				if nil != s.inboundProcessor {
 					s.inboundProcessor.OnSocketClose()
@@ -569,6 +584,7 @@ func NewSocket(service *SocketService, netConn net.Conn) kendynet.StreamSession 
 	s.sendQueue = socket.NewSendQueue(1024)
 	s.netconn = netConn
 	s.sendOverChan = make(chan struct{})
+	s.sendBuffer.Store(emptySendBuffer)
 
 	s.sendCB = func(r *goaio.AIOResult) {
 		s.onSendComplete(r)

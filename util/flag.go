@@ -6,22 +6,26 @@ import (
 
 type Flag uint32
 
-func (this *Flag) AtomicSet(flag uint32) {
+func (this *Flag) AtomicSet(flag uint32) (ret uint32) {
 	for {
 		f := atomic.LoadUint32((*uint32)(this))
 		if atomic.CompareAndSwapUint32((*uint32)(this), f, f|flag) {
+			ret = f | flag
 			break
 		}
 	}
+	return
 }
 
-func (this *Flag) AtomicClear(flag uint32) {
+func (this *Flag) AtomicClear(flag uint32) (ret uint32) {
 	for {
 		f := atomic.LoadUint32((*uint32)(this))
 		if atomic.CompareAndSwapUint32((*uint32)(this), f, f&(flag^0xFFFFFFFF)) {
+			ret = f & (flag ^ 0xFFFFFFFF)
 			break
 		}
 	}
+	return
 }
 
 func (this *Flag) AtomicTest(flag uint32) bool {

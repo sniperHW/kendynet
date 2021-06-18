@@ -87,7 +87,7 @@ func (this *StreamSocket) DirectSend(bytes []byte, timeout ...time.Duration) (in
 }
 
 func (this *StreamSocket) recvThreadFunc() {
-	defer this.ioDone()
+	defer this.ioDone(fdoingR)
 
 	oldTimeout := this.getRecvTimeout()
 	timeout := oldTimeout
@@ -160,7 +160,7 @@ func (this *StreamSocket) recvThreadFunc() {
 }
 
 func (this *StreamSocket) sendThreadFunc() {
-	defer this.ioDone()
+	defer this.ioDone(fdoingW)
 	defer close(this.sendCloseChan)
 
 	var err error
@@ -206,7 +206,6 @@ func (this *StreamSocket) sendThreadFunc() {
 			}
 
 			if b.Len() == 0 {
-				b.Free()
 				break
 			}
 
@@ -238,17 +237,16 @@ func (this *StreamSocket) sendThreadFunc() {
 				}
 
 				if this.flag.AtomicTest(fclosed) {
-					b.Free()
-					return
+					break
 				} else {
 					//超时可能完成部分发送，将已经发送部分丢弃
 					b.DropFirstNBytes(n)
 				}
 			} else {
-				b.Free()
-				return
+				break
 			}
 		}
+		b.Free()
 	}
 }
 

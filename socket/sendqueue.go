@@ -193,12 +193,12 @@ func (self *SendQueue) Get(swaped []interface{}) (closed bool, datas []interface
 	return
 }
 
-func (self *SendQueue) Close() bool {
+func (self *SendQueue) Close() (bool, int) {
 	self.listGuard.Lock()
-
+	n := len(self.list)
 	if self.closed {
 		self.listGuard.Unlock()
-		return false
+		return false, n
 	}
 
 	self.closed = true
@@ -206,7 +206,7 @@ func (self *SendQueue) Close() bool {
 	self.emptyCond.Broadcast()
 	self.fullCond.Broadcast()
 
-	return true
+	return true, n
 }
 
 func (self *SendQueue) SetFullSize(newSize int) {

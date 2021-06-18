@@ -15,6 +15,8 @@ const (
 	fclosed  = uint32(1 << 1) //是否已经调用Close
 	frclosed = uint32(1 << 2) //调用来了shutdownRead
 	fdoclose = uint32(1 << 3)
+	fdoingW  = uint32(1 << 4)
+	fdoingR  = uint32(1 << 5)
 )
 
 type SocketImpl interface {
@@ -39,7 +41,6 @@ type SocketBase struct {
 	beginOnce       sync.Once
 	sendOnce        sync.Once
 	doCloseOnce     sync.Once
-	ioCount         int32
 	closeReason     error
 	encoder         kendynet.EnCoder
 	errorCallback   func(kendynet.StreamSession, error)
@@ -140,7 +141,7 @@ func (this *SocketBase) Send(o interface{}, timeout ...time.Duration) error {
 		}
 
 		this.sendOnce.Do(func() {
-			this.addIO()
+			this.addIO(fdoingW)
 			go this.imp.sendThreadFunc()
 		})
 		return nil
@@ -160,7 +161,7 @@ func (this *SocketBase) BeginRecv(cb func(kendynet.StreamSession, interface{})) 
 				if nil == this.imp.getInBoundProcessor() {
 					this.imp.SetInBoundProcessor(this.imp.defaultInBoundProcessor())
 				}
-				this.addIO()
+				this.addIO(fdoingR)
 				this.inboundCallBack = cb
 				go this.imp.recvThreadFunc()
 			}
@@ -170,12 +171,13 @@ func (this *SocketBase) BeginRecv(cb func(kendynet.StreamSession, interface{})) 
 	return
 }
 
-func (this *SocketBase) addIO() {
-	atomic.AddInt32(&this.ioCount, 1)
+func (this *SocketBase) addIO(tt uint32) {
+	this.flag.AtomicSet(tt)
 }
 
-func (this *SocketBase) ioDone() {
-	if 0 == atomic.AddInt32(&this.ioCount, -1) && this.flag.Test(fdoclose) {
+func (this *SocketBase) ioDone(tt uint32) {
+	v := this.flag.AtomicClear(tt)
+	if (v&fdoclose > 0) && (v&(fdoingW|fdoingR) == 0) {
 		this.doCloseOnce.Do(func() {
 			if nil != this.closeCallBack {
 				this.closeCallBack(this.imp, this.closeReason)
@@ -190,11 +192,9 @@ func (this *SocketBase) ShutdownRead() {
 }
 
 func (this *SocketBase) ShutdownWrite() {
-	if this.sendQue.Close() {
-		this.sendOnce.Do(func() {
-			this.addIO()
-			go this.imp.sendThreadFunc()
-		})
+	closeOK, remain := this.sendQue.Close()
+	if closeOK && remain == 0 {
+		this.imp.getNetConn().(interface{ CloseWrite() error }).CloseWrite()
 	}
 }
 
@@ -205,7 +205,9 @@ func (this *SocketBase) Close(reason error, delay time.Duration) {
 
 		this.flag.AtomicSet(fclosed)
 
-		if this.sendQue.Close() && delay > 0 {
+		_, remain := this.sendQue.Close()
+
+		if remain > 0 && delay > 0 {
 			this.ShutdownRead()
 			ticker := time.NewTicker(delay)
 			go func() {
@@ -226,9 +228,8 @@ func (this *SocketBase) Close(reason error, delay time.Duration) {
 		}
 
 		this.closeReason = reason
-		this.flag.AtomicSet(fdoclose)
 
-		if atomic.LoadInt32(&this.ioCount) == 0 {
+		if this.flag.AtomicSet(fdoclose)&(fdoingW|fdoingR) == 0 {
 			this.doCloseOnce.Do(func() {
 				if nil != this.closeCallBack {
 					this.closeCallBack(this.imp, reason)
