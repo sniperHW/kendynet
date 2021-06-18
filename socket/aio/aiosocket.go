@@ -125,14 +125,13 @@ const (
 	fclosed  = uint32(1 << 1)
 	frclosed = uint32(1 << 2)
 	fdoclose = uint32(1 << 3)
-	fdoingW  = uint32(1 << 4)
-	fdoingR  = uint32(1 << 5)
 )
 
 type Socket struct {
 	ud               atomic.Value
 	sendQueue        *socket.SendQueue
 	flag             util.Flag
+	ioCount          int32
 	aioConn          *goaio.AIOConn
 	encoder          kendynet.EnCoder
 	inboundProcessor AioInBoundProcessor
@@ -224,7 +223,7 @@ func (s *Socket) SetInBoundProcessor(in kendynet.InBoundProcessor) kendynet.Stre
 
 func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 	if s.flag.AtomicTest(fclosed | frclosed) {
-		s.ioDone(fdoingR)
+		s.ioDone()
 	} else {
 		recvAgain := false
 		if nil != r.Err {
@@ -261,7 +260,7 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 		}
 
 		if !recvAgain || s.flag.AtomicTest(fclosed|frclosed) || nil != s.aioConn.Recv(s.recvCB, s.inboundProcessor.GetRecvBuff(), s.getRecvTimeout()) {
-			s.ioDone(fdoingR)
+			s.ioDone()
 		}
 	}
 }
@@ -366,7 +365,7 @@ func (s *Socket) Send(o interface{}, timeout ...time.Duration) error {
 		//send:2
 		if atomic.CompareAndSwapInt32(&s.sendLock, 0, 1) {
 			//send:3
-			s.addIO(fdoingW)
+			s.addIO()
 			sendRoutinePool.GoTask(s)
 		}
 
@@ -405,7 +404,7 @@ func (s *Socket) DirectSend(bytes []byte, timeout ...time.Duration) (int, error)
 }
 
 func (s *Socket) onSendComplete(r *goaio.AIOResult) {
-	defer s.ioDone(fdoingW)
+	sendAgain := false
 	if nil == r.Err {
 		s.releaseSendBuffer()
 		if s.sendQueue.Empty() {
@@ -431,7 +430,7 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 				 * a 恢复执行，发现!s.sendQueue.Empty()但是,atomic.CompareAndSwapInt32(&s.sendLock, 0, 1)失败,执行onSendComplete:3
 				 *
 				 */
-				s.addIO(fdoingW)
+				sendAgain = true
 				sendRoutinePool.GoTask(s)
 			} else {
 				//onSendComplete:3
@@ -441,7 +440,7 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 				}
 			}
 		} else {
-			s.addIO(fdoingW)
+			sendAgain = true
 			sendRoutinePool.GoTask(s)
 		}
 	} else if !s.flag.AtomicTest(fclosed) {
@@ -463,7 +462,7 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 					//超时可能会发送部分数据
 					b := s.getSendBuffer()
 					b.DropFirstNBytes(r.Bytestransfer)
-					s.addIO(fdoingW)
+					sendAgain = true
 					sendRoutinePool.GoTask(s)
 				} else {
 					close(s.sendOverChan)
@@ -477,6 +476,10 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult) {
 		}
 	} else {
 		s.releaseSendBuffer()
+	}
+
+	if !sendAgain {
+		s.ioDone()
 	}
 }
 
@@ -508,9 +511,9 @@ func (s *Socket) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err er
 					}
 				}
 				s.inboundCallBack = cb
-				s.addIO(fdoingR)
+				s.addIO()
 				if err = s.aioConn.Recv(s.recvCB, s.inboundProcessor.GetRecvBuff(), s.getRecvTimeout()); nil != err {
-					s.ioDone(fdoingR)
+					s.ioDone()
 				}
 			}
 		}
@@ -518,13 +521,12 @@ func (s *Socket) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err er
 	return
 }
 
-func (s *Socket) addIO(tt uint32) {
-	s.flag.AtomicSet(tt)
+func (s *Socket) addIO() {
+	atomic.AddInt32(&s.ioCount, 1)
 }
 
-func (s *Socket) ioDone(tt uint32) {
-	v := s.flag.AtomicClear(tt)
-	if (v&fdoclose > 0) && (v&(fdoingW|fdoingR) == 0) {
+func (s *Socket) ioDone() {
+	if atomic.AddInt32(&s.ioCount, -1) == 0 && s.flag.AtomicTest(fdoclose) {
 		s.doCloseOnce.Do(func() {
 			if nil != s.inboundProcessor {
 				s.inboundProcessor.OnSocketClose()
@@ -560,7 +562,7 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 		s.closeReason = reason
 		s.flag.AtomicSet(fdoclose)
 
-		if s.flag.AtomicSet(fdoclose)&(fdoingW|fdoingR) == 0 {
+		if atomic.LoadInt32(&s.ioCount) == 0 {
 			s.doCloseOnce.Do(func() {
 				if nil != s.inboundProcessor {
 					s.inboundProcessor.OnSocketClose()
