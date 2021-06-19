@@ -136,7 +136,7 @@ func TestSendTimeout(t *testing.T) {
 
 		go func() {
 			for {
-				err := session.Send(message.NewWSMessage(message.WSTextMessage, strings.Repeat("a", 65536)), -1)
+				err := session.SendWithTimeout(message.NewWSMessage(message.WSTextMessage, strings.Repeat("a", 65536)), -1)
 				if nil != err {
 					break
 				}
@@ -211,7 +211,7 @@ func TestSendTimeout(t *testing.T) {
 		go func() {
 
 			for {
-				err := session.Send(strings.Repeat("a", 65536), -1)
+				err := session.SendWithTimeout(strings.Repeat("a", 65536), -1)
 				if nil != err {
 					break
 				}
@@ -261,7 +261,7 @@ func TestSendTimeout(t *testing.T) {
 		})
 
 		for {
-			err := session.Send(strings.Repeat("a", 65536), time.Second)
+			err := session.SendWithTimeout(strings.Repeat("a", 65536), time.Second)
 			if nil != err {
 				assert.Equal(t, kendynet.ErrSendTimeout, err)
 				session.Close(err, 0)

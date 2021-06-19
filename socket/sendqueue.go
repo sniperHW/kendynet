@@ -1,7 +1,6 @@
 package socket
 
 import (
-	"container/list"
 	"errors"
 	"sync"
 	"time"
@@ -19,37 +18,75 @@ const (
 )
 
 type stWait struct {
-	listEle *list.Element
-	ch      chan struct{}
+	nnext *stWait
+	pprev *stWait
+	ch    chan struct{}
 }
 
-//实现cond以支持带timeout的wait
-type Cond struct {
-	sync.Mutex
-	mu   *sync.Mutex
-	wait *list.List
-}
+func pushWait(head *stWait, n *stWait) {
+	if head != n {
+		tail := head.pprev
 
-func NewCond(mu *sync.Mutex) *Cond {
-	return &Cond{
-		mu:   mu,
-		wait: list.New(),
+		n.nnext = tail.nnext
+		n.pprev = tail
+
+		tail.nnext = n
+		head.pprev = n
 	}
 }
 
-func (c *Cond) Wait() {
+func popWait(head *stWait) *stWait {
+	if head.nnext == head {
+		return nil
+	} else {
+		first := head.nnext
+		removeWait(first)
+		return first
+	}
+}
+
+func removeWait(n *stWait) {
+	if nil != n.nnext && nil != n.pprev && n.nnext != n && n.pprev != n {
+		next := n.nnext
+		prev := n.pprev
+		prev.nnext = next
+		next.pprev = prev
+		n.nnext = nil
+		n.pprev = nil
+	}
+}
+
+//实现cond以支持带timeout的wait
+type cond struct {
+	sync.Mutex
+	mu       *sync.Mutex
+	waitList *stWait
+}
+
+func newCond(mu *sync.Mutex) *cond {
+	c := &cond{
+		mu:       mu,
+		waitList: &stWait{},
+	}
+
+	c.waitList.nnext = c.waitList
+	c.waitList.pprev = c.waitList
+	return c
+}
+
+func (c *cond) wait() {
 	w := &stWait{
 		ch: make(chan struct{}),
 	}
 	c.Lock()
-	w.listEle = c.wait.PushBack(w)
+	pushWait(c.waitList, w)
 	c.Unlock()
 	c.mu.Unlock()
 	<-w.ch
 	c.mu.Lock()
 }
 
-func (c *Cond) WaitWithTimeout(timeout time.Duration) bool {
+func (c *cond) waitWithTimeout(timeout time.Duration) bool {
 	if timeout <= 0 {
 		return false
 	}
@@ -59,7 +96,7 @@ func (c *Cond) WaitWithTimeout(timeout time.Duration) bool {
 	}
 
 	c.Lock()
-	w.listEle = c.wait.PushBack(w)
+	pushWait(c.waitList, w)
 	c.Unlock()
 
 	c.mu.Unlock()
@@ -74,37 +111,39 @@ func (c *Cond) WaitWithTimeout(timeout time.Duration) bool {
 		ok = true
 	case <-ticker.C:
 		c.Lock()
-		c.wait.Remove(w.listEle)
+		removeWait(w)
 		c.Unlock()
 	}
 	c.mu.Lock()
 	return ok
 }
 
-func (c *Cond) Signal() {
+func (c *cond) signal() {
 	c.Lock()
-	if c.wait.Len() > 0 {
-		v := c.wait.Remove(c.wait.Front()).(*stWait)
-		close(v.ch)
-	}
+	w := popWait(c.waitList)
 	c.Unlock()
+	if nil != w {
+		close(w.ch)
+	}
 }
 
-func (c *Cond) Broadcast() {
+func (c *cond) broadcast() {
 	c.Lock()
-	for n := c.wait.Front(); nil != n; n = c.wait.Front() {
-		v := c.wait.Remove(n)
-		close(v.(*stWait).ch)
-
-	}
+	waitList := c.waitList
+	c.waitList = &stWait{}
+	c.waitList.nnext = c.waitList
+	c.waitList.pprev = c.waitList
 	c.Unlock()
+	for w := popWait(waitList); nil != w; w = popWait(waitList) {
+		close(w.ch)
+	}
 }
 
 type SendQueue struct {
 	list        []interface{}
 	listGuard   sync.Mutex
-	emptyCond   *Cond
-	fullCond    *Cond
+	emptyCond   *cond
+	fullCond    *cond
 	fullSize    int
 	closed      bool
 	emptyWaited int
@@ -129,7 +168,7 @@ func (self *SendQueue) Add(item interface{}) error {
 	needSignal := self.emptyWaited > 0
 	self.listGuard.Unlock()
 	if needSignal {
-		self.emptyCond.Signal()
+		self.emptyCond.signal()
 	}
 	return nil
 }
@@ -142,17 +181,9 @@ func (self *SendQueue) AddWithTimeout(item interface{}, timeout time.Duration) e
 	}
 
 	for len(self.list) >= self.fullSize {
-		if 0 == timeout {
+		if timeout > 0 {
 			self.fullWaited++
-			self.fullCond.Wait()
-			self.fullWaited--
-			if self.closed {
-				self.listGuard.Unlock()
-				return ErrQueueClosed
-			}
-		} else {
-			self.fullWaited++
-			ok := self.fullCond.WaitWithTimeout(timeout)
+			ok := self.fullCond.waitWithTimeout(timeout)
 			self.fullWaited--
 			if self.closed {
 				self.listGuard.Unlock()
@@ -160,6 +191,14 @@ func (self *SendQueue) AddWithTimeout(item interface{}, timeout time.Duration) e
 			} else if !ok {
 				self.listGuard.Unlock()
 				return ErrAddTimeout
+			}
+		} else {
+			self.fullWaited++
+			self.fullCond.wait()
+			self.fullWaited--
+			if self.closed {
+				self.listGuard.Unlock()
+				return ErrQueueClosed
 			}
 		}
 	}
@@ -169,7 +208,7 @@ func (self *SendQueue) AddWithTimeout(item interface{}, timeout time.Duration) e
 	needSignal := self.emptyWaited > 0
 	self.listGuard.Unlock()
 	if needSignal {
-		self.emptyCond.Signal()
+		self.emptyCond.signal()
 	}
 	return nil
 }
@@ -179,7 +218,7 @@ func (self *SendQueue) Get(swaped []interface{}) (closed bool, datas []interface
 	self.listGuard.Lock()
 	for !self.closed && len(self.list) == 0 {
 		self.emptyWaited++
-		self.emptyCond.Wait()
+		self.emptyCond.wait()
 		self.emptyWaited--
 	}
 	datas = self.list
@@ -188,7 +227,7 @@ func (self *SendQueue) Get(swaped []interface{}) (closed bool, datas []interface
 	self.list = swaped
 	self.listGuard.Unlock()
 	if needSignal {
-		self.fullCond.Broadcast()
+		self.fullCond.broadcast()
 	}
 	return
 }
@@ -203,8 +242,8 @@ func (self *SendQueue) Close() (bool, int) {
 
 	self.closed = true
 	self.listGuard.Unlock()
-	self.emptyCond.Broadcast()
-	self.fullCond.Broadcast()
+	self.emptyCond.broadcast()
+	self.fullCond.broadcast()
 
 	return true, n
 }
@@ -220,7 +259,7 @@ func (self *SendQueue) SetFullSize(newSize int) {
 		}
 		self.listGuard.Unlock()
 		if needSignal {
-			self.fullCond.Broadcast()
+			self.fullCond.broadcast()
 		}
 	}
 }
@@ -242,8 +281,8 @@ func (self *SendQueue) Empty() bool {
 func NewSendQueue(fullSize ...int) *SendQueue {
 	self := &SendQueue{}
 	self.closed = false
-	self.emptyCond = NewCond(&self.listGuard)
-	self.fullCond = NewCond(&self.listGuard)
+	self.emptyCond = newCond(&self.listGuard)
+	self.fullCond = newCond(&self.listGuard)
 	self.list = make([]interface{}, 0, initCap)
 
 	if len(fullSize) > 0 {

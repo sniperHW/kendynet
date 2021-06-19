@@ -27,12 +27,17 @@ type StreamSession interface {
 
 	/*
 	 * 将o投递到发送队列
-	 * timeout:如果没有设置timeout,当发送队列满不将o投递到队列，直接返回busy
+	 * 如果发送队列满直接返回busy
+	 */
+
+	Send(o interface{}) error
+
+	/*
+	 * 将o投递到发送队列
 	 * timeout <= 0,如果发送队列满，永久阻塞
 	 * timeout > 0,如果发送队列满阻塞到timeout
 	 */
-
-	Send(o interface{}, timeout ...time.Duration) error
+	SendWithTimeout(o interface{}, timeout time.Duration) error
 
 	/*
 	 * 阻塞式直接发送[]byte,不应与Send混用

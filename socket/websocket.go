@@ -70,7 +70,7 @@ func (this *WebSocket) DirectSend(bytes []byte, timeout ...time.Duration) (int, 
 		return 0, kendynet.ErrSocketClose
 	} else {
 		var ttimeout time.Duration
-		if timeout[0] > 0 {
+		if len(timeout) > 0 {
 			ttimeout = timeout[0]
 		}
 

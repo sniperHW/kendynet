@@ -68,7 +68,7 @@ func server(service string) {
 			session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
 				atomic.AddInt32(&bytescount, int32(len(msg.([]byte))))
 				atomic.AddInt32(&packetcount, int32(1))
-				s.Send(msg)
+				s.DirectSend(msg.([]byte))
 			})
 		})
 
@@ -102,7 +102,7 @@ func client(service string, count int) {
 			session.SetEncoder(&encoder{})
 
 			session.BeginRecv(func(s kendynet.StreamSession, msg interface{}) {
-				s.Send(msg)
+				s.DirectSend(msg.([]byte))
 			})
 			//send the first messge
 			msg := "hello"

@@ -108,37 +108,46 @@ func (this *SocketBase) getSendTimeout() time.Duration {
 	return time.Duration(atomic.LoadInt64(&this.sendTimeout))
 }
 
-func (this *SocketBase) Send(o interface{}, timeout ...time.Duration) error {
+func (this *SocketBase) Send(o interface{}) error {
 	if nil == o {
 		return kendynet.ErrInvaildObject
 	} else if _, ok := o.([]byte); !ok && nil == this.encoder {
 		return kendynet.ErrInvaildEncoder
 	} else {
-		if len(timeout) == 0 {
-			if err := this.sendQue.Add(o); nil != err {
-				if err == ErrQueueClosed {
-					err = kendynet.ErrSocketClose
-				} else if err == ErrQueueFull {
-					err = kendynet.ErrSendQueFull
-				}
-				return err
-			}
-		} else {
-			var ttimeout time.Duration
-			if timeout[0] > 0 {
-				ttimeout = timeout[0]
-			}
 
-			if err := this.sendQue.AddWithTimeout(o, ttimeout); nil != err {
-				if err == ErrQueueClosed {
-					err = kendynet.ErrSocketClose
-				} else if err == ErrQueueFull {
-					err = kendynet.ErrSendQueFull
-				} else if err == ErrAddTimeout {
-					err = kendynet.ErrSendTimeout
-				}
-				return err
+		if err := this.sendQue.Add(o); nil != err {
+			if err == ErrQueueClosed {
+				err = kendynet.ErrSocketClose
+			} else if err == ErrQueueFull {
+				err = kendynet.ErrSendQueFull
 			}
+			return err
+		}
+
+		this.sendOnce.Do(func() {
+			this.addIO()
+			go this.imp.sendThreadFunc()
+		})
+		return nil
+	}
+}
+
+func (this *SocketBase) SendWithTimeout(o interface{}, timeout time.Duration) error {
+	if nil == o {
+		return kendynet.ErrInvaildObject
+	} else if _, ok := o.([]byte); !ok && nil == this.encoder {
+		return kendynet.ErrInvaildEncoder
+	} else {
+
+		if err := this.sendQue.AddWithTimeout(o, timeout); nil != err {
+			if err == ErrQueueClosed {
+				err = kendynet.ErrSocketClose
+			} else if err == ErrQueueFull {
+				err = kendynet.ErrSendQueFull
+			} else if err == ErrAddTimeout {
+				err = kendynet.ErrSendTimeout
+			}
+			return err
 		}
 
 		this.sendOnce.Do(func() {
