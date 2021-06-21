@@ -278,11 +278,6 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult, recvContext *ioContext) {
 func (s *Socket) doSend(v ...interface{}) {
 	c := v[0].(*ioContext)
 	b := c.b
-	if nil == b {
-		b = buffer.Get()
-		c.b = b
-	}
-
 	if b.Len() == 0 {
 		_, s.swaped = s.sendQueue.Get(s.swaped)
 
@@ -331,7 +326,36 @@ func (s *Socket) SendWithTimeout(o interface{}, timeout time.Duration) error {
 		if atomic.CompareAndSwapInt32(&s.sendLock, 0, 1) {
 			//send:3
 			s.addIO()
-			sendRoutinePool.GoWithParams(s.doSend, &ioContext{cb: s.sendCB})
+			sendRoutinePool.GoWithParams(s.doSend, &ioContext{b: buffer.Get(), cb: s.sendCB})
+		}
+
+		return nil
+	}
+}
+
+func (s *Socket) Send(o interface{}) error {
+	if o == nil {
+		return kendynet.ErrInvaildObject
+	} else if _, ok := o.([]byte); !ok && nil == s.encoder {
+		return kendynet.ErrInvaildEncoder
+	} else {
+		//send:1
+		if err := s.sendQueue.Add(o); nil != err {
+			if err == socket.ErrQueueFull {
+				err = kendynet.ErrSendQueFull
+			} else if err == socket.ErrAddTimeout {
+				err = kendynet.ErrSendTimeout
+			} else {
+				err = kendynet.ErrSocketClose
+			}
+			return err
+		}
+
+		//send:2
+		if atomic.CompareAndSwapInt32(&s.sendLock, 0, 1) {
+			//send:3
+			s.addIO()
+			sendRoutinePool.GoWithParams(s.doSend, &ioContext{b: buffer.Get(), cb: s.sendCB})
 		}
 
 		return nil
@@ -369,35 +393,6 @@ func (s *Socket) DirectSend(bytes []byte, timeout ...time.Duration) (int, error)
 
 	return n, err
 
-}
-
-func (s *Socket) Send(o interface{}) error {
-	if o == nil {
-		return kendynet.ErrInvaildObject
-	} else if _, ok := o.([]byte); !ok && nil == s.encoder {
-		return kendynet.ErrInvaildEncoder
-	} else {
-		//send:1
-		if err := s.sendQueue.Add(o); nil != err {
-			if err == socket.ErrQueueFull {
-				err = kendynet.ErrSendQueFull
-			} else if err == socket.ErrAddTimeout {
-				err = kendynet.ErrSendTimeout
-			} else {
-				err = kendynet.ErrSocketClose
-			}
-			return err
-		}
-
-		//send:2
-		if atomic.CompareAndSwapInt32(&s.sendLock, 0, 1) {
-			//send:3
-			s.addIO()
-			sendRoutinePool.GoWithParams(s.doSend, &ioContext{cb: s.sendCB})
-		}
-
-		return nil
-	}
 }
 
 func (s *Socket) onSendComplete(r *goaio.AIOResult, sendContext *ioContext) {
@@ -487,9 +482,6 @@ func (s *Socket) ShutdownWrite() {
 	}
 }
 
-/*
- * cb由completeRoutine调用，禁止在cb中调用会导致阻塞（例如SendWithTimeout和DirectSend）或耗时长的任务
- */
 func (s *Socket) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err error) {
 	s.beginOnce.Do(func() {
 		if nil == cb {

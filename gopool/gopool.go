@@ -133,7 +133,7 @@ func New(o Option) *Pool {
 	}
 
 	if o.MaxRoutineCount == 0 {
-		o.MaxRoutineCount = 100
+		o.MaxRoutineCount = 1024
 	}
 
 	p := &Pool{
