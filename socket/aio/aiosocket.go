@@ -32,8 +32,8 @@ var ioResutRoutinePool *gopool.Pool = gopool.New(gopool.Option{
 })
 
 type ioContext struct {
-	context interface{}
-	cb      func(*goaio.AIOResult, interface{})
+	b  *buffer.Buffer
+	cb func(...interface{})
 }
 
 func (this *SocketService) completeRoutine(s *goaio.AIOService) {
@@ -43,9 +43,7 @@ func (this *SocketService) completeRoutine(s *goaio.AIOService) {
 			break
 		} else {
 			c := res.Context.(*ioContext)
-			ioResutRoutinePool.Go(func() {
-				c.cb(&res, c.context)
-			})
+			ioResutRoutinePool.GoWithParams(c.cb, res, c)
 		}
 	}
 }
@@ -155,12 +153,10 @@ type Socket struct {
 	closeOnce        sync.Once
 	doCloseOnce      sync.Once
 	sendLock         int32
-	sendContext      ioContext
-	recvContext      ioContext
+	sendCB           func(...interface{})
+	recvCB           func(...interface{})
 	sendOverChan     chan struct{}
 	netconn          net.Conn
-	sendCB           func(*goaio.AIOResult)
-	recvCB           func(*goaio.AIOResult)
 	closeReason      error
 	swaped           []interface{}
 	sendTimeout      int64
@@ -235,7 +231,7 @@ func (s *Socket) SetInBoundProcessor(in kendynet.InBoundProcessor) kendynet.Stre
 	return s
 }
 
-func (s *Socket) onRecvComplete(r *goaio.AIOResult, _ interface{}) {
+func (s *Socket) onRecvComplete(r *goaio.AIOResult, recvContext *ioContext) {
 	if s.flag.AtomicTest(fclosed | frclosed) {
 		s.ioDone()
 	} else {
@@ -273,25 +269,18 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult, _ interface{}) {
 			}
 		}
 
-		if !recvAgain || s.flag.AtomicTest(fclosed|frclosed) || nil != s.aioConn.Recv(&s.recvContext, s.inboundProcessor.GetRecvBuff(), s.getRecvTimeout()) {
+		if !recvAgain || s.flag.AtomicTest(fclosed|frclosed) || nil != s.aioConn.Recv(recvContext, s.inboundProcessor.GetRecvBuff(), s.getRecvTimeout()) {
 			s.ioDone()
 		}
 	}
 }
 
-/*
- *  实现gopool.Task接口,避免无谓的闭包创建
- */
-
-func (s *Socket) Do() {
-	s.doSend(nil)
-}
-
-func (s *Socket) doSend(b *buffer.Buffer) {
-
+func (s *Socket) doSend(v ...interface{}) {
+	c := v[0].(*ioContext)
+	b := c.b
 	if nil == b {
 		b = buffer.Get()
-		s.sendContext.context = b
+		c.b = b
 	}
 
 	if b.Len() == 0 {
@@ -314,9 +303,9 @@ func (s *Socket) doSend(b *buffer.Buffer) {
 	}
 
 	if b.Len() == 0 {
-		s.onSendComplete(&goaio.AIOResult{}, b)
-	} else if nil != s.aioConn.Send(&s.sendContext, b.Bytes(), s.getSendTimeout()) {
-		s.onSendComplete(&goaio.AIOResult{Err: kendynet.ErrSocketClose}, b)
+		s.onSendComplete(&goaio.AIOResult{}, c)
+	} else if nil != s.aioConn.Send(c, b.Bytes(), s.getSendTimeout()) {
+		s.onSendComplete(&goaio.AIOResult{Err: kendynet.ErrSocketClose}, c)
 	}
 }
 
@@ -342,7 +331,7 @@ func (s *Socket) SendWithTimeout(o interface{}, timeout time.Duration) error {
 		if atomic.CompareAndSwapInt32(&s.sendLock, 0, 1) {
 			//send:3
 			s.addIO()
-			sendRoutinePool.GoTask(s)
+			sendRoutinePool.GoWithParams(s.doSend, &ioContext{cb: s.sendCB})
 		}
 
 		return nil
@@ -361,7 +350,8 @@ func (s *Socket) DirectSend(bytes []byte, timeout ...time.Duration) (int, error)
 	ch := make(chan struct{})
 
 	scontext := &ioContext{
-		cb: func(res *goaio.AIOResult, _ interface{}) {
+		cb: func(v ...interface{}) {
+			res := v[0].(goaio.AIOResult)
 			n = res.Bytestransfer
 			err = res.Err
 			if err == goaio.ErrSendTimeout {
@@ -403,15 +393,14 @@ func (s *Socket) Send(o interface{}) error {
 		if atomic.CompareAndSwapInt32(&s.sendLock, 0, 1) {
 			//send:3
 			s.addIO()
-			sendRoutinePool.GoTask(s)
+			sendRoutinePool.GoWithParams(s.doSend, &ioContext{cb: s.sendCB})
 		}
 
 		return nil
 	}
 }
 
-func (s *Socket) onSendComplete(r *goaio.AIOResult, c interface{}) {
-	b := c.(*buffer.Buffer)
+func (s *Socket) onSendComplete(r *goaio.AIOResult, sendContext *ioContext) {
 	if nil == r.Err {
 		if s.sendQueue.Empty() {
 			//onSendComplete:1
@@ -436,8 +425,8 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult, c interface{}) {
 				 * a 恢复执行，发现!s.sendQueue.Empty()但是,atomic.CompareAndSwapInt32(&s.sendLock, 0, 1)失败,执行onSendComplete:3
 				 *
 				 */
-				b.Reset()
-				s.doSend(b)
+				sendContext.b.Reset()
+				s.doSend(sendContext)
 				return
 			} else {
 				//onSendComplete:3
@@ -447,8 +436,8 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult, c interface{}) {
 				}
 			}
 		} else {
-			b.Reset()
-			s.doSend(b)
+			sendContext.b.Reset()
+			s.doSend(sendContext)
 			return
 		}
 	} else if !s.flag.AtomicTest(fclosed) {
@@ -467,8 +456,8 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult, c interface{}) {
 				//如果是发送超时且用户没有关闭socket,再次请求发送
 				if !s.flag.AtomicTest(fclosed) {
 					//超时可能会发送部分数据
-					b.DropFirstNBytes(r.Bytestransfer)
-					s.doSend(b)
+					sendContext.b.DropFirstNBytes(r.Bytestransfer)
+					s.doSend(sendContext)
 					return
 				} else {
 					close(s.sendOverChan)
@@ -480,7 +469,7 @@ func (s *Socket) onSendComplete(r *goaio.AIOResult, c interface{}) {
 		}
 	}
 
-	b.Free()
+	sendContext.b.Free()
 
 	s.ioDone()
 
@@ -515,7 +504,7 @@ func (s *Socket) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err er
 			}
 			s.inboundCallBack = cb
 			s.addIO()
-			if err = s.aioConn.Recv(&s.recvContext, s.inboundProcessor.GetRecvBuff(), s.getRecvTimeout()); nil != err {
+			if err = s.aioConn.Recv(&ioContext{cb: s.recvCB}, s.inboundProcessor.GetRecvBuff(), s.getRecvTimeout()); nil != err {
 				s.ioDone()
 			}
 		}
@@ -588,12 +577,16 @@ func NewSocket(service *SocketService, netConn net.Conn) kendynet.StreamSession 
 	s.sendQueue = socket.NewSendQueue(128)
 	s.netconn = netConn
 	s.sendOverChan = make(chan struct{})
-	s.sendContext.cb = func(r *goaio.AIOResult, c interface{}) {
-		s.onSendComplete(r, c)
+	s.sendCB = func(v ...interface{}) {
+		r := v[0].(goaio.AIOResult)
+		c := v[1].(*ioContext)
+		s.onSendComplete(&r, c)
 	}
 
-	s.recvContext.cb = func(r *goaio.AIOResult, _ interface{}) {
-		s.onRecvComplete(r, nil)
+	s.recvCB = func(v ...interface{}) {
+		r := v[0].(goaio.AIOResult)
+		c := v[1].(*ioContext)
+		s.onRecvComplete(&r, c)
 	}
 
 	runtime.SetFinalizer(s, func(s *Socket) {

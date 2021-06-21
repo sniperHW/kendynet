@@ -5,21 +5,92 @@ import (
 	"sync"
 )
 
-type Task interface {
-	Do()
+type queItem struct {
+	nnext *queItem
+	pprev *queItem
+	v     interface{}
+}
+
+var queItemPool *sync.Pool = &sync.Pool{
+	New: func() interface{} {
+		return &queItem{}
+	},
+}
+
+func getQueItem() *queItem {
+	return queItemPool.Get().(*queItem)
+}
+
+func putQueItem(i *queItem) {
+	i.v = nil
+	queItemPool.Put(i)
+}
+
+type que struct {
+	cap  int
+	size int
+	head queItem
+}
+
+func (q *que) push(v interface{}) bool {
+	if q.size < q.cap {
+		n := getQueItem()
+		n.v = v
+		tail := q.head.pprev
+
+		n.nnext = tail.nnext
+		n.pprev = tail
+
+		tail.nnext = n
+		q.head.pprev = n
+
+		q.size++
+		return true
+	} else {
+		return false
+	}
+}
+
+func (q *que) pop() interface{} {
+	if q.head.nnext == &q.head {
+		return nil
+	} else {
+		first := q.head.nnext
+		v := first.v
+		q.remove(first)
+		putQueItem(first)
+		q.size--
+		return v
+	}
+}
+
+func (q *que) remove(n *queItem) {
+	if nil != n.nnext && nil != n.pprev && n.nnext != n && n.pprev != n {
+		next := n.nnext
+		prev := n.pprev
+		prev.nnext = next
+		next.pprev = prev
+		n.nnext = nil
+		n.pprev = nil
+	}
+}
+
+type task struct {
+	f interface{}
+	v interface{}
 }
 
 type routine struct {
-	taskCh chan interface{}
+	taskCh chan task
 }
 
 func (r *routine) run(p *Pool) {
 	for task := range r.taskCh {
-		switch task.(type) {
+		switch task.f.(type) {
 		case func():
-			task.(func())()
-		case Task:
-			task.(Task).Do()
+			task.f.(func())()
+		case func(...interface{}):
+			task.f.(func(...interface{}))(task.v.([]interface{})...)
 		default:
 			panic("invaild element")
 		}
@@ -30,6 +101,7 @@ func (r *routine) run(p *Pool) {
 var defaultPool *Pool = New(Option{
 	MaxRoutineCount: 1000,
 	Mode:            QueueMode,
+	MaxQueueSize:    1024,
 })
 
 type Mode int
@@ -45,72 +117,12 @@ type Option struct {
 	Mode            Mode
 }
 
-type ring struct {
-	head int
-	tail int
-	data []interface{}
-	max  int
-}
-
-func newring(max int) ring {
-	r := ring{
-		max: max,
-	}
-
-	var l int
-	if max == 0 {
-		l = 100 + 1
-	} else {
-		l = max + 1
-	}
-
-	r.data = make([]interface{}, l, l)
-
-	return r
-}
-
-func (r *ring) grow() {
-	data := make([]interface{}, len(r.data)*2-1, len(r.data)*2-1)
-	i := 0
-	for v := r.pop(); nil != v; v = r.pop() {
-		data[i] = v
-		i++
-	}
-	r.data = data
-	r.head = 0
-	r.tail = i
-}
-
-func (r *ring) pop() interface{} {
-	if r.head != r.tail {
-		head := r.data[r.head]
-		r.data[r.head] = nil
-		r.head = (r.head + 1) % len(r.data)
-		return head
-	} else {
-		return nil
-	}
-}
-
-func (r *ring) push(v interface{}) bool {
-	if (r.tail+1)%len(r.data) != r.head {
-		r.data[r.tail] = v
-		r.tail = (r.tail + 1) % len(r.data)
-		return true
-	} else if r.max == 0 {
-		r.grow()
-		return r.push(v)
-	} else {
-		return false
-	}
-}
-
 type Pool struct {
 	sync.Mutex
-	frees ring
-	queue ring
-	count int
-	o     Option
+	frees   que
+	taskQue que
+	count   int
+	o       Option
 }
 
 func New(o Option) *Pool {
@@ -126,11 +138,20 @@ func New(o Option) *Pool {
 
 	p := &Pool{
 		o:     o,
-		frees: newring(o.MaxRoutineCount),
+		frees: que{cap: o.MaxRoutineCount},
 	}
 
+	p.frees.head.nnext = &p.frees.head
+	p.frees.head.pprev = &p.frees.head
+
 	if o.Mode == QueueMode {
-		p.queue = newring(o.MaxQueueSize)
+		if o.MaxQueueSize == 0 {
+			o.MaxQueueSize = 1024
+		}
+		p.taskQue.cap = o.MaxQueueSize
+
+		p.taskQue.head.nnext = &p.taskQue.head
+		p.taskQue.head.pprev = &p.taskQue.head
 	}
 
 	return p
@@ -141,29 +162,29 @@ func (p *Pool) free(r *routine) {
 	defer p.Unlock()
 	switch p.o.Mode {
 	case QueueMode:
-		f := p.queue.pop()
-		if nil != f {
-			r.taskCh <- f //f.(func())
+		if v := p.taskQue.pop(); nil != v {
+			r.taskCh <- v.(task)
 			return
 		}
 	}
+
 	p.frees.push(r)
 }
 
 func (p *Pool) popFree() *routine {
-	if r := p.frees.pop(); nil != r {
-		return r.(*routine)
+	if v := p.frees.pop(); nil != v {
+		return v.(*routine)
 	} else {
 		return nil
 	}
 }
 
-func (p *Pool) gogo(f interface{}) error {
+func (p *Pool) gogo(f interface{}, v []interface{}) error {
 	p.Lock()
 	defer p.Unlock()
 	r := p.popFree()
 	if nil != r {
-		r.taskCh <- f
+		r.taskCh <- task{f: f, v: v}
 	} else {
 		if p.count == p.o.MaxRoutineCount {
 			switch p.o.Mode {
@@ -171,22 +192,22 @@ func (p *Pool) gogo(f interface{}) error {
 				switch f.(type) {
 				case func():
 					go f.(func())()
-				case Task:
-					go f.(Task).Do()
+				case func(...interface{}):
+					go f.(func(...interface{}))(v...)
 				default:
 					return errors.New("invaild arg")
 				}
 			case QueueMode:
-				if !p.queue.push(f) {
+				if !p.taskQue.push(task{f: f, v: v}) {
 					return errors.New("exceed MaxQueueSize")
 				}
 			}
 		} else {
 			p.count++
 			r = &routine{
-				taskCh: make(chan interface{}, 1),
+				taskCh: make(chan task, 1),
 			}
-			r.taskCh <- f
+			r.taskCh <- task{f: f, v: v}
 			go r.run(p)
 		}
 	}
@@ -194,17 +215,17 @@ func (p *Pool) gogo(f interface{}) error {
 }
 
 func (p *Pool) Go(f func()) error {
-	return p.gogo(f)
+	return p.gogo(f, nil)
 }
 
-func (p *Pool) GoTask(t Task) error {
-	return p.gogo(t)
+func (p *Pool) GoWithParams(f func(...interface{}), v ...interface{}) error {
+	return p.gogo(f, v)
 }
 
 func Go(f func()) error {
 	return defaultPool.Go(f)
 }
 
-func GoTask(t Task) error {
-	return defaultPool.GoTask(t)
+func GoWithParams(f func(...interface{}), v ...interface{}) error {
+	return defaultPool.GoWithParams(f, v...)
 }
