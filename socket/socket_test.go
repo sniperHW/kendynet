@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -969,4 +970,82 @@ func TestShutDownRead(t *testing.T) {
 
 	listener.Close()
 
+}
+
+func BenchmarkSyncCond(b *testing.B) {
+	var muWait sync.Mutex
+	cWait := sync.NewCond(&muWait)
+	wait := false
+
+	var muNotify sync.Mutex
+	cNotify := sync.NewCond(&muNotify)
+	notify := false
+
+	go func() {
+		for {
+			muNotify.Lock()
+			for !notify {
+				muWait.Lock()
+				wait = true
+				muWait.Unlock()
+				cWait.Signal()
+				cNotify.Wait()
+			}
+			notify = false
+			muNotify.Unlock()
+		}
+	}()
+
+	for i := 0; i < b.N; i++ {
+		muWait.Lock()
+		for !wait {
+			cWait.Wait()
+		}
+		wait = false
+		muWait.Unlock()
+
+		muNotify.Lock()
+		notify = true
+		muNotify.Unlock()
+		cNotify.Signal()
+	}
+}
+
+func BenchmarkCond(b *testing.B) {
+	var muWait sync.Mutex
+	cWait := newCond(&muWait)
+	wait := false
+
+	var muNotify sync.Mutex
+	cNotify := newCond(&muNotify)
+	notify := false
+
+	go func() {
+		for {
+			muNotify.Lock()
+			for !notify {
+				muWait.Lock()
+				wait = true
+				muWait.Unlock()
+				cWait.signal()
+				cNotify.wait()
+			}
+			notify = false
+			muNotify.Unlock()
+		}
+	}()
+
+	for i := 0; i < b.N; i++ {
+		muWait.Lock()
+		for !wait {
+			cWait.wait()
+		}
+		wait = false
+		muWait.Unlock()
+
+		muNotify.Lock()
+		notify = true
+		muNotify.Unlock()
+		cNotify.signal()
+	}
 }

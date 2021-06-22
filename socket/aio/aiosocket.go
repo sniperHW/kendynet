@@ -284,36 +284,25 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 	}
 }
 
-/*
- *  实现gopool.Task接口,避免无谓的闭包创建
- */
-
-//func (s *Socket) Do() {
-//	s.doSend(nil)
-//}
-
 func (s *Socket) doSend(sendContext *sendContext) {
 
-	var b *buffer.Buffer
-
 	if nil == sendContext {
-		b = buffer.Get()
 		sendContext = &s.sendContext
-		sendContext.b = b
+		sendContext.b = buffer.Get()
 	}
 
-	if b.Len() == 0 {
+	if sendContext.b.Len() == 0 {
 		_, s.swaped = s.sendQueue.Get(s.swaped)
 
 		for i := 0; i < len(s.swaped); i++ {
-			l := b.Len()
+			l := sendContext.b.Len()
 			switch s.swaped[i].(type) {
 			case []byte:
-				b.AppendBytes(s.swaped[i].([]byte))
+				sendContext.b.AppendBytes(s.swaped[i].([]byte))
 			default:
-				if err := s.encoder.EnCode(s.swaped[i], b); nil != err {
+				if err := s.encoder.EnCode(s.swaped[i], sendContext.b); nil != err {
 					//EnCode错误，这个包已经写入到b中的内容需要直接丢弃
-					b.SetLen(l)
+					sendContext.b.SetLen(l)
 					kendynet.GetLogger().Errorf("encode error:%v", err)
 				}
 			}
@@ -321,9 +310,9 @@ func (s *Socket) doSend(sendContext *sendContext) {
 		}
 	}
 
-	if b.Len() == 0 {
+	if sendContext.b.Len() == 0 {
 		s.onSendComplete(&goaio.AIOResult{}, sendContext)
-	} else if nil != s.aioConn.Send(sendContext, b.Bytes(), s.getSendTimeout()) {
+	} else if nil != s.aioConn.Send(sendContext, sendContext.b.Bytes(), s.getSendTimeout()) {
 		s.onSendComplete(&goaio.AIOResult{Err: kendynet.ErrSocketClose}, sendContext)
 	}
 }
@@ -509,9 +498,6 @@ func (s *Socket) ShutdownWrite() {
 	}
 }
 
-/*
- * cb由completeRoutine调用，禁止在cb中调用会导致阻塞（例如SendWithTimeout和DirectSend）或耗时长的任务
- */
 func (s *Socket) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err error) {
 	s.beginOnce.Do(func() {
 		if nil == cb {

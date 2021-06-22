@@ -143,7 +143,7 @@ func (p *Pool) free(r *routine) {
 	case QueueMode:
 		f := p.queue.pop()
 		if nil != f {
-			r.taskCh <- f
+			r.taskCh <- f //f.(func())
 			return
 		}
 	}
