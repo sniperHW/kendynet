@@ -21,13 +21,8 @@ type SocketService struct {
 	shareBuffer goaio.ShareBuffer
 }
 
-var sendRoutinePool *gopool.Pool = gopool.New(gopool.Option{
-	MaxRoutineCount: 1024,
-	Mode:            gopool.QueueMode,
-})
-
-var ioResutRoutinePool *gopool.Pool = gopool.New(gopool.Option{
-	MaxRoutineCount: 1024,
+var routinePool *gopool.Pool = gopool.New(gopool.Option{
+	MaxRoutineCount: 4096,
 	Mode:            gopool.GoMode,
 })
 
@@ -43,7 +38,7 @@ func (this *SocketService) completeRoutine(s *goaio.AIOService) {
 			break
 		} else {
 			c := res.Context.(*ioContext)
-			ioResutRoutinePool.Go(func() {
+			routinePool.Go(func() {
 				c.cb(&res, c.b)
 			})
 		}
@@ -342,7 +337,7 @@ func (s *Socket) SendWithTimeout(o interface{}, timeout time.Duration) error {
 		if atomic.CompareAndSwapInt32(&s.sendLock, 0, 1) {
 			//send:3
 			s.addIO()
-			sendRoutinePool.GoTask(s)
+			routinePool.GoTask(s)
 		}
 
 		return nil
@@ -403,7 +398,7 @@ func (s *Socket) Send(o interface{}) error {
 		if atomic.CompareAndSwapInt32(&s.sendLock, 0, 1) {
 			//send:3
 			s.addIO()
-			sendRoutinePool.GoTask(s)
+			routinePool.GoTask(s)
 		}
 
 		return nil

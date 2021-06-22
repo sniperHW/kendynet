@@ -1,7 +1,3 @@
-/*
-面向流的会话接口
-*/
-
 package kendynet
 
 import (
@@ -76,24 +72,13 @@ type StreamSession interface {
 	SetEncoder(encoder EnCoder) StreamSession
 
 	BeginRecv(func(StreamSession, interface{})) error
-	/*
-	 *   获取会话的本端地址
-	 */
+
 	LocalAddr() net.Addr
 
-	/*
-	 *   获取会话的对端地址
-	 */
 	RemoteAddr() net.Addr
 
-	/*
-	 *   设置用户数据
-	 */
 	SetUserData(ud interface{}) StreamSession
 
-	/*
-	 *   获取用户数据
-	 */
 	GetUserData() interface{}
 
 	GetUnderConn() interface{}
@@ -103,7 +88,7 @@ type StreamSession interface {
 	SetSendTimeout(time.Duration) StreamSession
 
 	/*
-	 *   设置异步发送队列大小,必须在调用Start前设置
+	 *   设置异步发送队列大小
 	 */
 	SetSendQueueSize(int) StreamSession
 }
