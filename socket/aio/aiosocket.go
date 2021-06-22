@@ -31,13 +31,9 @@ var ioResutRoutinePool *gopool.Pool = gopool.New(gopool.Option{
 	Mode:            gopool.GoMode,
 })
 
-type sendContext struct {
+type ioContext struct {
 	b  *buffer.Buffer
-	cb func(*goaio.AIOResult, *sendContext)
-}
-
-type recvContext struct {
-	cb func(*goaio.AIOResult)
+	cb func(*goaio.AIOResult, *ioContext)
 }
 
 func (this *SocketService) completeRoutine(s *goaio.AIOService) {
@@ -46,13 +42,8 @@ func (this *SocketService) completeRoutine(s *goaio.AIOService) {
 		if !ok {
 			break
 		} else {
-			switch res.Context.(type) {
-			case *sendContext:
-				c := res.Context.(*sendContext)
-				c.cb(&res, c)
-			case *recvContext:
-				res.Context.(*recvContext).cb(&res)
-			}
+			c := res.Context.(*ioContext)
+			c.cb(&res, c)
 		}
 	}
 }
@@ -162,8 +153,8 @@ type Socket struct {
 	closeOnce        sync.Once
 	doCloseOnce      sync.Once
 	sendLock         int32
-	sendContext      sendContext
-	recvContext      recvContext
+	sendContext      ioContext
+	recvContext      ioContext
 	sendOverChan     chan struct{}
 	netconn          net.Conn
 	closeReason      error
@@ -284,7 +275,7 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 	}
 }
 
-func (s *Socket) doSend(sendContext *sendContext) {
+func (s *Socket) doSend(sendContext *ioContext) {
 
 	if nil == sendContext {
 		sendContext = &s.sendContext
@@ -390,8 +381,8 @@ func (s *Socket) DirectSend(bytes []byte, timeout ...time.Duration) (int, error)
 
 	ch := make(chan struct{})
 
-	scontext := &sendContext{
-		cb: func(res *goaio.AIOResult, _ *sendContext) {
+	scontext := &ioContext{
+		cb: func(res *goaio.AIOResult, _ *ioContext) {
 			n = res.Bytestransfer
 			err = res.Err
 			if err == goaio.ErrSendTimeout {
@@ -411,7 +402,7 @@ func (s *Socket) DirectSend(bytes []byte, timeout ...time.Duration) (int, error)
 
 }
 
-func (s *Socket) onSendComplete(r *goaio.AIOResult, sendContext *sendContext) {
+func (s *Socket) onSendComplete(r *goaio.AIOResult, sendContext *ioContext) {
 	if nil == r.Err {
 		if s.sendQueue.Empty() {
 			//onSendComplete:1
@@ -585,11 +576,11 @@ func NewSocket(service *SocketService, netConn net.Conn) kendynet.StreamSession 
 	s.sendQueue = socket.NewSendQueue(128)
 	s.netconn = netConn
 	s.sendOverChan = make(chan struct{})
-	s.sendContext.cb = func(r *goaio.AIOResult, c *sendContext) {
+	s.sendContext.cb = func(r *goaio.AIOResult, c *ioContext) {
 		s.onSendComplete(r, c)
 	}
 
-	s.recvContext.cb = func(r *goaio.AIOResult) {
+	s.recvContext.cb = func(r *goaio.AIOResult, _ *ioContext) {
 		s.onRecvComplete(r)
 	}
 
