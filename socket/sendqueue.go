@@ -23,25 +23,44 @@ type stWait struct {
 	ch    chan struct{}
 }
 
-func pushWait(head *stWait, n *stWait) {
-	if head != n {
-		tail := head.pprev
-
-		n.nnext = tail.nnext
-		n.pprev = tail
-
-		tail.nnext = n
-		head.pprev = n
-	}
+var stWaitPool *sync.Pool = &sync.Pool{
+	New: func() interface{} {
+		return &stWait{}
+	},
 }
 
-func popWait(head *stWait) *stWait {
+func getStWait() *stWait {
+	return stWaitPool.Get().(*stWait)
+}
+
+func putStWait(i *stWait) {
+	i.ch = nil
+	stWaitPool.Put(i)
+}
+
+func pushWait(head *stWait, ch chan struct{}) *stWait {
+	n := getStWait()
+	n.ch = ch
+
+	tail := head.pprev
+
+	n.nnext = tail.nnext
+	n.pprev = tail
+
+	tail.nnext = n
+	head.pprev = n
+
+	return n
+}
+
+func popWait(head *stWait) chan struct{} {
 	if head.nnext == head {
 		return nil
 	} else {
 		first := head.nnext
+		ch := first.ch
 		removeWait(first)
-		return first
+		return ch
 	}
 }
 
@@ -53,6 +72,7 @@ func removeWait(n *stWait) {
 		next.pprev = prev
 		n.nnext = nil
 		n.pprev = nil
+		putStWait(n)
 	}
 }
 
@@ -75,14 +95,13 @@ func newCond(mu *sync.Mutex) *cond {
 }
 
 func (c *cond) wait() {
-	w := &stWait{
-		ch: make(chan struct{}),
-	}
+
+	ch := make(chan struct{})
 	c.Lock()
-	pushWait(c.waitList, w)
+	pushWait(c.waitList, ch)
 	c.Unlock()
 	c.mu.Unlock()
-	<-w.ch
+	<-ch
 	c.mu.Lock()
 }
 
@@ -91,12 +110,10 @@ func (c *cond) waitWithTimeout(timeout time.Duration) bool {
 		return false
 	}
 
-	w := &stWait{
-		ch: make(chan struct{}),
-	}
+	ch := make(chan struct{})
 
 	c.Lock()
-	pushWait(c.waitList, w)
+	w := pushWait(c.waitList, ch)
 	c.Unlock()
 
 	c.mu.Unlock()
@@ -106,7 +123,7 @@ func (c *cond) waitWithTimeout(timeout time.Duration) bool {
 	ok := false
 
 	select {
-	case <-w.ch:
+	case <-ch:
 		ticker.Stop()
 		ok = true
 	case <-ticker.C:
@@ -120,10 +137,10 @@ func (c *cond) waitWithTimeout(timeout time.Duration) bool {
 
 func (c *cond) signal() {
 	c.Lock()
-	w := popWait(c.waitList)
+	ch := popWait(c.waitList)
 	c.Unlock()
-	if nil != w {
-		close(w.ch)
+	if nil != ch {
+		close(ch)
 	}
 }
 
@@ -134,8 +151,8 @@ func (c *cond) broadcast() {
 	c.waitList.nnext = c.waitList
 	c.waitList.pprev = c.waitList
 	c.Unlock()
-	for w := popWait(waitList); nil != w; w = popWait(waitList) {
-		close(w.ch)
+	for ch := popWait(waitList); nil != ch; ch = popWait(waitList) {
+		close(ch)
 	}
 }
 
