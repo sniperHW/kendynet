@@ -268,7 +268,7 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 			}
 		}
 
-		if !recvAgain || s.flag.AtomicTest(fclosed|frclosed) || nil != s.aioConn.Recv(&s.recvContext, s.inboundProcessor.GetRecvBuff(), s.getRecvTimeout()) {
+		if !recvAgain || s.flag.AtomicTest(fclosed|frclosed) || nil != s.aioConn.Recv1(&s.recvContext, s.inboundProcessor.GetRecvBuff(), s.getRecvTimeout()) {
 			s.ioDone()
 		}
 	}
@@ -310,7 +310,7 @@ func (s *Socket) doSend(b *buffer.Buffer) {
 
 	if b.Len() == 0 {
 		s.onSendComplete(&goaio.AIOResult{}, b)
-	} else if nil != s.aioConn.Send(&s.sendContext, b.Bytes(), s.getSendTimeout()) {
+	} else if nil != s.aioConn.Send1(&s.sendContext, b.Bytes(), s.getSendTimeout()) {
 		s.onSendComplete(&goaio.AIOResult{Err: kendynet.ErrSocketClose}, b)
 	}
 }
@@ -366,7 +366,7 @@ func (s *Socket) DirectSend(bytes []byte, timeout ...time.Duration) (int, error)
 		},
 	}
 
-	if nil != s.aioConn.Send(scontext, bytes, ttimeout) {
+	if nil != s.aioConn.Send1(scontext, bytes, ttimeout) {
 		return 0, kendynet.ErrSocketClose
 	}
 
