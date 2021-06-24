@@ -524,6 +524,8 @@ func (s *Socket) addIO() {
 func (s *Socket) ioDone() {
 	if atomic.AddInt32(&s.ioCount, -1) == 0 && s.flag.AtomicTest(fdoclose) {
 		s.doCloseOnce.Do(func() {
+			s.aioConn.Close(nil)
+
 			if nil != s.inboundProcessor {
 				s.inboundProcessor.OnSocketClose()
 			}
@@ -538,9 +540,9 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 	s.closeOnce.Do(func() {
 		runtime.SetFinalizer(s, nil)
 		s.flag.AtomicSet(fclosed)
+		s.ShutdownRead()
 		_, remain := s.sendQueue.Close()
 		if remain > 0 && delay > 0 {
-			s.ShutdownRead()
 			ticker := time.NewTicker(delay)
 			go func() {
 				select {
@@ -549,10 +551,10 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 				}
 
 				ticker.Stop()
-				s.aioConn.Close(nil)
+				s.netconn.(interface{ CloseWrite() error }).CloseWrite()
 			}()
 		} else {
-			s.aioConn.Close(nil)
+			s.netconn.(interface{ CloseWrite() error }).CloseWrite()
 		}
 
 		s.closeReason = reason
@@ -560,6 +562,8 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 
 		if atomic.LoadInt32(&s.ioCount) == 0 {
 			s.doCloseOnce.Do(func() {
+				s.aioConn.Close(nil)
+
 				if nil != s.inboundProcessor {
 					s.inboundProcessor.OnSocketClose()
 				}
