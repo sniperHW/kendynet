@@ -156,6 +156,7 @@ type Socket struct {
 	netconn          net.Conn
 	sendCB           func(*goaio.AIOResult)
 	recvCB           func(*goaio.AIOResult)
+	task             func()
 	closeReason      error
 	swaped           []interface{}
 	sendTimeout      int64
@@ -274,14 +275,6 @@ func (s *Socket) onRecvComplete(r *goaio.AIOResult) {
 	}
 }
 
-/*
- *  实现gopool.Task接口,避免无谓的闭包创建
- */
-
-func (s *Socket) Do() {
-	s.doSend(nil)
-}
-
 func (s *Socket) doSend(b *buffer.Buffer) {
 
 	if nil == b {
@@ -337,7 +330,7 @@ func (s *Socket) SendWithTimeout(o interface{}, timeout time.Duration) error {
 		if atomic.CompareAndSwapInt32(&s.sendLock, 0, 1) {
 			//send:3
 			s.addIO()
-			routinePool.GoTask(s)
+			routinePool.Go(s.task)
 		}
 
 		return nil
@@ -398,7 +391,7 @@ func (s *Socket) Send(o interface{}) error {
 		if atomic.CompareAndSwapInt32(&s.sendLock, 0, 1) {
 			//send:3
 			s.addIO()
-			routinePool.GoTask(s)
+			routinePool.Go(s.task)
 		}
 
 		return nil
@@ -592,6 +585,10 @@ func NewSocket(service *SocketService, netConn net.Conn) kendynet.StreamSession 
 
 	s.recvContext.cb = func(r *goaio.AIOResult, _ *buffer.Buffer) {
 		s.onRecvComplete(r)
+	}
+
+	s.task = func() {
+		s.doSend(nil)
 	}
 
 	runtime.SetFinalizer(s, func(s *Socket) {
