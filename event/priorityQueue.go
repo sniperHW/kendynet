@@ -3,6 +3,7 @@ package event
 import (
 	"errors"
 	"sync"
+	"sync/atomic"
 )
 
 var (
@@ -132,7 +133,7 @@ type PriorityQueue struct {
 	closed      bool
 	emptyWaited int
 	fullWaited  int
-	closeOnce   sync.Once
+	closeOnce   int32
 }
 
 func (self *PriorityQueue) AddNoWait(priority int, item interface{}, fullReturn ...bool) error {
@@ -211,13 +212,13 @@ func (self *PriorityQueue) Get() (closed bool, v interface{}) {
 }
 
 func (self *PriorityQueue) Close() {
-	self.closeOnce.Do(func() {
+	if atomic.CompareAndSwapInt32(&self.closeOnce, 0, 1) {
 		self.listGuard.Lock()
 		self.closed = true
 		self.listGuard.Unlock()
 		self.emptyCond.Broadcast()
 		self.fullCond.Broadcast()
-	})
+	}
 }
 
 func (self *PriorityQueue) SetFullSize(newSize int) {

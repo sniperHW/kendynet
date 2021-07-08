@@ -6,7 +6,6 @@ import (
 	"github.com/sniperHW/kendynet/util"
 	"net"
 	"runtime"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -38,10 +37,10 @@ type SocketBase struct {
 	recvTimeout     int64
 	sendCloseChan   chan struct{}
 	imp             SocketImpl
-	closeOnce       sync.Once
-	beginOnce       sync.Once
-	sendOnce        sync.Once
-	doCloseOnce     sync.Once
+	closeOnce       int32
+	beginOnce       int32
+	sendOnce        int32
+	doCloseOnce     int32
 	closeReason     error
 	encoder         kendynet.EnCoder
 	errorCallback   func(kendynet.StreamSession, error)
@@ -124,10 +123,10 @@ func (this *SocketBase) Send(o interface{}) error {
 			return err
 		}
 
-		this.sendOnce.Do(func() {
+		if atomic.CompareAndSwapInt32(&this.sendOnce, 0, 1) {
 			this.addIO()
 			go this.imp.sendThreadFunc()
-		})
+		}
 		return nil
 	}
 }
@@ -150,17 +149,17 @@ func (this *SocketBase) SendWithTimeout(o interface{}, timeout time.Duration) er
 			return err
 		}
 
-		this.sendOnce.Do(func() {
+		if atomic.CompareAndSwapInt32(&this.sendOnce, 0, 1) {
 			this.addIO()
 			go this.imp.sendThreadFunc()
-		})
+		}
 		return nil
 	}
 }
 
 func (this *SocketBase) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err error) {
 
-	this.beginOnce.Do(func() {
+	if atomic.CompareAndSwapInt32(&this.beginOnce, 0, 1) {
 
 		if nil == cb {
 			err = errors.New("cb is nil")
@@ -176,7 +175,7 @@ func (this *SocketBase) BeginRecv(cb func(kendynet.StreamSession, interface{})) 
 				go this.imp.recvThreadFunc()
 			}
 		}
-	})
+	}
 
 	return
 }
@@ -187,11 +186,11 @@ func (this *SocketBase) addIO() {
 
 func (this *SocketBase) ioDone() {
 	if atomic.AddInt32(&this.ioCount, -1) == 0 && this.flag.AtomicTest(fdoclose) {
-		this.doCloseOnce.Do(func() {
+		if atomic.CompareAndSwapInt32(&this.doCloseOnce, 0, 1) {
 			if nil != this.closeCallBack {
 				this.closeCallBack(this.imp, this.closeReason)
 			}
-		})
+		}
 	}
 }
 
@@ -209,7 +208,7 @@ func (this *SocketBase) ShutdownWrite() {
 
 func (this *SocketBase) Close(reason error, delay time.Duration) {
 
-	this.closeOnce.Do(func() {
+	if atomic.CompareAndSwapInt32(&this.closeOnce, 0, 1) {
 		runtime.SetFinalizer(this.imp, nil)
 
 		this.flag.AtomicSet(fclosed)
@@ -240,11 +239,11 @@ func (this *SocketBase) Close(reason error, delay time.Duration) {
 		this.flag.AtomicSet(fdoclose)
 
 		if atomic.LoadInt32(&this.ioCount) == 0 {
-			this.doCloseOnce.Do(func() {
+			if atomic.CompareAndSwapInt32(&this.doCloseOnce, 0, 1) {
 				if nil != this.closeCallBack {
 					this.closeCallBack(this.imp, reason)
 				}
-			})
+			}
 		}
-	})
+	}
 }

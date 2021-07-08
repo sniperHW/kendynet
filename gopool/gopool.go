@@ -5,6 +5,11 @@ import (
 	"sync"
 )
 
+var (
+	Err_PoolClosed    = errors.New("pool closed")
+	Err_TaskQueueFull = errors.New("task queue full")
+)
+
 type routine struct {
 	nnext  *routine
 	taskCh chan func()
@@ -27,17 +32,26 @@ func (r *routine) run(p *Pool) {
 	}
 }
 
-type Mode int
-
-const (
-	QueueMode = Mode(0) //队列模式，如果达到goroutine上限且没有空闲goroutine,将任务置入队列
-	GoMode    = Mode(1) //如果达到goroutine上限且没有空闲goroutine,开启单独的goroutine执行
-)
-
 type Option struct {
-	MaxRoutineCount int //最大goroutine数量
-	MaxQueueSize    int //最大排队任务数量
-	Mode            Mode
+	/*
+	 * 最大goroutine数量(<=0无限制),允许同时存在的goroutine数量上限
+	 */
+	MaxRoutineCount int
+
+	/*
+	 * 保留的goroutine数量,创建的routine在执行完task且任务队列为空时，判断当前goroutine数量是否超过ReserveRoutineCount,如果是routine退出
+	 * 否则放回空闲routine队列。
+	 *
+	 * 如果MaxRoutineCount没设置，但是设置了ReserveRoutineCount,如果当前goroutine数量已经达到ReserveRoutineCount,且没有空闲的goroutine可用
+	 * 执行Pool.Go的时候不会创建routine对象而是直接调用go task()执行任务。
+	 */
+
+	ReserveRoutineCount int
+
+	/*
+	 * 最大排队任务数量(<0无限制),如果设置了MaxRoutineCount,且当前没有空闲的goroutine可用，执行Pool.Go时把task push进任务队列
+	 */
+	MaxQueueSize int
 }
 
 const maxCacheItemCount = 4096
@@ -131,8 +145,7 @@ func (this *linkList) pop() func() {
 }
 
 var defaultPool *Pool = New(Option{
-	MaxRoutineCount: 1024,
-	Mode:            GoMode,
+	ReserveRoutineCount: 1024,
 })
 
 type Pool struct {
@@ -145,16 +158,6 @@ type Pool struct {
 }
 
 func New(o Option) *Pool {
-	switch o.Mode {
-	case QueueMode, GoMode:
-	default:
-		return nil
-	}
-
-	if o.MaxRoutineCount == 0 {
-		o.MaxRoutineCount = 8
-	}
-
 	return &Pool{
 		o: o,
 	}
@@ -171,19 +174,24 @@ func (p *Pool) putRoutine(r *routine) (bool, func()) {
 			p.Unlock()
 			return true, v
 		} else {
-			var head *routine
-			if p.freeRoutines == nil {
-				head = r
+			if p.routineCount > p.o.ReserveRoutineCount {
+				p.routineCount--
+				p.Unlock()
+				return false, nil
 			} else {
-				head = p.freeRoutines.nnext
-				p.freeRoutines.nnext = r
+				var head *routine
+				if p.freeRoutines == nil {
+					head = r
+				} else {
+					head = p.freeRoutines.nnext
+					p.freeRoutines.nnext = r
+				}
+				r.nnext = head
+				p.freeRoutines = r
+				p.Unlock()
+				return true, nil
 			}
-			r.nnext = head
-			p.freeRoutines = r
-
-			p.Unlock()
 		}
-		return true, nil
 	}
 }
 
@@ -207,24 +215,21 @@ func (p *Pool) Go(task func()) (err error) {
 	p.Lock()
 	if p.die {
 		p.Unlock()
-		err = errors.New("closed")
+		err = Err_PoolClosed
 	} else if r := p.getRoutine(); nil != r {
 		p.Unlock()
 		r.taskCh <- task
 	} else {
-		if p.routineCount == p.o.MaxRoutineCount {
-			switch p.o.Mode {
-			case GoMode:
-				p.Unlock()
-				go task()
-			case QueueMode:
-				if p.o.MaxQueueSize > 0 && p.taskQueue.count >= p.o.MaxQueueSize {
-					err = errors.New("exceed MaxQueueSize")
-				} else {
-					p.taskQueue.push(task)
-				}
-				p.Unlock()
+		if p.o.MaxRoutineCount > 0 && p.routineCount == p.o.MaxRoutineCount {
+			if p.o.MaxQueueSize >= 0 && p.taskQueue.count >= p.o.MaxQueueSize {
+				err = Err_TaskQueueFull
+			} else {
+				p.taskQueue.push(task)
 			}
+			p.Unlock()
+		} else if p.o.MaxRoutineCount <= 0 && p.routineCount >= p.o.ReserveRoutineCount {
+			p.Unlock()
+			go task()
 		} else {
 			p.routineCount++
 			p.Unlock()

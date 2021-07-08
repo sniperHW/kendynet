@@ -11,7 +11,6 @@ import (
 	"math/rand"
 	"net"
 	"runtime"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -22,8 +21,7 @@ type SocketService struct {
 }
 
 var routinePool *gopool.Pool = gopool.New(gopool.Option{
-	MaxRoutineCount: 4096,
-	Mode:            gopool.GoMode,
+	ReserveRoutineCount: 1024,
 })
 
 type ioContext struct {
@@ -146,9 +144,9 @@ type Socket struct {
 	errorCallback    func(kendynet.StreamSession, error)
 	closeCallBack    func(kendynet.StreamSession, error)
 	inboundCallBack  func(kendynet.StreamSession, interface{})
-	beginOnce        sync.Once
-	closeOnce        sync.Once
-	doCloseOnce      sync.Once
+	beginOnce        int32
+	closeOnce        int32
+	doCloseOnce      int32
 	sendLock         int32
 	sendContext      ioContext
 	recvContext      ioContext
@@ -489,7 +487,7 @@ func (s *Socket) ShutdownWrite() {
  * cb由completeRoutine调用，禁止在cb中调用会导致阻塞（例如SendWithTimeout和DirectSend）或耗时长的任务
  */
 func (s *Socket) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err error) {
-	s.beginOnce.Do(func() {
+	if atomic.CompareAndSwapInt32(&s.beginOnce, 0, 1) {
 		if nil == cb {
 			err = errors.New("BeginRecv cb is nil")
 		} else if s.flag.AtomicTest(fclosed | frclosed) {
@@ -506,7 +504,7 @@ func (s *Socket) BeginRecv(cb func(kendynet.StreamSession, interface{})) (err er
 				s.ioDone()
 			}
 		}
-	})
+	}
 	return
 }
 
@@ -516,7 +514,7 @@ func (s *Socket) addIO() {
 
 func (s *Socket) ioDone() {
 	if atomic.AddInt32(&s.ioCount, -1) == 0 && s.flag.AtomicTest(fdoclose) {
-		s.doCloseOnce.Do(func() {
+		if atomic.CompareAndSwapInt32(&s.doCloseOnce, 0, 1) {
 			s.aioConn.Close(nil)
 
 			if nil != s.inboundProcessor {
@@ -525,12 +523,12 @@ func (s *Socket) ioDone() {
 			if nil != s.closeCallBack {
 				s.closeCallBack(s, s.closeReason)
 			}
-		})
+		}
 	}
 }
 
 func (s *Socket) Close(reason error, delay time.Duration) {
-	s.closeOnce.Do(func() {
+	if atomic.CompareAndSwapInt32(&s.closeOnce, 0, 1) {
 		runtime.SetFinalizer(s, nil)
 		s.flag.AtomicSet(fclosed)
 		s.ShutdownRead()
@@ -554,7 +552,7 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 		s.flag.AtomicSet(fdoclose)
 
 		if atomic.LoadInt32(&s.ioCount) == 0 {
-			s.doCloseOnce.Do(func() {
+			if atomic.CompareAndSwapInt32(&s.doCloseOnce, 0, 1) {
 				s.aioConn.Close(nil)
 
 				if nil != s.inboundProcessor {
@@ -563,9 +561,9 @@ func (s *Socket) Close(reason error, delay time.Duration) {
 				if nil != s.closeCallBack {
 					s.closeCallBack(s, reason)
 				}
-			})
+			}
 		}
-	})
+	}
 }
 
 func NewSocket(service *SocketService, netConn net.Conn) kendynet.StreamSession {
