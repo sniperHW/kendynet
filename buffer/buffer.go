@@ -36,19 +36,19 @@ func AppendBytes(bs []byte, bytes []byte) []byte {
 }
 
 func AppendUint16(bs []byte, u16 uint16) []byte {
-	bu := make([]byte, 2)
+	bu := []byte{0, 0}
 	binary.BigEndian.PutUint16(bu, u16)
 	return AppendBytes(bs, bu)
 }
 
 func AppendUint32(bs []byte, u32 uint32) []byte {
-	bu := make([]byte, 4)
+	bu := []byte{0, 0, 0, 0}
 	binary.BigEndian.PutUint32(bu, u32)
 	return AppendBytes(bs, bu)
 }
 
 func AppendUint64(bs []byte, u64 uint64) []byte {
-	bu := make([]byte, 8)
+	bu := []byte{0, 0, 0, 0, 0, 0, 0, 0}
 	binary.BigEndian.PutUint64(bu, u64)
 	return AppendBytes(bs, bu)
 }
@@ -63,10 +63,6 @@ func AppendInt32(bs []byte, i32 int32) []byte {
 
 func AppendInt64(bs []byte, i64 int64) []byte {
 	return AppendUint64(bs, uint64(i64))
-}
-
-func AppendInt(bs []byte, i32 int) []byte {
-	return AppendUint32(bs, uint32(i32))
 }
 
 //implement io.Writer
@@ -129,11 +125,6 @@ func (b *Buffer) AppendInt32(i32 int32) *Buffer {
 
 func (b *Buffer) AppendInt64(i64 int64) *Buffer {
 	b.AppendUint64(uint64(i64))
-	return b
-}
-
-func (b *Buffer) AppendInt(i32 int) *Buffer {
-	b.AppendUint32(uint32(i32))
 	return b
 }
 
@@ -298,19 +289,6 @@ func (this *BufferReader) CheckGetInt32() (int32, error) {
 	}
 }
 
-func (this *BufferReader) GetInt() int {
-	return int(this.GetUint32())
-}
-
-func (this *BufferReader) CheckGetInt() (int, error) {
-	u, err := this.CheckGetUint32()
-	if nil != err {
-		return 0, err
-	} else {
-		return int(u), nil
-	}
-}
-
 func (this *BufferReader) GetUint64() uint64 {
 	if this.offset+8 > len(this.bs) {
 		return 0
@@ -373,4 +351,14 @@ func (this *BufferReader) CheckGetBytes(size int) ([]byte, error) {
 	ret := this.bs[this.offset : this.offset+size]
 	this.offset += size
 	return ret, nil
+}
+
+func (this *BufferReader) CopyBytes(size int) ([]byte, error) {
+	if b, err := this.CheckGetBytes(size); nil == err {
+		out := make([]byte, len(b))
+		copy(out, b)
+		return out, nil
+	} else {
+		return nil, err
+	}
 }
