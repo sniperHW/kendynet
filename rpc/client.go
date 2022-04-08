@@ -27,20 +27,6 @@ type callContext struct {
 	nnext         *callContext
 }
 
-var callContextPool = sync.Pool{
-	New: func() interface{} {
-		return &callContext{}
-	},
-}
-
-func getCallContext() *callContext {
-	return callContextPool.Get().(*callContext)
-}
-
-func releaseCallContext(c *callContext) {
-	callContextPool.Put(c)
-}
-
 type channelCalls struct {
 	calls callContext
 }
@@ -80,7 +66,6 @@ type RPCClient struct {
 func (this *callContext) onTimeout() {
 	if nil != this.rpcCli.removeCallBySeqno(this.seq) {
 		this.onResponse(nil, ErrCallTimeout)
-		releaseCallContext(this)
 	}
 }
 
@@ -122,7 +107,6 @@ func (this *RPCClient) OnRPCMessage(message interface{}) {
 		if resp, ok := msg.(*RPCResponse); ok {
 			if call := this.removeCallBySeqno(resp.GetSeq()); nil != call {
 				call.onResponse(resp.Ret, resp.Err)
-				releaseCallContext(call)
 			} else {
 				kendynet.GetLogger().Info("onResponse with no reqContext", resp.GetSeq())
 			}
@@ -151,7 +135,6 @@ func (this *RPCClient) OnChannelDisconnect(channel RPCChannel) {
 			if ok {
 				c.deadlineTimer.Stop()
 				c.onResponse(nil, ErrChannelDisconnected)
-				releaseCallContext(c)
 			}
 		}
 	}
@@ -194,18 +177,16 @@ func (this *RPCClient) AsynCall(channel RPCChannel, method string, arg interface
 	if request, err := this.encoder.Encode(req); err != nil {
 		return err
 	} else {
-		context := getCallContext()
-		context.onResponse = cb
-		context.seq = req.Seq
-		context.rpcCli = this
-		context.channelID = channel.UID()
-		this.addCall(context, timeout)
+		this.addCall(&callContext{
+			onResponse: cb,
+			seq:        req.Seq,
+			rpcCli:     this,
+			channelID:  channel.UID(),
+		}, timeout)
 		if err = channel.SendRequest(request); err == nil {
 			return nil
 		} else {
-			if nil != this.removeCallBySeqno(context.seq) {
-				releaseCallContext(context)
-			}
+			this.removeCallBySeqno(req.Seq)
 			return err
 		}
 	}
